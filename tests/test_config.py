@@ -140,6 +140,13 @@ def test_missing_env_var_is_an_error(monkeypatch):
     assert "ATF_TOKEN is not set" in str(err.value)
 
 
+def test_a_missing_env_var_names_its_full_manifest_path(monkeypatch):
+    monkeypatch.delenv("ATF_TOKEN", raising=False)
+    with pytest.raises(ConfigError) as err:
+        resolve_env_refs({"auth": {"bearer": {"token_env": "ATF_TOKEN"}}}, "environments.dev.adapters.rest")
+    assert "environments.dev.adapters.rest.auth.bearer.token_env" in str(err.value)
+
+
 def test_toml_is_rejected(tmp_path):
     path = tmp_path / "atf.toml"
     path.write_text("", encoding="utf-8")

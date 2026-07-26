@@ -294,3 +294,23 @@ def test_seed_marks_the_dependents_of_a_failure_as_blocked(project, capsys):
     assert "[skip] banners.hero" in out
     assert "depends on widgets.imported" in out
     assert "blocked" in out
+
+
+def test_the_example_needs_no_setup(tmp_path):
+    """`cd examples/todo && atf serve` must work on a clean checkout, with nothing exported."""
+    bare = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"TODO_URL", "TODO_ACTOR", "ATF_ENV", "ATF_MANIFEST"}
+    }
+    completed = subprocess.run(
+        [sys.executable, "-m", "atf.cli", "status", "dev"],
+        cwd=EXAMPLE,
+        env={**bare, "PYTHONPATH": str(REPO / "src")},
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "started the stand-in API" in completed.stdout
+    assert "present in dev" in completed.stdout

@@ -226,21 +226,23 @@ def _parse_display(value: Any, problems: list[str]) -> DisplayConfig:
     return DisplayConfig(systems=systems)
 
 
-def resolve_env_refs(value: Any) -> Any:
+def resolve_env_refs(value: Any, where: str = "") -> Any:
     """Replace `<key>_env: VAR_NAME` pointers with `<key>: <os.environ[VAR_NAME]>`.
 
     Secrets never appear as literals in the manifest; this is the single place they are read.
+    `where` is the manifest path of `value`, so a missing variable can name the key that wants it.
     """
     if isinstance(value, dict):
         out: dict[str, Any] = {}
         for key, item in value.items():
+            path = f"{where}.{key}" if where else str(key)
             if isinstance(key, str) and key.endswith(ENV_REF_SUFFIX) and isinstance(item, str):
-                out[key[: -len(ENV_REF_SUFFIX)]] = _read_env(item, key)
+                out[key[: -len(ENV_REF_SUFFIX)]] = _read_env(item, path)
             else:
-                out[key] = resolve_env_refs(item)
+                out[key] = resolve_env_refs(item, path)
         return out
     if isinstance(value, list):
-        return [resolve_env_refs(item) for item in value]
+        return [resolve_env_refs(item, f"{where}[{index}]") for index, item in enumerate(value)]
     return value
 
 
@@ -248,4 +250,8 @@ def _read_env(var: str, key: str) -> str:
     try:
         return os.environ[var]
     except KeyError:
-        raise ConfigError(f"{key}: environment variable {var} is not set") from None
+        raise ConfigError(
+            f"{key}: environment variable {var} is not set.\n"
+            f"  The manifest points at it instead of storing the value. Export it first:\n"
+            f"    export {var}=..."
+        ) from None

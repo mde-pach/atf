@@ -136,7 +136,20 @@ def test_unknown_env_is_an_error(project):
         bootstrap("nowhere")
 
 
-def test_missing_secret_is_an_error(project, monkeypatch):
+def test_missing_secret_names_the_key_that_wants_it(project, monkeypatch):
     monkeypatch.delenv("ATF_TOKEN")
-    with pytest.raises(ConfigError, match="ATF_TOKEN is not set"):
+    with pytest.raises(ConfigError) as err:
         bootstrap()
+
+    message = str(err.value)
+    assert "ATF_TOKEN is not set" in message
+    # the whole point: which key, in which environment, and what to do about it
+    assert "environments.dev.adapters.rest.auth.bearer.token_env" in message
+    assert "export ATF_TOKEN=" in message
+
+
+def test_a_missing_client_secret_names_the_client(project, monkeypatch):
+    monkeypatch.delenv("ATF_ACTOR")
+    with pytest.raises(ConfigError) as err:
+        bootstrap()
+    assert "environments.dev.clients.api.auth.value_env" in str(err.value)

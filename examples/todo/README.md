@@ -24,16 +24,23 @@ at something real and that block does nothing.
 
 ## Driving it from the CLI or cockpit
 
-Those need the API running as a separate process:
+Nothing to set up — `adapters.py` starts the stand-in API when `TODO_URL` is unset, so every
+entry point works out of the box:
+
+```sh
+atf status dev     # 1/7 present (the shipped label) — the rest absent
+atf seed dev       # 6 created, 1 found; the ephemeral guest is not seeded
+atf run            # 8 passed
+atf serve          # the cockpit on http://127.0.0.1:8000
+```
+
+Each command gets its own short-lived API, so state does not carry between them — `atf status`
+right after `atf seed` reports everything absent again. To keep one backend across commands, run
+it yourself and point at it:
 
 ```sh
 python fake_api.py 8765
 export TODO_URL=http://127.0.0.1:8765 TODO_ACTOR=example
-
-atf status dev     # 1/7 present (the seeded label) — the rest absent
-atf seed dev       # 7/7 provisioned; the ephemeral guest is not seeded
-atf run            # 8 passed
-atf serve          # the cockpit
 ```
 
 `atf seed staging` exits 2: `staging` is not in `mutable_envs`.

@@ -31,9 +31,13 @@ def bootstrap(env: str | None = None, manifest_path: Path | None = None) -> Boot
     load_adapter_modules(manifest)
 
     adapters: dict[str, Adapter] = {
-        system: build(system, resolve_env_refs(raw)) for system, raw in settings.adapters.items()
+        system: build(system, resolve_env_refs(raw, f"environments.{active}.adapters.{system}"))
+        for system, raw in settings.adapters.items()
     }
-    clients = {name: resolve_env_refs(raw) for name, raw in settings.clients.items()}
+    clients = {
+        name: resolve_env_refs(raw, f"environments.{active}.clients.{name}")
+        for name, raw in settings.clients.items()
+    }
 
     return Boot(
         manifest=manifest,

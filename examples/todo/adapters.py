@@ -7,7 +7,10 @@ treats a guest like any other resource.
 
 from __future__ import annotations
 
+import os
+import sys
 import time
+from pathlib import Path
 from typing import Any
 
 from atf import http
@@ -15,6 +18,19 @@ from atf.adapters import Context, Record, register
 from atf.catalog import Node
 
 READY_TIMEOUT = 5.0
+
+# ATF imports this module (it is listed under `adapters:` in the manifest) before it resolves the
+# manifest's `*_env` pointers, so this is the one place that can stand a backend up for *every*
+# entry point — `atf serve`, `atf status`, `atf seed` and the cockpit alike. A real suite points
+# TODO_URL at a real service and none of this runs.
+if not os.environ.get("TODO_URL"):
+    sys.path.insert(0, str(Path(__file__).parent))
+    from fake_api import TodoAPI
+
+    os.environ.setdefault("TODO_ACTOR", "example")
+    _api = TodoAPI(actor=os.environ["TODO_ACTOR"])
+    os.environ["TODO_URL"] = _api.start()
+    print(f"examples/todo: no TODO_URL set, started the stand-in API on {os.environ['TODO_URL']}")
 
 
 class GuestAdapter:

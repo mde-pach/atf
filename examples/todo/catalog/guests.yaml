@@ -1,0 +1,5 @@
+visitor:
+  resource: guest
+  represents: An anonymous visitor, signed up and activated fresh for every run.
+  body:
+    nickname: visitor

@@ -1,0 +1,60 @@
+"""The escape hatch: a custom adapter whose `create` runs a multi-step chain.
+
+A guest is signed up, then activated, then polled until the backend reports it ready — three
+calls the declarative REST adapter cannot express. Modelled as one adapter, so the catalog
+treats a guest like any other resource.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any
+
+from atf import http
+from atf.adapters import Context, Record, register
+from atf.catalog import Node
+
+READY_TIMEOUT = 5.0
+
+
+class GuestAdapter:
+    def __init__(self, settings: dict[str, Any]) -> None:
+        self.client = http.build_client(
+            settings["base_url"],
+            auth=settings.get("auth"),
+            timeout=float(settings.get("timeout", 10)),
+        )
+
+    def find(self, node: Node, ctx: Context) -> Record | None:
+        return None  # ephemeral: never reused across runs
+
+    def create(self, node: Node, body: Record, ctx: Context) -> Record:
+        identity_field = node["id_field"]
+
+        signup = self.client.post("/guests", json={**body, "state": "pending"})
+        signup.raise_for_status()
+        identity = signup.json()[identity_field]
+
+        # The backend flips `activating` to `ready` on its own; we poll until it has.
+        activate = self.client.patch(f"/guests/{identity}", json={"state": "activating"})
+        activate.raise_for_status()
+
+        return self._await_ready(identity, node["id"])
+
+    def delete(self, node: Node, record: Record, ctx: Context) -> None:
+        self.client.delete(f"/guests/{record[node['id_field']]}")
+
+    def _await_ready(self, identity: str, node_id: str) -> Record:
+        deadline = time.time() + READY_TIMEOUT
+        while True:
+            response = self.client.get(f"/guests/{identity}")
+            response.raise_for_status()
+            record = response.json()
+            if record.get("state") == "ready":
+                return record
+            if time.time() > deadline:
+                raise TimeoutError(f"{node_id}: guest {identity} never became ready")
+            time.sleep(0.05)
+
+
+register("guest", GuestAdapter)

@@ -1,0 +1,8 @@
+groceries:
+  resource: todo_list
+  represents: A list under the primary owner.
+  depends_on:
+    - owners.primary
+  body:
+    slug: groceries
+    owner_id: ${owners.primary.id}

@@ -1,0 +1,97 @@
+{% if not node %}
+  <div class="card"><p class="muted">Nothing selected. Pick a resource from the list.</p></div>
+{% else %}
+  <div class="card">
+    <header>
+      <h2>Lineage</h2>
+      <span class="chip system" style="border-color: {{ display.system(node.system).color }}; color: {{ display.system(node.system).color }}">
+        {{ display.system(node.system).label }}
+      </span>
+      {% if banner %}<span class="banner {{ banner_tone }} small" style="margin-left:auto">{{ banner }}</span>{% endif %}
+    </header>
+
+    <div class="graph-wrap">
+      <div class="graph" style="width: {{ graph.width }}px; height: {{ graph.height }}px">
+        <svg width="{{ graph.width }}" height="{{ graph.height }}">
+          {% for edge in graph.edges %}<path d="{{ edge.path }}"></path>{% endfor %}
+        </svg>
+        {% for box in graph.boxes %}
+          <a class="gnode {{ 'focus' if box.focus }}"
+             style="left: {{ box.x }}px; top: {{ box.y }}px; width: {{ NODE_W }}px; height: {{ NODE_H }}px"
+             href="/catalog/node/{{ box.id }}?env={{ env }}"
+             hx-get="/catalog/node/{{ box.id }}?env={{ env }}" hx-target="#catalog-focus" hx-swap="innerHTML"
+             hx-push-url="/catalog/node/{{ box.id }}?env={{ env }}">
+            <span class="flag {{ tone(box.status) }}"></span>
+            <span class="n">{{ box.label }}</span>
+            <span class="t">{{ box.sub }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card stack">
+    <header>
+      <h2>{{ node.name }}</h2>
+      <span class="chip resource">{{ node.resource }}</span>
+      <span class="pill {{ tone(status.get(node.id, {}).get('status', '')) }}">
+        {{ status.get(node.id, {}).get("status", "?") }}
+      </span>
+      <div class="actions">
+        <form hx-post="/catalog/create/{{ node.id }}?env={{ env }}" hx-target="#catalog-focus" hx-swap="innerHTML"
+              hx-disabled-elt="find button"
+              {% if mutable %}hx-confirm="Create {{ node.id }} and its dependencies in {{ env }}?"{% endif %}>
+          <input type="hidden" name="confirm" value="{{ confirm_token }}">
+          <button type="submit" {% if not mutable %}disabled title="{{ env }} is read-only"{% endif %}>Create</button>
+        </form>
+      </div>
+    </header>
+
+    {% if status.get(node.id, {}).get("detail") %}
+      <div class="banner warn small">{{ status[node.id].detail }}</div>
+    {% endif %}
+
+    <p class="small">{{ node.represents or "No description." }}</p>
+
+    <dl class="kv small">
+      <dt>id</dt><dd><code>{{ node.id }}</code></dd>
+      <dt>lifecycle</dt><dd>{{ node.lifecycle }}{% if node.lifecycle == "ephemeral" %} <span class="muted">— built per run</span>{% endif %}</dd>
+      <dt>mode</dt><dd>{{ node.mode }}</dd>
+      <dt>identity</dt><dd><code>{{ node.id_field }}</code>{% if status.get(node.id, {}).get("identity") %} = <code>{{ status[node.id].identity }}</code>{% endif %}</dd>
+    </dl>
+
+    <div>
+      <h3>Needs</h3>
+      {% if needs %}
+        <div class="row">{% for dep in needs %}
+          <a class="chip resource" href="/catalog/node/{{ dep.id }}?env={{ env }}"
+             hx-get="/catalog/node/{{ dep.id }}?env={{ env }}" hx-target="#catalog-focus" hx-swap="innerHTML">{{ dep.id }}</a>
+        {% endfor %}</div>
+      {% else %}<p class="muted small">Nothing — this is a root resource.</p>{% endif %}
+    </div>
+
+    <div>
+      <h3>Needed by</h3>
+      {% if used_by %}
+        <div class="row">{% for dep in used_by %}
+          <a class="chip resource" href="/catalog/node/{{ dep.id }}?env={{ env }}"
+             hx-get="/catalog/node/{{ dep.id }}?env={{ env }}" hx-target="#catalog-focus" hx-swap="innerHTML">{{ dep.id }}</a>
+        {% endfor %}</div>
+      {% else %}<p class="muted small">Nothing depends on this.</p>{% endif %}
+    </div>
+
+    <div>
+      <h3>Used by tests</h3>
+      {% if tests %}
+        <ul class="stack small">{% for test in tests %}
+          <li><a class="chip test" href="/tests/detail/{{ test.id }}?env={{ env }}">{{ test.name }}</a></li>
+        {% endfor %}</ul>
+      {% else %}<p class="muted small">No test provisions this resource yet.</p>{% endif %}
+    </div>
+
+    <div>
+      <h3>Payload</h3>
+      <pre class="payload mono">{{ node.body | tojson(indent=2) }}</pre>
+    </div>
+  </div>
+{% endif %}

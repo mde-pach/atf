@@ -1,0 +1,15 @@
+owner:
+  system: rest
+  path: /owners
+  natural_key: email
+
+todo_list:
+  system: rest
+  path: /lists
+  natural_key: [owner_id, slug]
+
+guest:
+  system: rest
+  path: /guests
+  natural_key: nickname
+  lifecycle: ephemeral

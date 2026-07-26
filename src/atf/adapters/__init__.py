@@ -1,0 +1,110 @@
+"""Adapter SPI and the factory registry (§7). Importing this module registers the built-ins."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+from typing import Any, Protocol
+
+from ..catalog import Node
+
+Record = dict[str, Any]
+
+
+class Context(Protocol):
+    """What an adapter may use from the materializer that drives it."""
+
+    env: str
+
+    def resolve(self, value: Any) -> Any:
+        """Resolve `${...}` placeholders; raises `atf.placeholders.Unresolved`."""
+        ...
+
+    def cached(self, key: str, loader: Callable[[], Any]) -> Any:
+        """Memoise a remote listing for the duration of a materialize pass."""
+        ...
+
+    def invalidate_cache(self) -> None: ...
+
+
+class Adapter(Protocol):
+    def find(self, node: Node, ctx: Context) -> Record | None: ...
+
+    def create(self, node: Node, body: Record, ctx: Context) -> Record: ...
+
+    def delete(self, node: Node, record: Record, ctx: Context) -> None: ...
+
+
+class Closeable(Protocol):
+    """Optional: an adapter holding a connection, session or browser can release it here."""
+
+    def close(self) -> None: ...
+
+
+def close_adapter(adapter: Adapter) -> None:
+    """Release an adapter's resources if it has any. Never raises."""
+    closer = getattr(adapter, "close", None)
+    if closer is None:
+        return
+    try:
+        closer()
+    except Exception:  # noqa: BLE001 - closing must never fail a run
+        logging.getLogger("atf.adapters").warning("closing %s failed", type(adapter).__name__)
+
+
+AdapterFactory = Callable[[dict[str, Any]], Adapter]
+
+_REGISTRY: dict[str, AdapterFactory] = {}
+
+
+def register(system: str, factory: AdapterFactory) -> None:
+    _REGISTRY[system] = factory
+
+
+def build(system: str, settings: dict[str, Any]) -> Adapter:
+    try:
+        factory = _REGISTRY[system]
+    except KeyError:
+        known = ", ".join(sorted(_REGISTRY)) or "none"
+        raise KeyError(f"no adapter registered for system {system!r} (registered: {known})") from None
+    return factory(settings)
+
+
+def registered_systems() -> set[str]:
+    return set(_REGISTRY)
+
+
+def unregister(system: str) -> None:
+    _REGISTRY.pop(system, None)
+
+
+class NoopDelete:
+    """Mixin for backends without deletion: teardown is a no-op."""
+
+    def delete(self, node: Node, record: Record, ctx: Context) -> None:
+        return None
+
+
+def _register_builtins() -> None:
+    from .reference import ReferenceAdapter
+    from .rest import RestAdapter
+
+    register("rest", RestAdapter.from_settings)
+    register("reference", ReferenceAdapter.from_settings)
+
+
+_register_builtins()
+
+__all__ = [
+    "Adapter",
+    "Closeable",
+    "AdapterFactory",
+    "Context",
+    "NoopDelete",
+    "Record",
+    "build",
+    "close_adapter",
+    "register",
+    "registered_systems",
+    "unregister",
+]

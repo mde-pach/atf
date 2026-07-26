@@ -1,0 +1,24 @@
+# ATF testing ATF. The resources are suites-under-test; the system under test is the `atf` CLI.
+
+catalog: ./catalog
+specs: ./specs
+default_env: local
+
+adapters:
+  - selftest_adapters
+
+mutable_envs: [local]
+
+environments:
+  local:
+    adapters:
+      workspace:
+        suites: ./suites
+    clients:
+      atf:
+        backend_url_env: SELFTEST_BACKEND
+        actor_env: SELFTEST_ACTOR
+
+display:
+  systems:
+    workspace: { label: Workspace, color: "#7857d8" }

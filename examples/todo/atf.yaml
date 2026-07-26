@@ -1,0 +1,52 @@
+catalog: ./catalog
+specs: ./specs
+default_env: dev
+
+adapters:
+  - adapters
+
+mutable_envs: [dev]
+
+environments:
+  dev:
+    adapters:
+      rest:
+        base_url_env: TODO_URL
+        auth: { header: X-Actor, value_env: TODO_ACTOR }
+        pagination: { results_key: results, count_key: count }
+        timeout: 10
+      reference:
+        base_url_env: TODO_URL
+        auth: { header: X-Actor, value_env: TODO_ACTOR }
+        pagination: { results_key: results, count_key: count }
+      guest:
+        base_url_env: TODO_URL
+        auth: { header: X-Actor, value_env: TODO_ACTOR }
+    clients:
+      api:
+        base_url_env: TODO_URL
+        auth: { header: X-Actor, value_env: TODO_ACTOR }
+
+  # A read-only environment: the cockpit renders Seed/Create/Run disabled here.
+  staging:
+    adapters:
+      rest:
+        base_url_env: TODO_URL
+        auth: { header: X-Actor, value_env: TODO_ACTOR }
+      reference:
+        base_url_env: TODO_URL
+        auth: { header: X-Actor, value_env: TODO_ACTOR }
+        pagination: { results_key: results, count_key: count }
+      guest:
+        base_url_env: TODO_URL
+        auth: { header: X-Actor, value_env: TODO_ACTOR }
+    clients:
+      api:
+        base_url_env: TODO_URL
+        auth: { header: X-Actor, value_env: TODO_ACTOR }
+
+display:
+  systems:
+    rest: { label: API, color: "#2f6be0" }
+    reference: { label: Imported, color: "#0f8f6f" }
+    guest: { label: Guest, color: "#7857d8" }

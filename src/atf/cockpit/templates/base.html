@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" data-theme="">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ title }}{% endblock %} · ATF</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body hx-headers='{"HX-Env": "{{ env }}"}'>
+  <div id="atf-progress"></div>
+
+  <div class="shell">
+    {% include "partials/rail.html" %}
+
+    <div class="main">
+      <header class="topbar">
+        <button class="search-launcher" type="button" onclick="atfOpenSearch()">
+          <span>Search resources, specs, tests, fixtures…</span>
+          <kbd>⌘K</kbd>
+        </button>
+        <button class="ghost" type="button" onclick="atfToggleTheme()" title="Toggle light / dark">◐</button>
+      </header>
+
+      <main class="content" id="content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <dialog class="palette" id="palette">
+    <input type="search" name="q" placeholder="Search…" autocomplete="off"
+           hx-get="/search?env={{ env }}" hx-trigger="input changed delay:120ms, search"
+           hx-target="#palette-results" hx-indicator="none" data-quiet>
+    <div class="results" id="palette-results"></div>
+  </dialog>
+
+  <script>
+    const bar = document.getElementById("atf-progress");
+    document.body.addEventListener("htmx:beforeRequest", (e) => {
+      if (e.detail.elt.closest("[data-quiet]")) return;
+      bar.className = "active";
+    });
+    document.body.addEventListener("htmx:afterRequest", (e) => {
+      if (e.detail.elt.closest("[data-quiet]")) return;
+      bar.className = "done";
+      setTimeout(() => (bar.className = ""), 260);
+    });
+
+    function atfOpenSearch() {
+      const dialog = document.getElementById("palette");
+      dialog.showModal();
+      dialog.querySelector("input").focus();
+    }
+    document.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); atfOpenSearch(); }
+    });
+
+    function atfToggleTheme() {
+      const root = document.documentElement;
+      const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+      const current = root.dataset.theme || (dark ? "dark" : "light");
+      const next = current === "dark" ? "light" : "dark";
+      root.dataset.theme = next;
+      localStorage.setItem("atf-theme", next);
+    }
+    const stored = localStorage.getItem("atf-theme");
+    if (stored) document.documentElement.dataset.theme = stored;
+
+    function atfSwitchEnv(select) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("env", select.value);
+      window.location.href = url.toString();
+    }
+
+    // Centre the focused graph node after every swap.
+    function atfCentreGraph() {
+      const focus = document.querySelector(".graph .gnode.focus");
+      if (!focus) return;
+      const wrap = focus.closest(".graph-wrap");
+      if (!wrap) return;
+      wrap.scrollLeft = focus.offsetLeft - wrap.clientWidth / 2 + focus.offsetWidth / 2;
+      wrap.scrollTop = focus.offsetTop - wrap.clientHeight / 2 + focus.offsetHeight / 2;
+    }
+    document.addEventListener("DOMContentLoaded", atfCentreGraph);
+    document.body.addEventListener("htmx:afterSwap", atfCentreGraph);
+  </script>
+</body>
+</html>

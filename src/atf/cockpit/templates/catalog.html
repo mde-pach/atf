@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-head">
+  <div class="breadcrumb"><span>Explore</span> <span>/</span> <span>Catalog</span></div>
+  <div class="row">
+    <h1>Catalog</h1>
+    <span class="chip resource">resource</span>
+    <div class="actions">
+      <form hx-post="/catalog/sync?env={{ env }}&focus={{ focus }}" hx-target="#catalog-focus" hx-swap="innerHTML"
+            hx-disabled-elt="find button">
+        <button type="submit">Sync</button>
+      </form>
+      <form hx-post="/catalog/seed?env={{ env }}&focus={{ focus }}" hx-target="#catalog-focus" hx-swap="innerHTML"
+            hx-disabled-elt="find button"
+            {% if mutable %}hx-confirm="Create every absent resource in {{ env }}?"{% endif %}>
+        <input type="hidden" name="confirm" value="{{ confirm_token }}">
+        <button class="primary" type="submit" {% if not mutable %}disabled title="{{ env }} is read-only"{% endif %}>
+          Seed {{ absent | length }} absent
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="split-3">
+  <div class="card">
+    <div class="list">
+      {% for collection, members in collections.items() %}
+        <div class="list-group-label">{{ collection }}</div>
+        {% for node in members %}
+          <a href="/catalog/node/{{ node.id }}?env={{ env }}"
+             hx-get="/catalog/node/{{ node.id }}?env={{ env }}" hx-target="#catalog-focus" hx-swap="innerHTML"
+             hx-push-url="/catalog/node/{{ node.id }}?env={{ env }}"
+             aria-current="{{ 'true' if node.id == focus else 'false' }}">
+            <span class="name">{{ node.name }}</span>
+            <span class="sub">
+              {{ node.resource }} ·
+              <span class="pill {{ tone(status.get(node.id, {}).get('status', '')) }}">{{ status.get(node.id, {}).get("status", "?") }}</span>
+            </span>
+          </a>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+
+  <div id="catalog-focus" style="display: contents">
+    {% include "partials/catalog_focus.html" %}
+  </div>
+</div>
+
+{% endblock %}

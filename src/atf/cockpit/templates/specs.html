@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-head">
+  <div class="breadcrumb"><span>Explore</span> <span>/</span> <span>Specs</span></div>
+  <div class="row">
+    <h1>Specs</h1>
+    <span class="chip spec">spec</span>
+    <span class="muted small">{{ specs | length }} scenarios</span>
+  </div>
+</div>
+
+<div class="split">
+  <div class="card">
+    <div class="list">
+      {% set grouped = specs | groupby("feature") %}
+      {% for feature, members in grouped %}
+        <div class="list-group-label">{{ feature }}</div>
+        {% for spec in members %}
+          <a href="/specs/{{ spec.id }}?env={{ env }}"
+             hx-get="/specs/{{ spec.id }}?env={{ env }}" hx-target="#spec-detail" hx-swap="innerHTML"
+             hx-push-url="/specs/{{ spec.id }}?env={{ env }}"
+             aria-current="{{ 'true' if spec.id == focus else 'false' }}">
+            <span class="name">{{ spec.scenario }}</span>
+            <span class="sub">
+              {{ spec.test_ids | length }} test{{ "" if spec.test_ids | length == 1 else "s" }}
+              {% if spec.skipped %} · <span class="pill warn">skipped</span>{% endif %}
+            </span>
+          </a>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+
+  <div id="spec-detail">
+    {% include "partials/spec_detail.html" %}
+  </div>
+</div>
+
+{% endblock %}

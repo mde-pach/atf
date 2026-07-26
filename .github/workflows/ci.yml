@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes the in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, types, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install
+        # Built against the *minimum* supported Python, so newer syntax cannot slip in.
+        # `--locked` fails if uv.lock has drifted from pyproject.toml, rather than silently
+        # resolving something different from what a developer gets locally.
+        run: uv sync --locked --group docs --python 3.11
+
+      # Ordered cheapest-first, so an obvious mistake fails in seconds.
+      - name: Lint
+        run: uv run ruff check
+
+      - name: Type-check (strict)
+        run: uv run ty check
+
+      - name: Docs build with no broken links
+        run: uv run mkdocs build --strict
+
+      - name: Framework tests
+        run: uv run pytest -q
+
+      # Both suites are already driven by tests/, but running them the way a user would
+      # catches anything the test harness papers over.
+      - name: The example must build to green
+        working-directory: examples/todo
+        run: uv run --project "${{ github.workspace }}" python -m pytest -q
+
+      - name: ATF must pass its own specs
+        working-directory: selftest
+        run: uv run --project "${{ github.workspace }}" python -m pytest -q

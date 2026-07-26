@@ -1,0 +1,23 @@
+chained:
+  resource: workspace
+  represents: A suite whose catalog declares a two-level dependency chain with a placeholder.
+  body:
+    suite: chained
+
+ephemeral:
+  resource: workspace
+  represents: A suite with an ephemeral resource, to prove the plugin tears it down.
+  body:
+    suite: ephemeral
+
+broken:
+  resource: workspace
+  represents: A suite whose catalog has a dangling dependency, to prove validation fires at load.
+  body:
+    suite: broken
+
+failing:
+  resource: workspace
+  represents: A suite whose spec fails, to prove `atf run` is usable as a deployment guard.
+  body:
+    suite: failing

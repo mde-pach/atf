@@ -1,0 +1,24 @@
+<div class="grid-3">
+  {% for meter in meters %}
+    <div class="card meter {{ meter.tone }}">
+      <header>
+        <h2>{{ meter.label }}</h2>
+        {% if meter.label == "Config" and meter.value < meter.total %}
+          <div class="actions">
+            <form hx-post="/catalog/seed?env={{ env }}" hx-target="#content" hx-swap="innerHTML"
+                  hx-disabled-elt="find button"
+                  {% if mutable %}hx-confirm="Create {{ meter.total - meter.value }} absent resources in {{ env }}?"{% endif %}>
+              <input type="hidden" name="confirm" value="{{ confirm_token }}">
+              <button type="submit" {% if not mutable %}disabled title="{{ env }} is read-only"{% endif %}>
+                Seed {{ meter.total - meter.value }} absent
+              </button>
+            </form>
+          </div>
+        {% endif %}
+      </header>
+      <div class="value">{{ meter.value }}<small> / {{ meter.total }}</small></div>
+      <div class="track"><div class="fill" style="width: {{ meter.percent }}%"></div></div>
+      <div class="muted small">{{ meter.detail }}</div>
+    </div>
+  {% endfor %}
+</div>

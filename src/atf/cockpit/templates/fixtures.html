@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-head">
+  <div class="breadcrumb"><span>Explore</span> <span>/</span> <span>Fixtures</span></div>
+  <div class="row">
+    <h1>Fixtures</h1>
+    <span class="chip fixture">fixture</span>
+    <span class="muted small">{{ fixtures | length }} in use</span>
+  </div>
+</div>
+
+<div class="split">
+  <div class="card">
+    <div class="list">
+      <div class="list-group-label">Generated from the catalog</div>
+      {% for fixture in fixtures if fixture.generated %}
+        {% include "partials/fixture_row.html" %}
+      {% endfor %}
+      <div class="list-group-label">Framework &amp; project</div>
+      {% for fixture in fixtures if not fixture.generated %}
+        {% include "partials/fixture_row.html" %}
+      {% endfor %}
+    </div>
+  </div>
+
+  <div id="fixture-detail">
+    {% include "partials/fixture_detail.html" %}
+  </div>
+</div>
+
+{% endblock %}

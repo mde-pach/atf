@@ -1,0 +1,21 @@
+milk:
+  resource: task
+  represents: An open task on the groceries list, due tomorrow morning.
+  depends_on:
+    - lists.groceries
+  body:
+    title: Buy milk
+    list_id: ${lists.groceries.id}
+    due_at: ${now+1d 09:00}
+    done: false
+
+laundry:
+  resource: task
+  represents: A task the completion spec closes, kept apart so no other spec asserts on it.
+  depends_on:
+    - lists.reading
+  body:
+    title: Fold laundry
+    list_id: ${lists.reading.id}
+    due_at: ${now+2d 18:00}
+    done: false

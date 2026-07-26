@@ -1,0 +1,13 @@
+primary:
+  resource: owner
+  represents: The owner every list and task in this suite hangs off.
+  body:
+    email: primary@todo.example
+    plan: standard
+
+secondary:
+  resource: owner
+  represents: A second owner, used to prove one owner's lists never leak into another's.
+  body:
+    email: secondary@todo.example
+    plan: trial

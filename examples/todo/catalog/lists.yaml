@@ -1,0 +1,19 @@
+groceries:
+  resource: todo_list
+  represents: The primary owner's shopping list.
+  depends_on:
+    - owners.primary
+  body:
+    slug: groceries
+    title: Groceries
+    owner_id: ${owners.primary.id}
+
+reading:
+  resource: todo_list
+  represents: A second list under the same owner, so lists can be told apart.
+  depends_on:
+    - owners.primary
+  body:
+    slug: reading
+    title: Reading
+    owner_id: ${owners.primary.id}

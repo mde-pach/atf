@@ -1,0 +1,7 @@
+# One type: a real consuming suite, scaffolded on disk for the duration of a scenario.
+# Ephemeral, so every scenario gets a pristine one and it is torn down afterwards.
+
+workspace:
+  system: workspace
+  lifecycle: ephemeral
+  natural_key: suite

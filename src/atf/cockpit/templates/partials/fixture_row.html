@@ -1,0 +1,7 @@
+<a href="/fixtures/{{ fixture.name }}?env={{ env }}"
+   hx-get="/fixtures/{{ fixture.name }}?env={{ env }}" hx-target="#fixture-detail" hx-swap="innerHTML"
+   hx-push-url="/fixtures/{{ fixture.name }}?env={{ env }}"
+   aria-current="{{ 'true' if fixture.name == focus else 'false' }}">
+  <span class="name">{{ fixture.name }}</span>
+  <span class="sub">{{ fixture.scope }} scope · {{ fixture.used_by | length }} test{{ "" if fixture.used_by | length == 1 else "s" }}</span>
+</a>

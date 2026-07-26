@@ -1,0 +1,46 @@
+<div class="card"
+     {% if running %}
+     hx-get="/tests/progress?env={{ env }}" hx-trigger="load delay:{{ poll_ms }}ms"
+     hx-target="#run-progress" hx-swap="innerHTML" data-quiet
+     {% endif %}>
+  <header>
+    <h2>Run</h2>
+    {% if job %}
+      {% if running %}
+        <span class="pill running">{{ job.completed }}/{{ job.total }}</span>
+      {% elif job.counts.failed or job.counts.error %}
+        <span class="pill bad">{{ job.counts.failed + job.counts.error }} failed</span>
+      {% else %}
+        <span class="pill ok">all passed</span>
+      {% endif %}
+      <span class="muted small">{{ "%.1fs" | format(job.elapsed) }}</span>
+    {% else %}
+      <span class="pill idle">idle</span>
+    {% endif %}
+
+    {% if not running %}
+      <div class="actions">
+        <span hx-get="/overview/meters?env={{ env }}" hx-trigger="load" hx-target="#meters"
+              hx-swap="innerHTML" data-quiet></span>
+      </div>
+    {% endif %}
+  </header>
+
+  <div class="scroll-x">
+    <table>
+      <thead><tr><th>Test</th><th>State</th><th class="num">Duration</th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td class="mono small">{{ row.name }}</td>
+            <td>
+              <span class="pill {{ tone(row.state) }}">{{ row.state }}</span>
+              {% if row.detail %}<span class="muted small">{{ row.detail.splitlines()[-1][:90] }}</span>{% endif %}
+            </td>
+            <td class="num">{{ "%.2fs" | format(row.duration) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

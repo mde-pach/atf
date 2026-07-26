@@ -1,0 +1,26 @@
+{% if not fixture %}
+  <div class="card"><p class="muted">Pick a fixture.</p></div>
+{% else %}
+<div class="card stack">
+  <header>
+    <h2>{{ fixture.name }}</h2>
+    <span class="chip fixture">{{ fixture.scope }} scope</span>
+    {% if fixture.generated %}<span class="pill accent">generated from the catalog</span>{% endif %}
+  </header>
+
+  <p class="small">{{ fixture.doc or "No docstring." }}</p>
+
+  <div>
+    <h3>Used by tests</h3>
+    {% if used_by %}
+      <ul class="stack small">
+        {% for test in used_by %}
+          <li><a class="chip test" href="/tests/detail/{{ test.id }}?env={{ env }}">{{ test.name }}</a></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted small">No test used this fixture during discovery.</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

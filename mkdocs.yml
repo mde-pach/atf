@@ -1,0 +1,92 @@
+site_name: ATF
+site_description: Another Test Framework — declarative resources, pluggable adapters, specs, and a cockpit.
+site_url: https://mde-pach.github.io/atf/
+repo_url: https://github.com/mde-pach/atf
+repo_name: mde-pach/atf
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+
+theme:
+  name: material
+  icon:
+    logo: material/test-tube
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+# The four Diátaxis sections, in the order a user meets them.
+nav:
+  - Home: index.md
+  - Tutorial:
+      - Write your first spec: tutorial/write-your-first-spec.md
+  - How-to guides:
+      - Add a resource: how-to/add-a-resource.md
+      - Add an adapter: how-to/add-an-adapter.md
+      - Diagnose a failing provision: how-to/diagnose-a-failing-provision.md
+      - Adopt ATF in an existing suite: how-to/adopt-atf-in-an-existing-suite.md
+      - Run ATF in CI: how-to/run-atf-in-ci.md
+  - Reference:
+      - Manifest reference: reference/manifest.md
+      - Catalog reference: reference/catalog.md
+      - Specs and fixtures reference: reference/specs-and-fixtures.md
+      - CLI reference: reference/cli.md
+      - Cockpit reference: reference/cockpit.md
+      - Adapter SPI reference: reference/adapter-spi.md
+  - Explanation:
+      - About the model: explanation/the-model.md
+      - About declarative catalogs: explanation/why-declarative-catalogs.md
+      - About lifecycles: explanation/lifecycles.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+plugins:
+  - search
+
+# `mkdocs build --strict` (used in CI) turns these warnings into build failures.
+validation:
+  links:
+    absolute_links: relative_to_docs
+    unrecognized_links: warn
+  nav:
+    omitted_files: warn
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/mde-pach/atf

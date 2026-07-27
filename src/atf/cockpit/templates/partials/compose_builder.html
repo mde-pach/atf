@@ -72,6 +72,56 @@
   </div>
 {% endmacro %}
 
+{# A Then, said the way it is meant: what it is about, what of it, how, and against what. The same
+   four boxes every time, so the row never changes shape — only which of them apply. What gets
+   written is the Gherkin it always was, and a scenario written by hand reads back into these. #}
+{% macro claim_row(row) %}
+  {% set on_field = row.aspect and row.subject != 'result' %}
+  {% set claimed = claim(row.compare) %}
+  <div class="field-row">
+    <div class="field">
+      <label>about</label>
+      {{ ui.combo('subject_' ~ row.index, subject_options(row), row.subject,
+                  placeholder='what is this about…', empty='Nothing here can be asserted on yet.') }}
+    </div>
+
+    {% if row.subject and row.subject != 'result' and not row.subject.startswith('step:') %}
+      <div class="field">
+        <label>assert</label>
+        {{ ui.combo('aspect_' ~ row.index, aspect_options(row), row.aspect,
+                    placeholder='the resource itself', empty='Nothing ATF can see is called that.') }}
+      </div>
+    {% endif %}
+
+    {% if row.subject and not row.subject.startswith('step:') %}
+      <div class="field">
+        <label>which must</label>
+        {{ ui.combo('compare_' ~ row.index,
+                    comparison_options(row.subject, on_field), row.compare,
+                    placeholder='how…', empty='Nothing can be claimed that way.') }}
+      </div>
+    {% endif %}
+
+    {% if claimed and claimed.target == 'value' %}
+      {% set now = current_value(row.values.get('resource_type', ''), row.values.get('name', ''), row.aspect) %}
+      <div class="field{{ ' bad' if validated and not row.target }}">
+        <label for="target-{{ row.index }}">the value</label>
+        <input id="target-{{ row.index }}" name="target_{{ row.index }}" value="{{ row.target }}"
+               autocomplete="off" placeholder="{{ now or 'what it must hold' }}">
+        {% if row.aspect and now %}
+          <span class="note"><code>{{ row.aspect }}</code> is <code>{{ now }}</code> in {{ env }} right now.</span>
+        {% endif %}
+      </div>
+    {% elif claimed and claimed.target == 'resource' %}
+      <div class="field">
+        <label>which resource</label>
+        {{ ui.combo('target_' ~ row.index, resource_options, 'node:' ~ row.target,
+                    placeholder='which one…', empty='No resource by that name.') }}
+      </div>
+    {% endif %}
+  </div>
+{% endmacro %}
+
 <input type="hidden" name="mode" value="{{ draft.mode }}">
 
 <div class="card stack">
@@ -184,12 +234,19 @@
                 {% endif %}
               </div>
 
+            {% elif row.keyword == 'then' %}
+              {{ claim_row(row) }}
+              {# A step this suite defines is a subject like any other, and it still has its own
+                 parameters to fill in. #}
+              {% if row.subject.startswith('step:') and row.definition and row.definition.params %}
+                {{ captures(row, generic(row.definition.pattern)) }}
+              {% endif %}
+
             {% else %}
               <div class="drop">
                 {{ ui.combo('pattern_' ~ row.index, step_options(row), row.pattern,
-                            placeholder=('what the scenario does…' if row.keyword == 'when' else 'what must be true…'),
-                            empty='No ' ~ row.keyword ~ ' step matches. Write one with @' ~ row.keyword
-                                  ~ ' in a steps module.') }}
+                            placeholder='what the scenario does…',
+                            empty='No when step matches. Write one with @when in a steps module.') }}
               </div>
 
               {% set held_back = unusable(row) %}

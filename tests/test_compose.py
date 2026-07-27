@@ -13,7 +13,7 @@ from markupsafe import escape
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import Cockpit, set_cockpit
 from atf.discovery import parse_feature
-from atf.steps import FIELD_IS, RESULT_CONTAINS
+from atf.steps import FIELD_IS, FIELD_IS_NOT
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
@@ -128,7 +128,8 @@ def test_a_step_is_offered_only_where_the_binding_module_can_see_it(client):
 
     fresh = client.post("/compose/preview", data=draft(feature="", feature_title="Billing")).text
     assert 'data-value="I read its plan"' not in fresh, "test_accounts.py cannot reach a new module"
-    assert f'data-value="{esc(FIELD_IS)}"' in fresh, "ATF's own are a plugin's, so visible everywhere"
+    # ATF's own assertions come from a plugin, so a brand-new feature can still make claims.
+    assert 'data-value="node:accounts.primary"' in fresh
     # And a step chosen before the feature changed stops resolving, rather than being kept and
     # failing only when it runs.
     assert "no when step this feature can reach" in fresh
@@ -170,18 +171,19 @@ def test_the_generic_provisioning_step_is_never_offered_as_a_when_or_then(client
     assert f'data-value="{esc(PROVISION_PATTERN)}"' not in client.get("/compose").text
 
 
-def test_a_parameterised_step_gets_an_input_per_capture(client):
+def test_a_parameterised_step_of_this_suites_own_still_gets_an_input_per_capture(client):
+    """Choosing one is choosing what the assertion is; it still has its own parameters to fill."""
     body = client.post("/compose/preview", data=draft()).text
     assert 'name="p_2_expected"' in body
     assert 'value="standard"' in body
 
 
-def test_the_page_says_which_steps_are_yours_to_write_by_grouping_them(client):
+def test_the_page_says_what_is_yours_to_write_by_grouping_it(client):
     """Said by the shape of the list rather than by a paragraph above it: explaining what someone
     is looking at is what you do when it is not clear enough on its own."""
     body = client.post("/compose/preview", data=draft()).text
-    then_picker = body[body.index('name="pattern_2"'):]
-    assert then_picker.index("Ready to use") < then_picker.index("This suite&#39;s own")
+    subject_picker = body[body.index('name="subject_2"'):]
+    assert subject_picker.index("A resource") < subject_picker.index("A step this suite defines")
     assert "How a scenario is put together" not in body
 
 
@@ -196,39 +198,44 @@ def test_a_suite_with_no_when_or_then_steps_is_told_how_to_write_one(client):
     assert "How steps are written" in body
 
 
-def test_the_steps_atf_provides_are_offered_apart_from_the_suites_own(client):
+def test_what_needs_no_code_is_offered_apart_from_what_does(client):
     """Which is the first thing an author needs: one group needs code, the other never does."""
     body = client.post("/compose/preview", data=draft()).text
-    assert "Ready to use" in body
+    # A When is still chosen by its wording, and this suite's are the only ones there are.
     assert "This suite&#39;s own" in body
-    assert esc(FIELD_IS) in body
+    # A Then is chosen by what it is about, so the split there is a resource against a step.
+    assert "A resource" in body and "A step this suite defines" in body
 
 
 # ---- assertions built from the catalog, with no step code -------------------
 
 
-def assertion(**overrides) -> dict[str, str]:
-    """A draft whose Then is one of ATF's own steps, filled in from the catalog."""
+def claim(**overrides) -> dict[str, str]:
+    """A draft whose Then is a claim: about this resource, of that field, compared this way."""
     return draft(
-        pattern_2=FIELD_IS,
+        pattern_2=None,
         p_2_expected=None,
-        p_2_resource_type=overrides.pop("resource_type", "account"),
-        p_2_name=overrides.pop("name", "primary"),
-        p_2_field=overrides.pop("field", "plan"),
-        p_2_value=overrides.pop("value", "standard"),
+        subject_2=overrides.pop("subject", "node:accounts.primary"),
+        aspect_2=overrides.pop("aspect", "plan"),
+        compare_2=overrides.pop("compare", "is"),
+        target_2=overrides.pop("target", "standard"),
         **overrides,
     )
 
 
-def test_a_generic_step_gets_a_picker_per_parameter_not_four_text_boxes(client):
-    body = client.post("/compose/preview", data=assertion()).text
-    assert 'name="p_2_resource_type"' in body
-    assert 'name="p_2_name"' in body
-    assert 'name="p_2_field"' in body
-    # The value is the one thing the catalog cannot choose, so it stays a box — with the answer
-    # beside it.
-    assert 'name="p_2_value"' in body
-    assert "which kind of resource" in body and "which field" in body
+# Kept under its old name so the tests that only care that *an assertion* was composed read the
+# same as before.
+assertion = claim
+
+
+def test_an_assertion_is_four_choices_not_a_pattern_to_fill_in(client):
+    """A pattern is how ATF matches a line, not how anyone thinks. What someone means is a claim:
+    about this, of that, compared this way, against that."""
+    body = client.post("/compose/preview", data=claim()).text
+    for name in ("subject_2", "aspect_2", "compare_2", "target_2"):
+        assert f'name="{name}"' in name or f'name="{name}"' in body, name
+    assert ">about<" in body and ">assert<" in body and ">which must<" in body
+    assert esc(FIELD_IS) not in body, "the pattern is what gets written, not what gets chosen"
 
 
 def test_the_field_picker_offers_what_the_environment_holds_and_what_it_is_worth_now(client):
@@ -249,9 +256,9 @@ def test_a_generic_assertion_composes_into_gherkin(client):
     assert 'Then the account "primary" field "plan" is "standard"' in preview_of(body)
 
 
-def test_a_generic_assertion_is_held_to_the_catalog_before_it_is_written(client):
-    body = client.post("/compose/preview", data=assertion(name="ghost")).text
-    assert "the catalog declares no account called &#39;ghost&#39;" in body
+def test_an_assertion_about_nothing_is_held_back_before_it_is_written(client):
+    body = client.post("/compose/preview", data=claim(subject="")).text
+    assert "pick what this is about" in body
 
 
 def test_an_assertion_shows_the_resource_it_names_with_its_status(client):
@@ -664,28 +671,29 @@ def test_a_step_is_offered_only_once_the_context_holds_what_it_reads(client):
     assert 'data-value="I list the projects of the account"' in holding_an_account
 
 
-def test_a_step_reading_the_result_waits_for_something_to_produce_one(client):
+def test_asserting_on_what_a_step_produced_waits_for_a_step_that_produces(client):
     before = client.post("/compose/preview", data=with_given("account", "primary")).text
-    assert esc(RESULT_CONTAINS) not in before
+    assert 'data-value="result"' not in before
 
     after = client.post(
         "/compose/preview",
         data=with_given("account", "primary", pattern_1="I list the projects of the account"),
     ).text
-    assert esc(RESULT_CONTAINS) in after
+    assert 'data-value="result"' in after
+    assert "what the step before produced" in after
 
 
 def test_a_catalog_resolved_assertion_never_waits_for_anything(client):
     """It reads the resource back through the adapter, so it needs nothing put on the context."""
     body = client.post("/compose/preview", data=with_given("visitor", "walkin")).text
-    assert esc(FIELD_IS) in body
+    assert 'data-value="node:accounts.primary"' in body
 
 
 def test_what_is_not_offered_is_counted_and_explained(client):
     """A hidden option is a mystery; a count and the reason is an instruction."""
     body = " ".join(client.post("/compose/preview", data=with_given("visitor", "walkin")).text.split())
     assert "not offered here: nothing above this row puts" in body
-    assert "<code>result</code>" in body
+    assert "<code>account</code>" in body
 
 
 def test_a_step_chosen_before_its_subject_was_removed_stops_resolving(client):
@@ -695,3 +703,75 @@ def test_a_step_chosen_before_its_subject_was_removed_stops_resolving(client):
         data=with_given("visitor", "walkin", pattern_1="I list the projects of the account"),
     ).text
     assert "nothing above this puts account on the context" in body
+
+
+# ---- a Then, said as a claim -------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("fields", "written"),
+    [
+        ({"compare": "exists", "aspect": "", "target": ""}, 'Then the account "primary" exists'),
+        ({"compare": "gone", "aspect": "", "target": ""}, 'Then the account "primary" is gone'),
+        ({"compare": "is"}, 'Then the account "primary" field "plan" is "standard"'),
+        ({"compare": "is-not"}, 'Then the account "primary" field "plan" is not "standard"'),
+        (
+            {"subject": "result", "aspect": "", "compare": "contains", "target": "node:accounts.primary"},
+            'Then the result contains the account "primary"',
+        ),
+        (
+            {"subject": "result", "aspect": "", "compare": "lacks", "target": "node:accounts.primary"},
+            'Then the result does not contain the account "primary"',
+        ),
+    ],
+)
+def test_every_claim_writes_the_gherkin_it_means(client, fields, written):
+    data = claim(**fields)
+    if fields.get("subject") == "result":
+        data["pattern_1"] = "I list the projects of the account"  # something has to produce one
+    assert written in preview_of(client.post("/compose/preview", data=data).text)
+
+
+def test_a_written_scenario_reads_back_into_the_same_four_choices(client):
+    """The Gherkin stays the source of truth; the four boxes are a view of it, not a second copy."""
+    body = client.post(
+        "/compose/preview",
+        data=draft(
+            pattern_2=FIELD_IS_NOT,
+            p_2_expected=None,
+            p_2_resource_type="account",
+            p_2_name="primary",
+            p_2_field="plan",
+            p_2_value="trial",
+        ),
+    ).text
+    assert 'name="subject_2" value="node:accounts.primary"' in body
+    assert 'name="aspect_2" value="plan"' in body
+    assert 'name="compare_2" value="is-not"' in body
+    assert 'name="target_2" value="trial"' in body
+
+
+def test_what_can_be_claimed_depends_on_whether_a_field_was_named(client):
+    about_itself = client.post("/compose/preview", data=claim(aspect="", compare="exists")).text
+    picker = about_itself[about_itself.index('name="compare_2"'):]
+    assert 'data-value="exists"' in picker and 'data-value="gone"' in picker
+    assert 'data-value="is"' not in picker
+
+    about_a_field = client.post("/compose/preview", data=claim()).text
+    picker = about_a_field[about_a_field.index('name="compare_2"'):]
+    assert 'data-value="is"' in picker and 'data-value="is-not"' in picker
+    assert 'data-value="exists"' not in picker
+
+
+def test_a_field_can_be_chosen_by_what_it_currently_holds(client):
+    body = " ".join(client.post("/compose/preview", data=claim()).text.split())
+    assert 'data-value="plan"' in body
+    assert "<code>plan</code> is <code>standard</code> in dev right now." in body
+
+
+def test_a_claim_composes_and_runs_without_a_line_of_step_code(client, project):
+    data = {**claim(), "confirm": confirm(client)}
+    del data["pattern_1"], data["kw_1"]  # no When at all: nothing is done, only read back
+    response = client.post("/compose/apply", data=data)
+    assert response.status_code == 200, response.text
+    assert 'Then the account "primary" field "plan" is "standard"' in feature_file(project).read_text()

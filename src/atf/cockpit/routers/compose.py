@@ -42,7 +42,18 @@ from ...discovery import (
 )
 from ...runner import ERROR, PASSED
 from ...runner import run as run_tests
-from ...steps import FIELD, NAME, TYPE, VALUE, generic
+from ...steps import (
+    FIELD,
+    NAME,
+    RESOURCE,
+    RESULT_OF,
+    TYPE,
+    VALUE,
+    claim_of,
+    comparison,
+    comparisons_for,
+    generic,
+)
 from ..view import cockpit as app
 from ..view import current_env, field_choices, page, partial, plural, require_confirmation, require_mutable
 
@@ -76,6 +87,13 @@ class Row:
     values: dict[str, str] = field(default_factory=dict)
     definition: StepDef | None = None
     node_id: str = ""
+    # A Then said the way someone thinks it: what it is about, what of it, how, and against what.
+    # Kept beside `pattern`/`values`, never instead of them — the two are derived from each other,
+    # so a scenario written by hand reads back into the same four choices.
+    subject: str = ""
+    aspect: str = ""
+    compare: str = ""
+    target: str = ""
     # What the context holds by the time this row runs, so the row can say whether its step fits.
     held: set[str] = field(default_factory=set)
     text: str = ""
@@ -242,7 +260,8 @@ def _rows(env: str, fields: dict[str, str]) -> list[Row]:
     indices = sorted(
         int(key[len(prefix) :]) for key in fields if key.startswith(prefix) and key[len(prefix) :].isdigit()
     )
-    rows = [_row(index, fields, found) for index in indices if str(index) != fields.get("remove", "")]
+    nodes = app().state(env).materializer.nodes
+    rows = [_row(index, fields, found, nodes) for index in indices if str(index) != fields.get("remove", "")]
     kept = [row for row in rows if row is not None]
 
     added = fields.get("add", "")
@@ -251,7 +270,9 @@ def _rows(env: str, fields: dict[str, str]) -> list[Row]:
     return kept
 
 
-def _row(index: int, fields: dict[str, str], found: dict[str, list[StepDef]]) -> Row | None:
+def _row(
+    index: int, fields: dict[str, str], found: dict[str, list[StepDef]], nodes: dict[str, Node]
+) -> Row | None:
     keyword = fields.get(f"kw_{index}", "")
     if keyword not in KEYWORDS:
         return None
@@ -261,11 +282,69 @@ def _row(index: int, fields: dict[str, str], found: dict[str, list[StepDef]]) ->
         row.resource_name = fields.get(f"rname_{index}", "").strip()
         return row
 
+    row.subject = fields.get(f"subject_{index}", "").strip()
+    row.aspect = fields.get(f"aspect_{index}", "").strip()
+    row.compare = fields.get(f"compare_{index}", "").strip()
+    # The resource picker posts `node:<id>`; a value posts itself. Stored bare either way.
+    row.target = fields.get(f"target_{index}", "").strip().removeprefix(NODE_SUBJECT)
     row.pattern = fields.get(f"pattern_{index}", "")
+
+    claimed = row.subject and not row.subject.startswith(STEP_SUBJECT)
+    if claimed:
+        _write_claim(row, nodes)
     row.definition = next((step for step in found[keyword] if step.pattern == row.pattern), None)
+
+    if claimed:
+        return row
     if row.definition is not None:
         row.values = {name: fields.get(f"p_{index}_{name}", "").strip() for name in row.definition.params}
+    # A pattern that arrived without the four choices — from text mode, or from a scenario written
+    # by hand — is read back into them, so the row renders as one thing rather than two.
+    if not row.subject:
+        _read_claim(row, nodes)
     return row
+
+
+# The three things a Then can be about. A project's own step is a subject too: choosing it is
+# choosing what the assertion is, which is the same question the other two answer.
+NODE_SUBJECT, RESULT_SUBJECT, STEP_SUBJECT = "node:", "result", "step:"
+
+
+def _write_claim(row: Row, nodes: dict[str, Node]) -> None:
+    """Four choices, turned into the pattern and values ATF will actually write."""
+    claimed = comparison(row.compare)
+    if claimed is None:
+        row.pattern = ""
+        return
+    row.pattern = claimed.pattern
+    row.values = {}
+
+    about = row.target if row.subject == RESULT_SUBJECT else row.subject.removeprefix(NODE_SUBJECT)
+    node = nodes.get(about)
+    if node is not None:
+        row.values = {TYPE: node["resource"], NAME: node["name"]}
+    if claimed.field:
+        row.values[FIELD] = row.aspect
+    if claimed.target == "value":
+        row.values[VALUE] = row.target
+
+
+def _read_claim(row: Row, nodes: dict[str, Node]) -> None:
+    """The reverse: a pattern and its values, read back as what they claim."""
+    claimed = claim_of(row.pattern)
+    if claimed is None:
+        row.subject = f"{STEP_SUBJECT}{row.pattern}" if row.pattern else ""
+        return
+
+    row.compare = claimed.key
+    row.aspect = row.values.get(FIELD, "")
+    named = find_node(nodes, row.values.get(TYPE, ""), row.values.get(NAME, ""))
+    if claimed.subject == RESULT_OF:
+        row.subject = RESULT_SUBJECT
+        row.target = named["id"] if named else ""
+    else:
+        row.subject = f"{NODE_SUBJECT}{named['id']}" if named else ""
+        row.target = row.values.get(VALUE, "")
 
 
 # ---- assembling the draft --------------------------------------------------
@@ -366,7 +445,10 @@ def held_before(rows: list[Row], index: int) -> set[str]:
 
 def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
     if not row.pattern:
-        row.problem = f"choose the {row.keyword} step this scenario uses"
+        # A Then is chosen by what it is about; a When by what it does. Say the one that applies.
+        row.problem = (
+            "pick what this is about" if row.keyword == THEN else "choose the when step this scenario uses"
+        )
         return
     if row.definition is None:
         row.problem = (
@@ -395,7 +477,11 @@ def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
         resource_type, name = row.values.get(TYPE, ""), row.values.get(NAME, "")
         node = find_node(nodes, resource_type, name)
         if node is None:
-            row.problem = f"the catalog declares no {resource_type} called {name!r}"
+            row.problem = (
+                f"the catalog declares no {resource_type} called {name!r}"
+                if resource_type
+                else "pick what this is about"
+            )
             return
         row.node_id = node["id"]
 
@@ -920,6 +1006,19 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         "step_options": lambda row: _step_options(
             [step for step in offered[row.keyword] if set(step.needs) <= row.held]
         ),
+        # A Then said as a claim: what it is about, what of it, how, and against what.
+        "subject_options": lambda row: _subject_options(
+            engine, status, [step for step in offered[row.keyword] if set(step.needs) <= row.held], row
+        ),
+        "aspect_options": lambda row: _aspect_options(
+            engine, status, row.subject.removeprefix(NODE_SUBJECT)
+        ),
+        "comparison_options": lambda subject, aspect: [
+            {"value": item.key, "label": item.label, "meta": "", "desc": ""}
+            for item in comparisons_for(RESULT_OF if subject == "result" else RESOURCE, bool(aspect))
+        ],
+        "resource_options": _resource_options(engine, status),
+        "claim": comparison,
         "unusable": lambda row: [
             step for step in offered[row.keyword] if not set(step.needs) <= row.held
         ],
@@ -952,6 +1051,66 @@ def _elsewhere(
         if step.pattern not in shown and step.file and not reachable(step, binding, specs_dir)
     }
     return sorted(files)
+
+
+def _subject_options(
+    engine: Any, status: dict[str, Any], steps: list[StepDef], row: Row
+) -> list[dict[str, str]]:
+    """What a Then can be about: a resource, what the step before produced, or a step of your own.
+
+    One question first — *what are you asserting about?* — because it is the one anybody actually
+    starts from, and because answering it is what decides the shape of everything after it.
+    """
+    options = _resource_options(engine, status, group="A resource")
+    if RESULT_OF in row.held:
+        options.append(
+            {
+                "value": "result",
+                "label": "what the step before produced",
+                "meta": "",
+                "desc": "the records a When put on the context",
+                "group": "A resource",
+            }
+        )
+    for step in steps:
+        if generic(step.pattern) is None:
+            options.append(
+                {
+                    "value": f"step:{step.pattern}",
+                    "label": step.pattern,
+                    "meta": Path(step.file).name if step.file else "",
+                    "desc": step.docstring,
+                    "group": "A step this suite defines",
+                }
+            )
+    return options
+
+
+def _resource_options(engine: Any, status: dict[str, Any], group: str = "") -> list[dict[str, str]]:
+    return [
+        {
+            "value": f"node:{node['id']}",
+            "label": node["name"],
+            "meta": node["resource"],
+            "desc": node["represents"] or str(status.get(node["id"], {}).get("status", "")),
+            "group": group,
+        }
+        for node in sorted(engine.nodes.values(), key=lambda item: (item["resource"], item["name"]))
+    ]
+
+
+def _aspect_options(engine: Any, status: dict[str, Any], node_id: str) -> list[dict[str, str]]:
+    """The thing itself, or one of its fields. Which of the two decides what can be claimed."""
+    options = [
+        {"value": "", "label": "the resource itself", "meta": "", "desc": "whether it is there at all"}
+    ]
+    node = engine.nodes.get(node_id)
+    if node is None:
+        return options
+    return options + [
+        {"value": choice.name, "label": choice.name, "meta": choice.current, "desc": choice.source}
+        for choice in field_choices(node, status.get(node_id))
+    ]
 
 
 def _feature_options(found: Discovery) -> list[dict[str, str]]:

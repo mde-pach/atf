@@ -125,6 +125,60 @@ def generic(pattern: str) -> GenericStep | None:
     return _BY_PATTERN.get(pattern)
 
 
+# ---- the same steps, said as a claim ----------------------------------------
+#
+# A pattern is how ATF matches a line; it is not how anyone thinks. What someone means is a claim
+# about something: *this* resource, *that* field of it, compared *this way*, against *that*. The
+# table below is the same six steps read that way round, and it is the whole vocabulary — kept
+# small on purpose, because every entry is a thing ATF must be able to decide, and a comparison
+# language that grows without a decision procedure behind it is a schema language nobody asked for.
+
+RESOURCE, RESULT_OF = "resource", "result"
+
+
+@dataclass(frozen=True)
+class Comparison:
+    """One claim an assertion can make, and the wording ATF writes for it."""
+
+    key: str
+    label: str
+    pattern: str
+    # What the claim is about: a resource in the catalog, or what the step before produced.
+    subject: str
+    # Whether it names a field of that subject, and what it is compared against.
+    field: bool = False
+    target: str = ""  # "" | "value" | "resource"
+
+
+COMPARISONS: tuple[Comparison, ...] = (
+    Comparison("exists", "exists", EXISTS, RESOURCE),
+    Comparison("gone", "is gone", GONE, RESOURCE),
+    Comparison("is", "is", FIELD_IS, RESOURCE, field=True, target="value"),
+    Comparison("is-not", "is not", FIELD_IS_NOT, RESOURCE, field=True, target="value"),
+    Comparison("contains", "contains", RESULT_CONTAINS, RESULT_OF, target="resource"),
+    Comparison("lacks", "does not contain", RESULT_LACKS, RESULT_OF, target="resource"),
+)
+
+_BY_KEY = {item.key: item for item in COMPARISONS}
+_BY_CLAIM = {item.pattern: item for item in COMPARISONS}
+
+
+def comparison(key: str) -> Comparison | None:
+    return _BY_KEY.get(key)
+
+
+def claim_of(pattern: str) -> Comparison | None:
+    """The claim a generic pattern makes, so a written scenario reads back into the same choices."""
+    return _BY_CLAIM.get(pattern)
+
+
+def comparisons_for(subject: str, on_field: bool) -> list[Comparison]:
+    """What can be claimed about this subject — about the thing itself, or about a field of it."""
+    return [
+        item for item in COMPARISONS if item.subject == subject and item.field == on_field
+    ]
+
+
 # ---- the steps -------------------------------------------------------------
 
 

@@ -1,0 +1,161 @@
+{% import "partials/macros.html" as ui with context %}
+{# One scenario, in the order someone diagnosing reads it: verdict, the step that broke, what it
+   needs, what it covers, where it lives. #}
+{% if not view %}
+  <div class="card">{{ ui.empty("Pick a scenario to see whether it can run here and how it went last time.") }}</div>
+{% else %}
+
+{% set why_not_run = "no test covers this scenario yet"
+     if not view.tests else ("" if mutable else env ~ " is read-only — it is not in mutable_envs") %}
+
+<div class="stack">
+  <div class="card stack">
+    <header>
+      <h2>{{ view.spec.scenario }}</h2>
+      <span class="muted small">in {{ view.spec.feature }}</span>
+      {# A Gherkin tag is a real label on the scenario, so it is one of the few things that earns a badge. #}
+      {% for tag in view.spec.tags %}<span class="tag">@{{ tag }}</span>{% endfor %}
+      {# The one headline state of this page, so the one place a filled lozenge is earned. #}
+      <span class="pill loud {{ tone(view.state) }}">{{ view.state }}</span>
+      {% if view.flaky %}<span class="pill warn">flaky</span>{% endif %}
+
+      <div class="actions">
+        {# Another behaviour of the same feature belongs in the same file, so the composer is
+           offered pointed at it rather than at a blank feature. #}
+        <a class="btn" href="{{ u('/compose', feature=view.spec.feature) }}">
+          <span class="glyph">＋</span>Add a scenario to {{ view.spec.feature }}
+        </a>
+        <form hx-post="{{ u('/run') }}" hx-target="#activity" hx-swap="innerHTML" hx-disabled-elt="find button"
+              {% if not why_not_run %}hx-confirm="Run this scenario against {{ env }}?"{% endif %}>
+          <input type="hidden" name="confirm" value="{{ confirm_token }}">
+          {% for nodeid in view.nodeids %}<input type="hidden" name="nodeid" value="{{ nodeid }}">{% endfor %}
+          <button class="primary" type="submit"
+                  {% if why_not_run %}disabled aria-describedby="why-run-scenario"{% endif %}>
+            Run {{ "this scenario" if view.tests | length < 2 else view.tests | length ~ " tests" }}
+          </button>
+          {% if why_not_run %}<span class="why" id="why-run-scenario">{{ why_not_run }}</span>{% endif %}
+        </form>
+      </div>
+    </header>
+
+    <p class="small muted">
+      {%- if view.last_run_at -%}
+        {{ view.outcome }} {{ ago(view.last_run_at) }} · {{ dur(view.duration) }}
+      {%- else -%}
+        never run here
+      {%- endif -%}
+      {% if view.spec.skipped %} · this scenario is tagged to be skipped{% endif %}
+      {% if view.flaky %} · flaky: it has both passed and failed recently, so this verdict cannot be
+        trusted either way{% endif %}
+    </p>
+
+    {% if view.spec.narrative %}<p class="small muted">{{ view.spec.narrative }}</p>{% endif %}
+
+    {# The failure is shown where it happened. Reading a traceback beside the Gherkin is the whole
+       reason the two pages became one. #}
+    <div class="gherkin">
+      {% for step in view.spec.steps %}
+        {% set ran = view.step_state(step) %}
+        <div class="step{{ ' failed' if loop.index0 == failed_index else (' passed' if ran == 'passed' else '') }}">
+          <span class="kw">{{ step.keyword }}</span>
+          <span class="text">
+            {{ step.text }}
+            {%- for node_id in step.resources %}
+              {{ ui.ref('resource', u('/catalog/node/' ~ node_id), node_id,
+                        status=status.get(node_id, {}).get("status"),
+                        title=node_id ~ " — " ~ (status.get(node_id, {}).get("status") or "unknown") ~ " in " ~ env) }}
+            {%- endfor %}
+          </span>
+        </div>
+        {% if loop.index0 == failed_index %}
+          <pre class="whence">{{ view.failed_step.error or view.detail }}</pre>
+        {% endif %}
+      {% endfor %}
+      {% if failed_index is none and view.detail %}
+        <pre class="whence">{{ view.detail }}</pre>
+      {% endif %}
+    </div>
+
+    {# Absent is not a problem — naming a resource is what makes ATF create it. Only these are. #}
+    {% if view.ready.blocked %}
+      <div class="banner warn stack">
+        <span>
+          This scenario is {{ ui.term("blocked", "blocked") }}: running it will not fix the following, because
+          ATF cannot reach or create them in {{ env }}.
+        </span>
+        <dl class="kv small">
+          {% for node_id, reason in view.ready.blockers %}
+            <dt>{{ ui.ref('resource', u('/catalog/node/' ~ node_id), node_id,
+                          status=status.get(node_id, {}).get("status")) }}</dt>
+            <dd>{{ reason }}</dd>
+          {% endfor %}
+        </dl>
+      </div>
+    {% elif view.ready.will_create %}
+      <p class="small muted">
+        Running this will create
+        {{ view.ready.will_create | length }} resource{{ "" if view.ready.will_create | length == 1 else "s" }}
+        {{ env }} does not have yet, dependencies first:
+        {% for node_id in view.ready.will_create %}
+          {{ ui.ref('resource', u('/catalog/node/' ~ node_id), node_id,
+                    status=status.get(node_id, {}).get("status")) }}
+        {% endfor %}
+      </p>
+    {% endif %}
+  </div>
+
+  {% if view.spec.examples or view.tests | length > 1 or view.state == "failing" or not view.tests %}
+    <div class="card stack">
+      <header>
+        <h2>What pytest collects</h2>
+        <span class="muted small">
+          One {{ ui.term("test", "test") }} per scenario, or one per row of its Examples table.
+        </span>
+      </header>
+
+      {% if view.spec.examples %}
+        <div class="scroll-x">
+          <h3>Examples</h3>
+          <table>
+            <thead><tr>{% for column in view.spec.examples[0].keys() %}<th>{{ column }}</th>{% endfor %}</tr></thead>
+            <tbody>
+              {% for row in view.spec.examples %}
+                <tr>{% for value in row.values() %}<td class="mono">{{ value }}</td>{% endfor %}</tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+
+      {% if not view.tests %}
+        {{ ui.empty(
+          "No test covers this scenario, so nothing here ever runs it. Bind it with scenarios(…) in a "
+          "steps/test_*.py module and pytest will collect one test per scenario.",
+          "How scenarios become tests",
+          docs('reference/specs-and-fixtures/')) }}
+      {% elif view.tests | length > 1 or view.state == "failing" %}
+        <div class="scroll-x">
+          <h3>Covering tests</h3>
+          <table>
+            <thead><tr><th>Test</th><th>Outcome</th><th class="num">Duration</th></tr></thead>
+            <tbody>
+              {% for test in view.tests %}
+                {% set result = results.get(test.nodeid) %}
+                {% set outcome = result.outcome if result else "not run" %}
+                <tr>
+                  <td class="mono">{{ test.params or test.nodeid.rsplit("::", 1)[-1] }}</td>
+                  {# One dot and one word per row: a column of lozenges is a column nobody reads. #}
+                  <td><span class="row"><span class="flag {{ tone(outcome) }}"></span>{{ outcome }}</span></td>
+                  <td class="num">{% if result %}{{ dur(result.duration) }}{% else %}—{% endif %}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <p class="small muted mono">{{ view.spec.file }}:{{ view.spec.line }}</p>
+</div>
+{% endif %}

@@ -1,0 +1,41 @@
+{% import "partials/macros.html" as ui %}
+
+{# A change to an instance file, before it is written. Every authoring route computes this the same
+   way and writes nothing to produce it, so what is read here is exactly what would land on disk. #}
+
+<div class="stack">
+  <h3>Proposed change</h3>
+
+  {% if problems %}
+    <div class="banner bad">
+      {% if proposal %}
+        This would stop the catalog loading, so it will not be written:
+      {% else %}
+        Nothing can be proposed yet:
+      {% endif %}
+    </div>
+    <ul class="small">
+      {% for problem in problems %}<li>{{ problem }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if proposal and proposal.blocked %}
+    <div class="banner warn small">{{ proposal.blocked }}</div>
+  {% endif %}
+
+  {% if proposal and proposal.lines %}
+    <div class="diff">
+      <div class="file">{{ proposal.label }}</div>
+      {% for kind, line in proposal.lines %}<div class="{{ kind }}">{{ line }}</div>{% endfor %}
+    </div>
+    <p class="small muted">
+      This is the catalog entry as you would have written it by hand — the same file, the same
+      format, with every existing line and comment left where it is.
+      {% if docs() %}<a href="{{ docs('reference/catalog/') }}">Catalog reference</a>{% endif %}
+    </p>
+  {% elif proposal %}
+    {{ ui.empty("Nothing would change: the file already says exactly this.") }}
+  {% elif not problems %}
+    {{ ui.empty("Fill the form in and the exact change it would write appears here.") }}
+  {% endif %}
+</div>

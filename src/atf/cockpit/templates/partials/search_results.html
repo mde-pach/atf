@@ -1,12 +1,12 @@
 {% if not query %}
-  <p class="empty">Type to search resources, specs, tests and fixtures.</p>
+  <p class="empty">Search a resource, a resource type or a scenario.</p>
 {% elif not hits %}
   <p class="empty">Nothing matches “{{ query }}”.</p>
 {% else %}
   {% for hit in hits %}
-    <a href="{{ hit.url }}">
+    <a href="{{ hit.url }}" {% if loop.first %}class="on"{% endif %}>
       <span class="chip {{ hit.kind }}">{{ hit.kind }}</span>
-      <span>{{ hit.label }}</span>
+      <span class="label">{{ hit.label }}</span>
       <span class="sub">{{ hit.sub }}</span>
     </a>
   {% endfor %}

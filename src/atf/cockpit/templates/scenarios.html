@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% import "partials/macros.html" as ui with context %}
+{% block content %}
+
+{% call ui.head("Scenarios", "Every behaviour your suite describes, whether it can run in " ~ env ~ ", and how it went last time.") %}
+  {# Writing a scenario is what this page is for, so the way in is a control in the header and not a
+     coloured word someone has to recognise as clickable. #}
+  <div class="actions">
+    <a class="btn primary" href="{{ u('/compose') }}"><span class="glyph">＋</span>Compose a scenario</a>
+  </div>
+{% endcall %}
+
+{% if not views %}
+  <div class="card">
+    {{ ui.empty(
+      "No scenarios here yet. ATF reads Gherkin from the .feature files under " ~ manifest.specs_dir ~
+      " — one Feature per file, one Scenario per behaviour, and the resources a scenario names get created for it.",
+      "Compose your first scenario",
+      u('/compose')) }}
+  </div>
+{% else %}
+
+<div class="split">
+  {% include "partials/scenario_list.html" %}
+
+  <div id="scenario-detail">
+    {% include "partials/scenario_detail.html" %}
+  </div>
+</div>
+
+{# Filtering is a question about what is already on screen, so it never leaves the page — and the
+   list is never swapped, so the choice survives every swap of the detail pane beside it. #}
+<script>
+  (() => {
+    const bar = document.getElementById("scenario-filters");
+    const search = bar.querySelector("input[type=search]");
+    const buttons = [...bar.querySelectorAll(".filter")];
+    const rows = [...document.querySelectorAll("#scenario-list a[data-state]")];
+    const shown = (el) => el.style.display !== "none";
+    let state = (bar.querySelector('.filter[aria-pressed="true"]') || {}).dataset?.filter || "all";
+    const apply = () => {
+      const q = search.value.trim().toLowerCase();
+      for (const row of rows) {
+        const hit = (state === "all" || row.dataset.state === state) && row.dataset.find.includes(q);
+        row.style.display = hit ? "" : "none";
+      }
+      for (const label of document.querySelectorAll("#scenario-list .list-group-label")) {
+        let any = false;
+        for (let n = label.nextElementSibling; n && n.matches("a"); n = n.nextElementSibling) any ||= shown(n);
+        label.style.display = any ? "" : "none";
+      }
+      document.getElementById("scenario-none").style.display = rows.some(shown) ? "none" : "";
+    };
+    for (const button of buttons) button.addEventListener("click", () => {
+      state = button.dataset.filter;
+      buttons.forEach((other) => other.setAttribute("aria-pressed", String(other === button)));
+      apply();
+    });
+    search.addEventListener("input", apply);
+    if (state !== "all") apply();
+  })();
+</script>
+
+{% endif %}
+{% endblock %}

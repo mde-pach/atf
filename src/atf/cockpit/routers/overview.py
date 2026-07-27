@@ -1,68 +1,114 @@
-"""Overview — the landing vertical: can I ship with confidence?"""
+"""Overview — the landing vertical, and the one question it answers: can I ship?
+
+Every number here is one a person could act on. A metric that cannot go wrong is not a metric, so
+nothing on this page counts things that are true by construction.
+"""
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Request
 
-from ..view import cockpit as app
+from ...discovery import Discovery
+from ...materializer import PRESENT
 from ..view import (
-    config_meter,
-    coverage_gaps,
-    coverage_meter,
+    BLOCKED,
+    FAILING,
+    NEVER_RUN,
+    PASSING,
+    SKIPPED_STATE,
+    ScenarioView,
     current_env,
-    health_meter,
-    outcome_of,
     page,
+    partial,
+    plural,
+    readiness,
+    scenario_views,
+    type_views,
+    verdict,
 )
+from ..view import cockpit as app
 
 router = APIRouter()
 
+PURPOSE = "What the last run said, what is standing in the way, and what to do next."
+
+# The order a reader wants them in: the two verdicts first, then the three kinds of "did not say".
+STATES = (PASSING, FAILING, BLOCKED, NEVER_RUN, SKIPPED_STATE)
+
+RUNS = 5
+
 
 @router.get("/")
-def overview(request: Request):
-    env = current_env(request)
+def overview(request: Request) -> Any:
+    return page(request, "overview.html", **_context(current_env(request)))
+
+
+@router.get("/overview/summary")
+def summary(request: Request) -> Any:
+    """The whole answer as a fragment.
+
+    The activity dock pulls `#verdict` out of this after a run or a provision finishes, so the
+    headline re-syncs without a reload — which is why the verdict lives in an element of its own.
+    """
+    return partial(request, "partials/summary.html", **_context(current_env(request)))
+
+
+def _context(env: str) -> dict[str, Any]:
     cockpit = app()
-    state = cockpit.state(env)
+    nodes = cockpit.state(env).materializer.nodes
     status = cockpit.status(env)
     found = cockpit.discovery(env)
-    results = cockpit.results(env)
+    scenarios = scenario_views(env)
 
-    absent = [nid for nid, entry in status.items() if entry["status"] == "absent"]
-    failing = [test for test in found.tests if outcome_of(test.nodeid, results) in {"failed", "error"}]
+    buckets = {state: [view for view in scenarios if view.state == state] for state in STATES}
+    ready = readiness(sorted(nodes), nodes, status)
+    targets = cockpit.provision_targets(env)
+    first_run = cockpit.last_run(env) is None
 
-    return page(
-        request,
-        "overview.html",
-        env=env,
-        title="Overview",
-        meters=[
-            config_meter(status),
-            coverage_meter(found, state.materializer.nodes),
-            health_meter(found, results),
-        ],
-        absent=absent,
-        failing=failing,
-        gaps=coverage_gaps(found, state.materializer.nodes),
-        jobs=cockpit.recent_jobs(env),
-        active=cockpit.active_job(env),
-        discovery_errors=found.errors,
-    )
+    return {
+        "env": env,
+        "title": "Overview",
+        "purpose": PURPOSE,
+        "verdict": verdict(env, scenarios),
+        "states": [{"state": state, "count": len(views)} for state, views in buckets.items()],
+        "total": len(scenarios),
+        "failing": buckets[FAILING],
+        "first_run": first_run,
+        "steps": _steps(first_run, targets, scenarios),
+        "run_label": f"Run all {plural(len(scenarios), 'scenario')}",
+        "run_blocked": "" if scenarios else "this suite has no scenarios yet",
+        "present": sum(1 for entry in status.values() if entry.get("status") == PRESENT),
+        "resources": len(nodes),
+        "absent": ready.will_create,
+        "broken": ready.blockers,
+        "runs": cockpit.recent_runs(env, RUNS),
+        "flaky": _flaky(env, found),
+        "unexercised": [name for name, view in type_views(env).items() if not view.specs],
+        "never_run": buckets[NEVER_RUN],
+        "skipped": buckets[SKIPPED_STATE],
+        "errors": found.errors,
+        # Discovery failing outright is not a footnote: every count below it is a claim about an
+        # empty model, and saying so is the only honest thing this page can do.
+        "collection_failed": bool(found.errors) and not found.specs,
+    }
 
 
-@router.get("/overview/meters")
-def meters(request: Request):
-    """Out-of-band refresh target after a run or a seed."""
-    env = current_env(request)
-    cockpit = app()
-    state = cockpit.state(env)
-    found = cockpit.discovery(env)
-    return page(
-        request,
-        "partials/meters.html",
-        env=env,
-        meters=[
-            config_meter(cockpit.status(env)),
-            coverage_meter(found, state.materializer.nodes),
-            health_meter(found, cockpit.results(env)),
-        ],
-    )
+def _steps(first_run: bool, targets: list[str], scenarios: list[ScenarioView]) -> list[dict[str, str]]:
+    """The numbered path out of an empty environment. Three zeros teach nobody anything."""
+    if not first_run:
+        return []
+    steps: list[dict[str, str]] = []
+    if targets:
+        steps.append({"kind": "provision", "label": f"Provision {plural(len(targets), 'resource')}"})
+    if scenarios:
+        steps.append({"kind": "run", "label": f"Run {plural(len(scenarios), 'scenario')}"})
+    return steps
+
+
+def _flaky(env: str, found: Discovery) -> list[tuple[str, int]]:
+    """Flaky tests under the scenario title they belong to — nobody recognises a pytest nodeid."""
+    titles = {spec.id: spec.scenario for spec in found.specs}
+    labels = {test.nodeid: titles.get(test.covers) or test.name for test in found.tests}
+    return [(labels.get(nodeid, nodeid), flips) for nodeid, flips in app().flaky(env).items()]

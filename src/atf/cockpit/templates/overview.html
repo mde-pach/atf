@@ -1,108 +1,15 @@
 {% extends "base.html" %}
+{% import "partials/macros.html" as ui %}
 {% block content %}
 
-<div class="page-head">
-  <div class="breadcrumb"><span>Confidence</span> <span>/</span> <span>Overview</span></div>
-  <div class="row">
-    <h1>Can I ship?</h1>
-    {% if failing %}
-      <span class="pill bad">{{ failing | length }} failing</span>
-    {% elif meters[2].value == meters[2].total and meters[2].total %}
-      <span class="pill ok">all tests passing</span>
-    {% else %}
-      <span class="pill idle">not fully run</span>
-    {% endif %}
-    <div class="actions">
-      <form hx-post="/tests/run?env={{ env }}" hx-target="#overview-run" hx-swap="innerHTML"
-            hx-disabled-elt="find button"
-            {% if mutable %}hx-confirm="Run every test against {{ env }}?"{% endif %}>
-        <input type="hidden" name="confirm" value="{{ confirm_token }}">
-        <button class="primary" type="submit" {% if not mutable %}disabled title="{{ env }} is read-only"{% endif %}>
-          Run all
-        </button>
-      </form>
-    </div>
+{% call ui.head("Can I ship?", purpose) %}
+  <div class="actions">
+    {{ ui.action(run_label, u('/run'), '#activity', confirm_token, mutable, env,
+                 hint="Run every scenario against " ~ env ~ "? Missing resources are provisioned as it goes.",
+                 disabled_reason=run_blocked) }}
   </div>
-</div>
+{% endcall %}
 
-{% if discovery_errors %}
-  <div class="banner warn">
-    Discovery ran into trouble — specs are still listed, tests and fixtures may be incomplete.
-    <pre class="small scroll-x">{{ discovery_errors | join("\n") }}</pre>
-  </div>
-{% endif %}
-
-<div id="meters">{% include "partials/meters.html" %}</div>
-
-<div id="overview-run">
-  {% if active %}{% include "partials/run_progress.html" %}{% endif %}
-</div>
-
-<div class="split">
-  <div class="card">
-    <header><h2>Coverage gaps</h2></header>
-    <div class="stack small">
-      <div>
-        <h3>Specs without tests</h3>
-        {% if gaps.specs_without_tests %}
-          <ul class="stack">{% for id in gaps.specs_without_tests %}
-            <li><a href="/specs/{{ id }}?env={{ env }}">{{ id }}</a></li>
-          {% endfor %}</ul>
-        {% else %}<p class="muted">Every spec is covered by at least one test.</p>{% endif %}
-      </div>
-      <div>
-        <h3>Resources no spec exercises</h3>
-        {% if gaps.resources_without_specs %}
-          <ul class="stack">{% for id in gaps.resources_without_specs %}
-            <li><a href="/catalog/node/{{ id }}?env={{ env }}"><code>{{ id }}</code></a></li>
-          {% endfor %}</ul>
-        {% else %}<p class="muted">Every resource is exercised.</p>{% endif %}
-      </div>
-      {% if gaps.skipped_specs %}
-      <div>
-        <h3>Skipped specs</h3>
-        <ul class="stack">{% for id in gaps.skipped_specs %}
-          <li><a href="/specs/{{ id }}?env={{ env }}">{{ id }}</a></li>
-        {% endfor %}</ul>
-      </div>
-      {% endif %}
-    </div>
-  </div>
-
-  <div class="card">
-    <header><h2>Recent runs</h2></header>
-    {% if jobs %}
-      <table>
-        <thead><tr><th>Run</th><th>Result</th><th>Tests</th><th class="num">Elapsed</th></tr></thead>
-        <tbody>
-        {% for job in jobs %}
-          <tr>
-            <td class="mono">{{ job.id }}</td>
-            <td>
-              {% if job.counts.failed or job.counts.error %}
-                <span class="pill bad">{{ job.counts.failed + job.counts.error }} failed</span>
-              {% else %}<span class="pill ok">passed</span>{% endif %}
-            </td>
-            <td class="muted small">{{ job.completed }}/{{ job.total }}{% if job.counts.skipped %}, {{ job.counts.skipped }} skipped{% endif %}</td>
-            <td class="num">{{ "%.1fs" | format(job.elapsed) }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    {% else %}
-      <p class="muted small">No runs yet in this session. Use <strong>Run all</strong> above, or run a selection from <a href="/tests?env={{ env }}">Tests</a>.</p>
-    {% endif %}
-
-    {% if absent %}
-      <div class="stack" style="margin-top: 14px">
-        <h3>Absent resources</h3>
-        <div class="row">
-          {% for id in absent[:8] %}<a class="chip resource" href="/catalog/node/{{ id }}?env={{ env }}">{{ id }}</a>{% endfor %}
-          {% if absent | length > 8 %}<span class="muted small">+{{ absent | length - 8 }} more</span>{% endif %}
-        </div>
-      </div>
-    {% endif %}
-  </div>
-</div>
+{% include "partials/summary.html" %}
 
 {% endblock %}

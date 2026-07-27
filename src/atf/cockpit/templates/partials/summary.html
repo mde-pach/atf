@@ -1,0 +1,230 @@
+{% import "partials/macros.html" as ui %}
+
+{# The whole answer to "can I ship?". Served on its own at /overview/summary so the activity dock
+   can pull #verdict out of it when a run or a provision finishes. #}
+
+{% if collection_failed %}
+  <div class="banner bad">
+    <strong>Discovery failed, so this page has nothing real to report.</strong>
+    pytest could not collect this suite: every count below is describing an empty model, not a
+    healthy one. Fix the collection error and reload.
+    <pre class="small scroll-x">{{ errors | join("\n") }}</pre>
+  </div>
+{% elif errors %}
+  <div class="banner warn">
+    Discovery reported problems. Scenarios are listed, but some may be missing or incomplete.
+    <pre class="small scroll-x">{{ errors | join("\n") }}</pre>
+  </div>
+{% endif %}
+
+<div id="verdict">
+  <div class="verdict {{ verdict.tone }}">
+    <span class="headline">{{ verdict.headline }}</span>
+    <span class="detail">{{ verdict.detail }}</span>
+    <span class="when">{{ ago(verdict.at) }}</span>
+  </div>
+</div>
+
+{% if steps %}
+  <div class="card stack">
+    <header>
+      <h2>Start here</h2>
+      <span class="muted small">nothing has ever run against {{ env }}</span>
+    </header>
+    <div class="row">
+      {% for step in steps %}
+        <span class="small muted">{{ loop.index }}.</span>
+        {% if step.kind == "provision" %}
+          {{ ui.action(step.label, u('/provision'), '#activity', confirm_token, mutable, env,
+                       hint="Create every absent resource in " ~ env ~ "?", primary=False) }}
+        {% else %}
+          {{ ui.action(step.label, u('/run'), '#activity', confirm_token, mutable, env,
+                       hint="Run every scenario against " ~ env ~ "?") }}
+        {% endif %}
+        {% if not loop.last %}<span class="muted">·</span>{% endif %}
+      {% endfor %}
+    </div>
+    <p class="small muted">
+      Step one is optional — a run provisions whatever it needs as it goes. Doing it first just
+      separates "the environment is wrong" from "the software is wrong".
+    </p>
+  </div>
+{% endif %}
+
+<div class="grid-2">
+  <div class="card stack">
+    <header>
+      <h2>Scenarios</h2>
+      <span class="muted small">{{ total }} in this suite</span>
+    </header>
+
+    {% if total %}
+      {# A count is a fact and the link is a destination, so the dot states the fact and the words
+         are an ordinary link. A row of lozenges here read as buttons that did nothing. #}
+      <div class="row">
+        {% for group in states %}
+          {% if group.count %}
+            <span class="row">
+              <span class="flag {{ tone(group.state) }}"></span>
+              <a class="quiet" href="{{ u('/scenarios', state=group.state) }}">{{ group.count }} {{ group.state }}</a>
+            </span>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% else %}
+      {{ ui.empty("No scenario is declared yet. A .feature file under the specs directory is where one starts.",
+                  "How to add a scenario", docs('how-to/add-a-scenario/')) }}
+    {% endif %}
+
+    {% if failing %}
+      <div class="stack">
+        <h3>Failing</h3>
+        <ul class="stack small">
+          {% for view in failing %}
+            <li>
+              {{ ui.ref('scenario', u('/scenarios/' ~ view.spec.id), view.spec.scenario) }}
+              {% if view.failed_step %}
+                <span class="muted">stopped at <em>{{ view.failed_step.keyword }} {{ view.failed_step.text }}</em></span>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card stack">
+    <header>
+      <h2>{{ ui.term('environment') }}</h2>
+      <span class="muted small">{{ env }}</span>
+    </header>
+
+    <p class="small">{{ present }} of {{ resources }} resources present here.</p>
+
+    {% if broken %}
+      <div class="stack">
+        <h3>Broken</h3>
+        <p class="small">Running cannot fix these — they are a problem with the environment or the manifest.</p>
+        <ul class="stack small">
+          {% for node_id, why in broken %}
+            <li>{{ ui.ref('resource', u('/catalog/node/' ~ node_id), node_id) }}
+              <span class="muted">— {{ why }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    {% if absent %}
+      <div class="stack">
+        <h3>Absent</h3>
+        <p class="small muted">
+          {{ absent | length }} declared but not here yet. This is normal: the suite creates them as it runs.
+        </p>
+        <div class="row">
+          {% for node_id in absent[:10] %}
+            {{ ui.ref('resource', u('/catalog/node/' ~ node_id), node_id, status="absent",
+                      title=node_id ~ " — absent in " ~ env) }}
+          {% endfor %}
+          {% if absent | length > 10 %}
+            <a class="quiet small" href="{{ u('/catalog') }}">+{{ absent | length - 10 }} more in the catalog</a>
+          {% endif %}
+        </div>
+      </div>
+    {% elif not broken %}
+      <p class="small muted">Nothing is missing and nothing is broken.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card stack">
+    <header>
+      <h2>Recent runs</h2>
+      <span class="muted small">one row per <code>pytest</code> invocation against {{ env }}</span>
+    </header>
+
+    {% if runs %}
+      <div class="scroll-x">
+        <table>
+          <thead>
+            <tr><th>When</th><th>Result</th><th class="num">Tests</th><th class="num">Took</th></tr>
+          </thead>
+          <tbody>
+            {% for record in runs %}
+              <tr>
+                <td>{{ ago(record.finished_at) }}</td>
+                {# Twenty rows of lozenges is twenty things shouting. A dot and the words do the job. #}
+                <td>
+                  {% if record.counts.failed or record.counts.error %}
+                    <span class="row"><span class="flag bad"></span>{{ record.counts.failed + record.counts.error }} failed</span>
+                  {% elif record.counts.passed %}
+                    <span class="row"><span class="flag ok"></span>all passed</span>
+                  {% else %}
+                    <span class="row"><span class="flag"></span>nothing ran</span>
+                  {% endif %}
+                </td>
+                <td class="num">{{ record.results | length }}</td>
+                <td class="num">{{ dur(record.duration) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      {{ ui.empty("No run has ever finished against " ~ env ~ ". Runs are kept on disk, so the next one survives a restart.") }}
+    {% endif %}
+
+    {% if flaky %}
+      <div class="stack">
+        <h3>{{ ui.term('flaky') }}</h3>
+        <p class="small">These both passed and failed recently. Their verdict cannot be trusted either way.</p>
+        <ul class="stack small">
+          {% for label, flips in flaky %}
+            <li><span class="flag warn"></span> {{ label }} <span class="muted">— changed its mind {{ flips }}×</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card stack">
+    <header><h2>Gaps worth acting on</h2></header>
+
+    {% if unexercised %}
+      <div class="stack">
+        <h3>Types no scenario exercises</h3>
+        <div class="row">
+          {% for name in unexercised %}
+            {{ ui.ref('type', u('/catalog/type/' ~ name), name) }}
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if never_run %}
+      <div class="stack">
+        <h3>Never run</h3>
+        <div class="row">
+          {% for view in never_run %}
+            {{ ui.ref('scenario', u('/scenarios/' ~ view.spec.id), view.spec.scenario) }}
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if skipped %}
+      <div class="stack">
+        <h3>Skipped</h3>
+        <div class="row">
+          {% for view in skipped %}
+            {{ ui.ref('scenario', u('/scenarios/' ~ view.spec.id), view.spec.scenario) }}
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if not unexercised and not never_run and not skipped %}
+      {{ ui.empty("Every resource type is exercised and every scenario has run. Nothing to chase.") }}
+    {% endif %}
+  </div>
+</div>

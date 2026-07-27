@@ -1,45 +1,28 @@
-<nav class="rail">
+<nav class="rail" aria-label="Sections">
   <div class="brand">
     <strong>ATF</strong>
-    <span>cockpit</span>
+    <span class="wide">{{ manifest.root.name }}</span>
   </div>
 
-  <div class="rail-group">
-    <h3>Confidence</h3>
-    <a class="nav" href="/?env={{ env }}" {% if title == "Overview" %}aria-current="page"{% endif %}>
-      <span class="dot" style="background: var(--ok)"></span> Overview
-    </a>
-  </div>
-
-  <div class="rail-group">
-    <h3>Explore</h3>
-    <a class="nav" href="/catalog?env={{ env }}" {% if title == "Catalog" %}aria-current="page"{% endif %}>
-      <span class="dot" style="background: var(--entity-resource)"></span> Catalog
-      <span class="count">{{ counts.catalog }}</span>
-    </a>
-    <a class="nav" href="/specs?env={{ env }}" {% if title == "Specs" %}aria-current="page"{% endif %}>
-      <span class="dot" style="background: var(--entity-spec)"></span> Specs
-      <span class="count">{{ counts.specs }}</span>
-    </a>
-    <a class="nav" href="/tests?env={{ env }}" {% if title == "Tests" %}aria-current="page"{% endif %}>
-      <span class="dot" style="background: var(--entity-test)"></span> Tests
-      <span class="count">{{ counts.tests }}</span>
-    </a>
-    <a class="nav" href="/fixtures?env={{ env }}" {% if title == "Fixtures" %}aria-current="page"{% endif %}>
-      <span class="dot" style="background: var(--entity-fixture)"></span> Fixtures
-      <span class="count">{{ counts.fixtures }}</span>
-    </a>
-  </div>
+  <a class="nav" href="{{ u('/') }}" {% if title == "Overview" %}aria-current="page"{% endif %}>
+    <span class="glyph" aria-hidden="true">◎</span>
+    <span class="wide">Overview</span>
+  </a>
+  <a class="nav" href="{{ u('/scenarios') }}" {% if title == "Scenarios" %}aria-current="page"{% endif %}>
+    <span class="glyph" aria-hidden="true" style="color: var(--entity-spec)">◆</span>
+    <span class="wide">Scenarios</span>
+    <span class="count wide">{{ counts.scenarios }}</span>
+  </a>
+  <a class="nav" href="{{ u('/catalog') }}" {% if title == "Catalog" %}aria-current="page"{% endif %}>
+    <span class="glyph" aria-hidden="true" style="color: var(--entity-resource)">▣</span>
+    <span class="wide">Resources</span>
+    <span class="count wide">{{ counts.catalog }}</span>
+  </a>
 
   <div class="spacer"></div>
 
-  <div class="env-badge">
-    <label for="env-select">Environment</label>
-    <select id="env-select" onchange="atfSwitchEnv(this)">
-      {% for name in environments %}
-        <option value="{{ name }}" {% if name == env %}selected{% endif %}>{{ name }}</option>
-      {% endfor %}
-    </select>
-    {% if not mutable %}<span class="readonly">read-only — not in mutable_envs</span>{% endif %}
-  </div>
+  <p class="rail-foot wide">
+    Reading <code>{{ manifest.path.name }}</code>{% if docs() %} ·
+    <a href="{{ docs() }}" target="_blank" rel="noreferrer">Docs</a>{% endif %}
+  </p>
 </nav>

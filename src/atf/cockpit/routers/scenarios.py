@@ -1,0 +1,81 @@
+"""Scenarios — the one vertical for seeking behaviour: find it, trust it, run it, read why it is red.
+
+The unit is the scenario, never the pytest identifier: a test is what a scenario becomes once
+pytest has collected it, so it belongs inside the scenario's page rather than beside it. Nothing
+here mutates anything — running is centralised in `activity`.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Request
+
+from ..view import BLOCKED, FAILING, NEVER_RUN, PASSING, ScenarioView, current_env, page, partial, scenario_views
+from ..view import cockpit as app
+
+router = APIRouter(prefix="/scenarios")
+
+# The states worth filtering by, in the order someone triaging asks for them.
+FILTERS = (FAILING, BLOCKED, NEVER_RUN, PASSING)
+
+
+@router.get("")
+def index(request: Request):
+    env = current_env(request)
+    # Overview links straight to a state ("show me the failing ones"), so arriving here filtered
+    # is a first-class way in, not a refinement you make once you are already looking at the list.
+    preset = request.query_params.get("state", "")
+    focus = request.query_params.get("focus", "")
+    context = _context(env, focus, prefer=preset if not focus else "")
+    context["preset"] = preset
+    return page(request, "scenarios.html", **context)
+
+
+@router.get("/{spec_id:path}")
+def detail(request: Request, spec_id: str):
+    env = current_env(request)
+    context = _context(env, spec_id)
+    if request.headers.get("HX-Request") == "true":
+        return partial(request, "partials/scenario_detail.html", **context)
+    return page(request, "scenarios.html", **context)
+
+
+def _context(env: str, spec_id: str, prefer: str = "") -> dict[str, Any]:
+    views = scenario_views(env)
+    view = next((candidate for candidate in views if candidate.id == spec_id), None)
+    if view is None and prefer:
+        # Arriving filtered to a state and being shown a scenario in a different one is a
+        # non-answer: open the first scenario the filter actually matched.
+        view = next((candidate for candidate in views if candidate.state == prefer), None)
+    if view is None:
+        view = views[0] if views else None
+
+    return {
+        "env": env,
+        "title": "Scenarios",
+        "views": views,
+        "view": view,
+        "focus": view.id if view else "",
+        "status": app().status(env),
+        "results": app().results(env),
+        "failed_index": _failed_index(view) if view else None,
+        "tally": {state: sum(1 for item in views if item.state == state) for state in FILTERS},
+        "preset": "",
+    }
+
+
+def _failed_index(view: ScenarioView) -> int | None:
+    """Which Gherkin step the failure lands on, so the error can be shown where it happened.
+
+    The runner reports the step as pytest-bdd saw it; matching on keyword and text first keeps a
+    repeated `And` honest, and text alone is the fallback when the keyword was normalised.
+    """
+    failed = view.failed_step
+    if failed is None:
+        return None
+    steps = view.spec.steps
+    for index, step in enumerate(steps):
+        if step.keyword == failed.keyword and step.text == failed.text:
+            return index
+    return next((index for index, step in enumerate(steps) if step.text == failed.text), None)

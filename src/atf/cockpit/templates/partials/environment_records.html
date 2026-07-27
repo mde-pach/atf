@@ -1,0 +1,116 @@
+{% import "partials/macros.html" as ui %}
+
+{# What the environment already holds for this type, beside what the catalog declares about it.
+   This is how a catalog gets written against a system that predates it: point ATF at a real
+   environment, read what is out there, and declare the ones your suite needs. #}
+
+<div class="stack">
+  <h3>In this environment</h3>
+
+  {% if not records.browsable %}
+    {# Said once and quietly: an adapter that cannot enumerate is a missing convenience, not a fault. #}
+    <p class="small muted">
+      The adapter for {{ display.system(type.system).label }} cannot list what is out there, so this
+      catalog has to be written by hand. A custom adapter opts in by implementing <code>browse</code> — one method
+      returning the records a listing gives back — and this table fills itself in.
+      {% if docs() %}<a href="{{ docs('reference/adapters/') }}">Adapter reference</a>{% endif %}
+    </p>
+
+  {% else %}
+
+    {% if records.scope_fields %}
+      <p class="small">
+        {{ type.name }}s are listed per parent here — the adapter reads
+        <code>{{ type.config.list_path }}</code>, so it needs
+        <code>{{ records.scope_fields | join(', ') }}</code> before it can list anything. Choose which one to look
+        inside.
+      </p>
+      {% if records.choices %}
+        {# Choosing a parent is a navigation, so each choice is a control. One that cannot be entered is
+           not a control at all — it is a name with a reason attached. #}
+        <div class="row">
+          {% for choice in records.choices %}
+            {% if choice.reason %}
+              <span class="muted small" title="{{ choice.node.id }} — {{ choice.reason }}">{{ choice.node.name }}
+                <span class="muted">({{ choice.reason }})</span></span>
+            {% else %}
+              <a class="btn" href="{{ u('/catalog/type/' ~ type.name, scope=choice.node.id) }}"
+                 hx-get="{{ u('/catalog/type/' ~ type.name, scope=choice.node.id) }}"
+                 hx-target="#focus" hx-swap="innerHTML" hx-push-url="true"
+                 {% if records.scope and choice.node.id == records.scope.id %}aria-current="true"{% endif %}>
+                {% if records.scope and choice.node.id == records.scope.id %}<span class="flag ok"></span>{% endif %}
+                {{ choice.node.name }}
+              </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+        {% if records.choices | selectattr("reason") | list %}
+          <p class="small muted">
+            A parent that is not in {{ env }} yet cannot be looked inside — provision it and it becomes selectable.
+          </p>
+        {% endif %}
+      {% else %}
+        {{ ui.empty("No resource in the catalog supplies that field yet. Declare the parent first, provision it, "
+                    "and its " ~ type.name ~ "s can be listed.") }}
+      {% endif %}
+    {% endif %}
+
+    {% if records.error %}
+      <div class="banner warn small">{{ records.error }}</div>
+
+    {% elif records.needs %}
+      {% if records.choices %}
+        {{ ui.empty("Pick one of those to see the " ~ type.name ~ "s inside it.") }}
+      {% endif %}
+
+    {% elif not records.rows %}
+      {{ ui.empty("There is no " ~ type.name ~ " in " ~ env ~ " at all yet. Declare one below and provision it, "
+                  "and it will appear here.") }}
+
+    {% else %}
+      <p class="small muted">
+        {{ records.rows | length }} out there{% if records.truncated %} (the first page){% endif %} ·
+        {{ records.declared }} already declared in the catalog{% if records.undeclared %},
+        {{ records.undeclared }} not{% endif %}.
+      </p>
+
+      <div class="scroll-x">
+        <table class="records">
+          <thead>
+            <tr>
+              {% for column in records.columns %}<th>{{ column }}</th>{% endfor %}
+              <th>catalog</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in records.rows %}
+              <tr class="{{ 'known' if row.node }}">
+                {% for cell in row.cells %}<td class="mono">{{ cell }}</td>{% endfor %}
+                <td class="{{ 'known' if row.node }}">
+                  {% if row.node %}
+                    {{ ui.ref('resource', u('/catalog/node/' ~ row.node.id), row.node.name,
+                              title=row.node.id ~ " — already declared in the catalog") }}
+                  {% else %}
+                    <button type="button"
+                            hx-get="{{ u('/authoring/new', type=type.name, identity=row.identity,
+                                         scope=(records.scope.id if records.scope else '')) }}"
+                            hx-target="#sheet" hx-swap="innerHTML"><span class="glyph">＋</span>Add to catalog</button>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if records.undeclared %}
+        <p class="small muted">
+          Adding one writes the catalog entry that would have produced it: server-assigned fields dropped, and any
+          value that is another resource's identity turned into a <code>${…}</code> placeholder that resolves at
+          provisioning time — so the node can be created again in an empty environment rather than only matching
+          this one.
+        </p>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+</div>

@@ -1,4 +1,4 @@
-"""⌘K search across resources, specs, tests and fixtures."""
+"""⌘K search across resources, resource types and scenarios."""
 
 from __future__ import annotations
 
@@ -35,28 +35,28 @@ def _hits(env: str, query: str) -> list[Hit]:
         return []
 
     cockpit = app()
-    found = cockpit.discovery(env)
+    engine = cockpit.state(env).materializer
+    status = cockpit.status(env)
     hits: list[Hit] = []
 
-    for node_id, node in cockpit.state(env).materializer.nodes.items():
-        score = _score(query, node_id, node["resource"], node["represents"])
+    for name in engine.types:
+        score = _score(query, name)
         if score:
-            hits.append(Hit("resource", node_id, node["resource"], f"/catalog/node/{node_id}?env={env}", score))
+            count = sum(1 for node in engine.nodes.values() if node["resource"] == name)
+            hits.append(Hit("type", name, f"{count} in the catalog", f"/catalog/type/{name}?env={env}", score))
 
-    for spec in found.specs:
+    for node_id, node in engine.nodes.items():
+        score = _score(query, node["name"], node_id, node["resource"], node["represents"])
+        if score:
+            state = status.get(node_id, {}).get("status", "")
+            hits.append(
+                Hit("resource", node_id, state or node["resource"], f"/catalog/node/{node_id}?env={env}", score)
+            )
+
+    for spec in cockpit.discovery(env).specs:
         score = _score(query, spec.scenario, spec.feature, " ".join(spec.tags))
         if score:
-            hits.append(Hit("spec", spec.scenario, spec.feature, f"/specs/{spec.id}?env={env}", score))
-
-    for test in found.tests:
-        score = _score(query, test.name, test.nodeid)
-        if score:
-            hits.append(Hit("test", test.name, test.covers, f"/tests/detail/{test.id}?env={env}", score))
-
-    for fixture in found.fixtures:
-        score = _score(query, fixture.name, fixture.doc)
-        if score:
-            hits.append(Hit("fixture", fixture.name, fixture.doc[:60], f"/fixtures/{fixture.name}?env={env}", score))
+            hits.append(Hit("scenario", spec.scenario, spec.feature, f"/scenarios/{spec.id}?env={env}", score))
 
     return sorted(hits, key=lambda hit: (-hit.score, hit.label))[:LIMIT]
 

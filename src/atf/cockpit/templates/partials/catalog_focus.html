@@ -1,97 +1,180 @@
-{% if not node %}
-  <div class="card"><p class="muted">Nothing selected. Pick a resource from the list.</p></div>
-{% else %}
-  <div class="card">
-    <header>
-      <h2>Lineage</h2>
-      <span class="chip system" style="border-color: {{ display.system(node.system).color }}; color: {{ display.system(node.system).color }}">
-        {{ display.system(node.system).label }}
-      </span>
-      {% if banner %}<span class="banner {{ banner_tone }} small" style="margin-left:auto">{{ banner }}</span>{% endif %}
-    </header>
+{% import "partials/macros.html" as ui %}
 
-    <div class="graph-wrap">
-      <div class="graph" style="width: {{ graph.width }}px; height: {{ graph.height }}px">
-        <svg width="{{ graph.width }}" height="{{ graph.height }}">
-          {% for edge in graph.edges %}<path d="{{ edge.path }}"></path>{% endfor %}
-        </svg>
-        {% for box in graph.boxes %}
-          <a class="gnode {{ 'focus' if box.focus }}"
-             style="left: {{ box.x }}px; top: {{ box.y }}px; width: {{ NODE_W }}px; height: {{ NODE_H }}px"
-             href="/catalog/node/{{ box.id }}?env={{ env }}"
-             hx-get="/catalog/node/{{ box.id }}?env={{ env }}" hx-target="#catalog-focus" hx-swap="innerHTML"
-             hx-push-url="/catalog/node/{{ box.id }}?env={{ env }}">
-            <span class="flag {{ tone(box.status) }}"></span>
-            <span class="n">{{ box.label }}</span>
-            <span class="t">{{ box.sub }}</span>
-          </a>
-        {% endfor %}
-      </div>
+{# Columns 2 and 3 of the catalog: how this resource relates, then what it is and how to make it.
+   The order is the order of the decision — what is it, what would be created, create it. #}
+
+<div class="card stack">
+  <header>
+    <h2>Lineage</h2>
+    <span class="muted small">what has to exist before {{ node.name }} can exist — hover a box for what it is</span>
+  </header>
+
+  <p class="small">{{ lineage }}</p>
+
+  <div class="graph-wrap" style="max-height: 62vh">
+    <div class="graph" style="width: {{ graph.width }}px; height: {{ graph.height + 88 }}px">
+      <svg width="{{ graph.width }}" height="{{ graph.height }}" aria-hidden="true">
+        {% for edge in graph.edges %}<path d="{{ edge.path }}"></path>{% endfor %}
+      </svg>
+      {% for box in graph.boxes %}
+        <a class="gnode has-tip {{ 'focus' if box.focus }}"
+           style="left: {{ box.x }}px; top: {{ box.y }}px; width: {{ NODE_W }}px; height: {{ NODE_H }}px"
+           href="{{ u('/catalog/node/' ~ box.id) }}"
+           hx-get="{{ u('/catalog/node/' ~ box.id) }}" hx-target="#focus" hx-swap="innerHTML" hx-push-url="true">
+          <span class="flag {{ tone(box.status) }}"></span>
+          <span class="n">{{ box.label }}</span>
+          {# No (i) per box: eight of them in one diagram is eight things asking to be clicked. The
+             whole box is the hover target, and the header says so once. #}
+          <span class="t">{{ box.sub }}</span>
+          <span class="tip" role="tooltip">
+            <strong>{{ box.label }}</strong>
+            {{ box.sub }} · {{ box.status or "unknown" }} · {{ display.system(box.system).label }}<br>
+            {{ box.represents or "No description yet — add represents: to this node in the catalog." }}
+          </span>
+        </a>
+      {% endfor %}
     </div>
   </div>
+</div>
 
-  <div class="card stack">
-    <header>
-      <h2>{{ node.name }}</h2>
-      <span class="chip resource">{{ node.resource }}</span>
-      <span class="pill {{ tone(status.get(node.id, {}).get('status', '')) }}">
-        {{ status.get(node.id, {}).get("status", "?") }}
-      </span>
-      <div class="actions">
-        <form hx-post="/catalog/create/{{ node.id }}?env={{ env }}" hx-target="#catalog-focus" hx-swap="innerHTML"
-              hx-disabled-elt="find button"
-              {% if mutable %}hx-confirm="Create {{ node.id }} and its dependencies in {{ env }}?"{% endif %}>
-          <input type="hidden" name="confirm" value="{{ confirm_token }}">
-          <button type="submit" {% if not mutable %}disabled title="{{ env }} is read-only"{% endif %}>Create</button>
-        </form>
-      </div>
-    </header>
+<div class="card stack">
+  <header>
+    <h2>{{ node.name }}</h2>
+    {{ ui.ref('type', u('/catalog/type/' ~ node.resource), node.resource) }}
+    {# The one headline state of this page, so the one place a filled lozenge is earned. #}
+    <span class="pill loud {{ tone(state or 'unknown') }}">{{ state or "unknown" }}</span>
 
-    {% if status.get(node.id, {}).get("detail") %}
-      <div class="banner warn small">{{ status[node.id].detail }}</div>
+    <div class="actions">
+      {# Copy, edit and delete are the reason anyone opens a resource twice, so they are controls in the
+         header rather than three words at the bottom of a long page. #}
+      <a class="btn" href="{{ u('/authoring/copy/' ~ node.id) }}"
+         hx-get="{{ u('/authoring/copy/' ~ node.id) }}" hx-target="#sheet" hx-swap="innerHTML"
+         title="A second {{ node.resource }} with the same dependencies and body, under a new name">
+        Copy
+      </a>
+      <a class="btn" href="{{ u('/authoring/edit/' ~ node.id) }}"
+         hx-get="{{ u('/authoring/edit/' ~ node.id) }}" hx-target="#sheet" hx-swap="innerHTML">Edit</a>
+      <a class="btn" href="{{ u('/authoring/delete/' ~ node.id) }}"
+         hx-get="{{ u('/authoring/delete/' ~ node.id) }}" hx-target="#sheet" hx-swap="innerHTML">Delete</a>
+    </div>
+  </header>
+
+  {% if detail %}<div class="banner warn small">{{ detail }}</div>{% endif %}
+
+  {# Two kinds of resource do not behave like the rest, and the difference is not visible anywhere
+     else. Saying it here is what stops the Provision button reading as broken. #}
+  {% if node.mode == "reference" %}
+    <p class="small">
+      A reference resource: ATF looks it up but never creates it — if it is absent, {{ env }} is not set
+      up the way this suite assumes.
+    </p>
+  {% elif node.lifecycle == "ephemeral" %}
+    <p class="small">
+      An ephemeral resource: the test that needs one builds it at the moment it runs and throws it away
+      afterwards, so there is nothing here to seed.
+    </p>
+  {% endif %}
+
+  {% if node.represents %}
+    <p class="small">{{ node.represents }}</p>
+  {% else %}
+    {{ ui.empty("No description. Add represents: to this node so everyone reading the catalog knows what it is for.",
+                "Catalog reference", docs('reference/catalog/')) }}
+  {% endif %}
+
+  <div class="stack">
+    <h3>Payload</h3>
+    <p class="small muted">What ATF would send to create it. {{ ui.term('placeholder', 'Placeholders') }} resolve at
+      provisioning time.</p>
+    <pre class="payload mono">{{ payload }}</pre>
+
+    {% if identity %}
+      <p class="small muted">
+        Out there now: <code>{{ node.id_field }}</code> = <code>{{ identity }}</code>
+      </p>
     {% endif %}
 
-    <p class="small">{{ node.represents or "No description." }}</p>
-
-    <dl class="kv small">
-      <dt>id</dt><dd><code>{{ node.id }}</code></dd>
-      <dt>lifecycle</dt><dd>{{ node.lifecycle }}{% if node.lifecycle == "ephemeral" %} <span class="muted">— built per run</span>{% endif %}</dd>
-      <dt>mode</dt><dd>{{ node.mode }}</dd>
-      <dt>identity</dt><dd><code>{{ node.id_field }}</code>{% if status.get(node.id, {}).get("identity") %} = <code>{{ status[node.id].identity }}</code>{% endif %}</dd>
-    </dl>
-
-    <div>
-      <h3>Needs</h3>
-      {% if needs %}
-        <div class="row">{% for dep in needs %}
-          <a class="chip resource" href="/catalog/node/{{ dep.id }}?env={{ env }}"
-             hx-get="/catalog/node/{{ dep.id }}?env={{ env }}" hx-target="#catalog-focus" hx-swap="innerHTML">{{ dep.id }}</a>
-        {% endfor %}</div>
-      {% else %}<p class="muted small">Nothing — this is a root resource.</p>{% endif %}
-    </div>
-
-    <div>
-      <h3>Needed by</h3>
-      {% if used_by %}
-        <div class="row">{% for dep in used_by %}
-          <a class="chip resource" href="/catalog/node/{{ dep.id }}?env={{ env }}"
-             hx-get="/catalog/node/{{ dep.id }}?env={{ env }}" hx-target="#catalog-focus" hx-swap="innerHTML">{{ dep.id }}</a>
-        {% endfor %}</div>
-      {% else %}<p class="muted small">Nothing depends on this.</p>{% endif %}
-    </div>
-
-    <div>
-      <h3>Used by tests</h3>
-      {% if tests %}
-        <ul class="stack small">{% for test in tests %}
-          <li><a class="chip test" href="/tests/detail/{{ test.id }}?env={{ env }}">{{ test.name }}</a></li>
-        {% endfor %}</ul>
-      {% else %}<p class="muted small">No test provisions this resource yet.</p>{% endif %}
-    </div>
-
-    <div>
-      <h3>Payload</h3>
-      <pre class="payload mono">{{ node.body | tojson(indent=2) }}</pre>
-    </div>
+    {% call ui.action(node_label, u('/provision'), '#activity', confirm_token, mutable, env,
+                      hint=node_label ~ " in " ~ env ~ "?", disabled_reason=node_blocked) %}
+      <input type="hidden" name="node" value="{{ node.id }}">
+    {% endcall %}
   </div>
-{% endif %}
+
+  <div class="stack">
+    <h3>Needs</h3>
+    {% if needs %}
+      <div class="row">
+        {% for dep in needs %}
+          {{ ui.ref('resource', u('/catalog/node/' ~ dep.id), dep.name,
+                    status=status.get(dep.id, {}).get("status", ""),
+                    title=dep.id ~ " — " ~ (status.get(dep.id, {}).get("status") or "unknown") ~ " in " ~ env) }}
+        {% endfor %}
+      </div>
+    {% else %}
+      {{ ui.empty("Nothing has to exist first.") }}
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    <h3>Needed by</h3>
+    {% if needed_by %}
+      <div class="row">
+        {% for dep in needed_by %}
+          {{ ui.ref('resource', u('/catalog/node/' ~ dep.id), dep.name,
+                    status=status.get(dep.id, {}).get("status", ""),
+                    title=dep.id ~ " — " ~ (status.get(dep.id, {}).get("status") or "unknown") ~ " in " ~ env) }}
+        {% endfor %}
+      </div>
+    {% else %}
+      {{ ui.empty("Nothing else in the catalog depends on this.") }}
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    <h3>Covered by scenarios</h3>
+    {% if specs %}
+      <div class="row">
+        {% for spec in specs %}
+          {{ ui.ref('scenario', u('/scenarios/' ~ spec.id), spec.scenario) }}
+        {% endfor %}
+      </div>
+    {% else %}
+      {{ ui.empty("No scenario asks for this resource. Name it in a Given step and it becomes exercised.") }}
+    {% endif %}
+  </div>
+
+  {# The controls for these three sit in the header, where they are found. What they mean belongs in
+     prose, and Copy in particular earns its sentence: it is the practice, not a convenience. #}
+  <div class="stack">
+    <h3>Copying, editing and deleting</h3>
+    <p class="small muted">
+      All three change what <code>catalog/{{ node.collection }}.yaml</code> declares — the suite's source, not
+      {{ env }}. So it is the same edit whichever environment you are looking at, and a read-only one can still
+      be authored.
+    </p>
+    <p class="small muted">
+      A scenario that changes a resource wants its own copy of it: two scenarios sharing one instance is how a
+      suite starts failing in an order-dependent way. <strong>Copy</strong> is one click, and the copy keeps the
+      same dependencies and body.
+    </p>
+  </div>
+
+  <dl class="kv small">
+    <dt>id</dt><dd><code>{{ node.id }}</code></dd>
+    <dt>lifecycle</dt><dd>{{ ui.term(node.lifecycle) }}</dd>
+    <dt>mode</dt>
+    <dd>
+      {%- if node.mode == "reference" -%}
+        reference <span class="muted">— looked up, never created</span>
+      {%- else -%}create <span class="muted">— found if it exists, created if it does not</span>{%- endif -%}
+    </dd>
+    <dt>{{ ui.term('id_field') }}</dt><dd><code>{{ node.id_field }}</code></dd>
+    <dt>system</dt>
+    <dd>
+      <span class="tag" style="color: {{ display.system(node.system).color }}">
+        {{ display.system(node.system).label }}
+      </span>
+    </dd>
+    <dt>declared in</dt><dd><code>catalog/{{ node.collection }}.yaml</code></dd>
+  </dl>
+</div>

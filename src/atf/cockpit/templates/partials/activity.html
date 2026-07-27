@@ -1,0 +1,55 @@
+{% import "partials/macros.html" as ui %}
+{# Runs and provisioning share this. Both are "a list of things happening one at a time". #}
+{% if job %}
+  {% set running = not job.done %}
+  <section class="activity {{ 'running' if running else ('bad' if job.counts.failed or job.counts.error else 'ok') }}"
+           {% if running %}
+           hx-get="{{ u('/activity') }}" hx-trigger="load delay:{{ poll_ms }}ms"
+           hx-target="#activity" hx-swap="innerHTML" data-quiet
+           {% endif %}>
+    <header>
+      <span class="what">
+        {%- if job.kind == "provision" -%}
+          {{ "Provisioning" if running else "Provisioned" }}
+        {%- else -%}
+          {{ "Running" if running else "Ran" }}
+        {%- endif %}
+        <span class="muted">{{ job.env }}</span>
+      </span>
+
+      {% if running %}
+        <span class="pill running">{{ job.completed }}/{{ job.total }}</span>
+      {% elif job.counts.failed or job.counts.error %}
+        <span class="pill bad">{{ job.counts.failed + job.counts.error }} failed</span>
+      {% elif job.kind == "provision" %}
+        <span class="pill ok">{{ job.counts.created or 0 }} created</span>
+      {% else %}
+        <span class="pill ok">all passed</span>
+      {% endif %}
+
+      <span class="muted small">{{ dur(job.elapsed) }}</span>
+
+      <button class="ghost" type="button" onclick="this.closest('.activity').classList.toggle('open')"
+              aria-label="Show detail">⌃</button>
+      {% if not running %}
+        <button class="ghost" type="button" onclick="document.getElementById('activity').innerHTML = ''"
+                aria-label="Dismiss">✕</button>
+        {# The verdict changed, so anything showing it must catch up. #}
+        <span hx-get="{{ u('/overview/summary') }}" hx-trigger="load" hx-target="#verdict" hx-swap="innerHTML"
+              hx-select="#verdict" data-quiet hx-on::after-request="this.remove()"></span>
+      {% endif %}
+    </header>
+
+    <div class="items">
+      {% for item in items %}
+        <div class="item {{ tone(item.state) }}">
+          <span class="flag {{ tone(item.state) }}"></span>
+          <span class="label">{{ item.label }}</span>
+          <span class="state">{{ item.state }}</span>
+          <span class="num">{% if item.duration %}{{ dur(item.duration) }}{% endif %}</span>
+          {% if item.detail %}<p class="detail">{{ item.detail.splitlines()[-1][:160] }}</p>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}

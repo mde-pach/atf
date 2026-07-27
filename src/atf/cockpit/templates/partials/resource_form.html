@@ -1,0 +1,234 @@
+{% import "partials/macros.html" as ui %}
+
+{# The authoring sheet: one overlay for all four verbs, because they are one decision seen four ways
+   — which type, called what, described how, depending on what, with which body. The diff underneath
+   is not decoration: reading it is how the YAML format is learnt, and it updates as the form does. #}
+
+{% set writing = action != "delete" %}
+
+<dialog class="sheet" id="authoring-sheet" aria-label="Edit the catalog">
+  <header>
+    <h2>
+      {%- if action == "create" and identity %}Add this {{ draft.resource_type }} to the catalog
+      {%- elif action == "create" and source %}Copy {{ source.name }}
+      {%- elif action == "create" %}New {{ draft.resource_type }}
+      {%- elif action == "edit" %}Edit {{ draft.name }}
+      {%- else %}Delete {{ draft.name }}{% endif -%}
+    </h2>
+    {% if draft.resource_type %}
+      {{ ui.ref('type', u('/catalog/type/' ~ draft.resource_type), draft.resource_type) }}
+    {% endif %}
+    <span class="muted small">writes the catalog — the suite's source, not {{ env }}</span>
+  </header>
+
+  <div class="body">
+
+    {# Why you would be here at all. An authoring form is where explaining costs least and buys most. #}
+    {% if action == "create" and identity %}
+      <p class="small">
+        This {{ draft.resource_type }} already exists in {{ env }}. Declaring it makes it something a scenario
+        can name — and ATF will find this same one rather than create a second, because it matches on the
+        natural key named below.
+      </p>
+    {% elif action == "create" and source %}
+      <p class="small">
+        A copy of <a href="{{ u('/catalog/node/' ~ source.id) }}">{{ source.name }}</a> under a new name. Giving a
+        scenario that mutates a resource its own instance is what stops it colliding with every other scenario
+        that reads the same one.
+      </p>
+    {% elif action == "edit" %}
+      <p class="small">
+        Changes what this resource declares. It does not touch {{ env }} — {{ draft.name }} out
+        there stays as it is until it is provisioned again.
+      </p>
+    {% elif action == "delete" %}
+      <p class="small">
+        Removes {{ draft.name }} from the catalog. Nothing is deleted in {{ env }}: whatever was provisioned there
+        stays, ATF simply stops knowing about it.
+      </p>
+    {% endif %}
+
+    {% if writing %}
+      <form class="form" id="resource-form"
+            hx-post="{{ u('/authoring/write') }}" hx-target="#catalog" hx-swap="outerHTML" hx-select="#catalog"
+            hx-disabled-elt="find button">
+        <input type="hidden" name="confirm" value="{{ confirm_token }}">
+        <input type="hidden" name="action" value="{{ action }}">
+        <input type="hidden" name="type" value="{{ draft.resource_type }}">
+        <input type="hidden" name="node" value="{{ draft.node_id }}">
+
+        <div class="field-row">
+          <div class="field">
+            <label for="f-name">Name</label>
+            {% if action == "edit" %}
+              <input id="f-name" name="name" value="{{ draft.name }}" readonly>
+              <span class="hint">
+                A name cannot be changed here — every <code>depends_on</code> and <code>${…}</code> that points at
+                this resource uses it. Copy it under the new name and delete this one instead.
+              </span>
+            {% else %}
+              <input id="f-name" name="name" value="{{ draft.name }}" required autofocus
+                     pattern="[a-z][a-z0-9_]*" autocomplete="off">
+              <span class="hint">
+                What a scenario says: <code>Given the {{ draft.resource_type }} "{{ draft.name or 'name' }}"</code>.
+                Lower case, digits and underscores.
+              </span>
+            {% endif %}
+          </div>
+
+          <div class="field">
+            <label for="f-file">{{ ui.term('collection', 'Declared in') }}</label>
+            {% if action == "edit" %}
+              <input id="f-file" name="file" value="{{ draft.file }}" readonly>
+              <span class="hint">The file it is already declared in. Its name is the first half of the node id.</span>
+            {% else %}
+              <input id="f-file" name="file" value="{{ draft.file }}" list="catalog-files" autocomplete="off">
+              <datalist id="catalog-files">
+                {% for name in files %}<option value="{{ name }}"></option>{% endfor %}
+              </datalist>
+              <span class="hint">
+                A file under <code>catalog/</code> — new or existing. Its stem becomes the first half of the
+                resource's id, so this one would be <code>{{ draft.file.replace('.yaml', '') }}.{{ draft.name or 'name' }}</code>.
+              </span>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="f-represents">Represents</label>
+          <input id="f-represents" name="represents" value="{{ draft.represents }}"
+                 placeholder="What this resource is for, in one sentence.">
+          <span class="hint">The one line everyone reading the catalog sees. Optional, and always worth writing.</span>
+        </div>
+
+        <div class="field">
+          <label for="f-depends">Depends on</label>
+          <select id="f-depends" name="depends_on" multiple size="6">
+            {% for type_name, members in choices.items() %}
+              <optgroup label="{{ type_name }}">
+                {% for item in members %}
+                  <option value="{{ item.id }}" {% if item.id in draft.depends_on %}selected{% endif %}>
+                    {{ item.id }}</option>
+                {% endfor %}
+              </optgroup>
+            {% endfor %}
+          </select>
+          <span class="hint">
+            Everything that must exist first. Provisioning this resource provisions all of these too,
+            dependencies before dependents — and a body using <code>${owners.primary.id}</code> must list
+            <code>owners.primary</code> here.
+          </span>
+        </div>
+
+        <div class="field">
+          <label for="f-body-mode">Body — written from</label>
+          <select id="f-body-mode" name="body_mode">
+            <option value="rows" {% if draft.body_mode == 'rows' %}selected{% endif %}>The fields below</option>
+            <option value="yaml" {% if draft.body_mode == 'yaml' %}selected{% endif %}>The raw YAML below</option>
+          </select>
+          <span class="hint">
+            The body is what ATF sends to create this resource, and what it recognises an existing one by. The
+            {{ ui.term('natural_key') }} of {{ draft.resource_type }} is
+            {%- if type and type.config.natural_key %} <code>{{ type.config.natural_key if type.config.natural_key
+              is string else type.config.natural_key | join(', ') }}</code>{% else %} not declared{% endif %}, so
+            those fields decide whether a second run reuses this resource or makes another one beside it.
+            Both editors below start from the same body; whichever this names is the one that gets written, and the
+            proposed change always shows which.
+          </span>
+        </div>
+
+        <div class="field">
+          <span class="hint">
+            Field by field. <code>true</code>, <code>12</code> and <code>null</code> are read as a boolean, a
+            number and null; everything else stays text. Leave a field name blank to drop the row.
+          </span>
+          {% for key, value in rows %}
+            <div class="field-row">
+              <input name="body_key" value="{{ key }}" placeholder="field" autocomplete="off"
+                     aria-label="Field {{ loop.index }}">
+              <input name="body_value" value="{{ value }}" placeholder="value" autocomplete="off"
+                     aria-label="Value {{ loop.index }}">
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="field{{ ' bad' if structured }}">
+          <label for="f-yaml">Raw YAML</label>
+          <textarea id="f-yaml" name="body_yaml" spellcheck="false">{{ draft.body_yaml }}</textarea>
+          <span class="hint">
+            {% if structured %}
+              This body has nested values, which the rows above cannot express — leave it written from the raw
+              YAML.
+            {% else %}
+              For anything the rows cannot express: a nested mapping, or a list.
+            {% endif %}
+            {{ ui.term('placeholder', 'Placeholders') }} like <code>${owners.primary.id}</code> and
+            <code>${now+1d 09:00}</code> resolve when it is provisioned, not now.
+          </span>
+        </div>
+
+        {% if dropped %}
+          <p class="small muted">
+            Left out of the body, because the backend owns them and would assign them again:
+            <code>{{ dropped | join(', ') }}</code>.
+          </p>
+        {% endif %}
+      </form>
+    {% else %}
+      <div class="stack">
+        <h3>Needed by</h3>
+        {% if source and source.dependents %}
+          <div class="row">
+            {% for dep in source.dependents %}
+              {{ ui.ref('resource', u('/catalog/node/' ~ dep), dep) }}
+            {% endfor %}
+          </div>
+        {% else %}
+          {{ ui.empty("Nothing in the catalog depends on this, so removing it leaves no reference dangling.") }}
+        {% endif %}
+      </div>
+    {% endif %}
+
+    {# The proposal, always visible and always current: while there is a form it re-renders from it. #}
+    <div id="proposed"
+         {% if writing %}
+           hx-post="{{ u('/authoring/preview') }}"
+           hx-include="#resource-form"
+           hx-trigger="change from:#authoring-sheet, keyup changed delay:400ms from:#authoring-sheet"
+           hx-swap="innerHTML"
+         {% endif %}>
+      {% include "partials/proposed_change.html" %}
+    </div>
+  </div>
+
+  <footer>
+    <span class="muted small">
+      {% if writing %}Nothing is written until you say so.{% else %}This edits the catalog, not {{ env }}.{% endif %}
+    </span>
+    <div class="actions">
+      <button type="button" onclick="this.closest('dialog').close()">Cancel</button>
+      {% if writing %}
+        <button class="primary" type="submit" form="resource-form">
+          {%- if action == "edit" %}Save to {{ draft.file }}{% else %}Write it to {{ draft.file }}{% endif -%}
+        </button>
+      {% elif proposal and proposal.blocked %}
+        <button disabled aria-describedby="why-delete">Delete {{ draft.name }}</button>
+        <span class="why" id="why-delete">{{ proposal.blocked }}</span>
+      {% else %}
+        <form hx-post="{{ u('/authoring/remove') }}" hx-target="#catalog" hx-swap="outerHTML" hx-select="#catalog"
+              hx-disabled-elt="find button" hx-confirm="Remove {{ draft.name }} from the catalog?">
+          <input type="hidden" name="confirm" value="{{ confirm_token }}">
+          <input type="hidden" name="node" value="{{ draft.node_id }}">
+          <button class="primary" type="submit">Delete {{ draft.name }}</button>
+        </form>
+      {% endif %}
+    </div>
+  </footer>
+</dialog>
+
+<script>
+  (function () {
+    const sheet = document.getElementById("authoring-sheet");
+    if (sheet && !sheet.open) sheet.showModal();
+  })();
+</script>

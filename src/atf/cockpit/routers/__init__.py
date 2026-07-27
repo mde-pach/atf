@@ -1,3 +1,11 @@
-from . import catalog, fixtures, overview, search, specs, tests
+from . import activity, authoring, catalog, compose, overview, scenarios, search
 
-__all__ = ["catalog", "fixtures", "overview", "search", "specs", "tests"]
+__all__ = [
+    "activity",
+    "authoring",
+    "catalog",
+    "compose",
+    "overview",
+    "scenarios",
+    "search",
+]

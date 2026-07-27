@@ -11,3 +11,4 @@ site/
 .cache/
 .atf/
 .playwright-mcp/
+.claude/settings.local.json

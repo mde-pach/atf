@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from atf import providers
 from atf.placeholders import Unresolved, references, resolve
 
 
@@ -37,11 +38,19 @@ def test_unknown_placeholder_form_raises():
         resolve("${wat}", lookup({}))
 
 
-def test_now_offsets():
-    now = datetime(2026, 7, 25, 10, 30, tzinfo=UTC)
-    assert resolve("${now+3d 09:00}", lookup({}), now=now) == "2026-07-28T09:00:00Z"
-    assert resolve("${now-1d 23:59}", lookup({}), now=now) == "2026-07-24T23:59:00Z"
-    assert resolve("${now+0d 00:00}", lookup({}), now=now) == "2026-07-25T00:00:00Z"
+@pytest.fixture
+def fixed_clock():
+    """`now` pinned, the same way a suite would pin it — through the registry."""
+    at = datetime(2026, 7, 25, 10, 30, tzinfo=UTC)
+    providers.register("now", lambda settings: providers.Now({"at": at}))
+    yield at
+    providers.register("now", providers.Now)
+
+
+def test_now_offsets(fixed_clock):
+    assert resolve("${now+3d 09:00}", lookup({})) == "2026-07-28T09:00:00Z"
+    assert resolve("${now-1d 23:59}", lookup({})) == "2026-07-24T23:59:00Z"
+    assert resolve("${now+0d 00:00}", lookup({})) == "2026-07-25T00:00:00Z"
 
 
 def test_references_finds_node_ids():

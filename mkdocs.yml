@@ -61,6 +61,7 @@ nav:
   - Reference:
       - Manifest reference: reference/manifest.md
       - Catalog reference: reference/catalog.md
+      - Providers reference: reference/providers.md
       - Specs and fixtures reference: reference/specs-and-fixtures.md
       - CLI reference: reference/cli.md
       - Cockpit reference: reference/cockpit.md

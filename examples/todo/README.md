@@ -25,6 +25,7 @@ this suite is what the tutorial's toy version grows into.
 | Ephemeral lifecycle | `guest` — built per run, deleted afterwards |
 | A read-only environment | `staging`, absent from `mutable_envs` |
 | Read-and-compare steps ATF provides | every `Then` but one, across both features |
+| A generated value | `guest` — `nickname: visitor-${uuid:hex}`, safe because a guest is ephemeral |
 
 ## Driving it from the CLI or cockpit
 

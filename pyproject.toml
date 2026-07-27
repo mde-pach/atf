@@ -26,12 +26,17 @@ Source = "https://github.com/mde-pach/atf"
 atf = "atf.cli:main"
 
 [dependency-groups]
-dev = ["ruff", "ty"]
+# `faker` is here so the repo's own type check and tests can see it. It is *not* a dependency of
+# `atf`: a framework should not decide what a project's test data looks like.
+dev = ["ruff", "ty", "faker"]
 docs = ["mkdocs>=1.6", "mkdocs-material>=9.5"]
 # Only `selftest/` uses this, and only for the scenarios that need a page to have *run* rather
 # than merely been served. Absent, those scenarios skip and everything else still passes:
 #   uv sync --group browser && uv run playwright install chromium
 browser = ["playwright>=1.40"]
+# What a consuming project installs to use `${fake:…}`. ATF registers the provider only when the
+# import succeeds, so a suite without it simply has one fewer provider.
+fake = ["faker"]
 
 [build-system]
 requires = ["hatchling"]

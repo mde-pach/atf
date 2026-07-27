@@ -159,7 +159,8 @@ placeholders and reading the [`natural_key`](#natural_key) fields out of it.
 ## Placeholders {#placeholders}
 
 Placeholders appear anywhere in `body` — in strings, lists, or nested mappings — and are resolved
-immediately before the adapter creates the resource. Two forms exist, and nothing else is accepted.
+immediately before the adapter creates the resource. One form is the framework's own; everything
+else is a call to a [provider](providers.md).
 
 ### `${<collection>.<name>.id}` {#placeholder-id}
 
@@ -172,13 +173,25 @@ Collection and instance names may contain only letters, digits, `_` and `-`.
     account_id: ${accounts.primary.id}
 ```
 
-### `${now±<N>d HH:MM}` {#placeholder-now}
+### `${<provider>:<argument>}` {#placeholder-provider}
 
-An ISO-8601 UTC timestamp `N` days from now, at `HH:MM` — `${now+30d 09:00}` gives something like
-`2026-08-25T09:00:00Z`. A `-` moves into the past.
+Anything that is not a node reference is a [provider](providers.md) call — a named source of
+values, registered the way an adapter is.
 
-The form is exact: `${now}`, `${now+1d}` and `${now+1h}` are all rejected. Use it rather than a
-fixed date, so the data does not rot.
+```yaml
+    due_at: ${now+30d 09:00}     # an ISO-8601 UTC timestamp 30 days from now, at 09:00
+    token: ${uuid}
+    nickname: ${fake:first_name}
+```
+
+`${now±<N>d HH:MM}` is exact: `${now}`, `${now+1d}` and `${now+1h}` are all rejected. Use it rather
+than a fixed date, so the data does not rot.
+
+A node reference always wins over a provider name, so a registered name cannot shadow a collection.
+
+**A generated value in a natural key is refused when the catalog loads.** A value that changes
+every run never matches what is already out there, so every run would create another record — see
+[where a generated value may go](providers.md#where).
 
 ### Typing and interpolation {#placeholder-typing}
 

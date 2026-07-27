@@ -100,6 +100,21 @@ A system with no entry here has **no adapter in this environment**. Its resource
 `unsupported`, and provisioning one fails with the same word. That is how one manifest describes an
 environment where only some of your systems exist.
 
+### `providers.<name>` {#env-providers}
+
+Settings for one [provider](providers.md), the named source behind a `${...}` that is not a node
+reference. Interpreted by the provider, not by ATF.
+
+```yaml
+environments:
+  dev:
+    providers:
+      fake:
+        locale: en_GB
+```
+
+A provider with no settings needs no entry here — `now`, `uuid` and `env` work everywhere.
+
 ### `clients.<name>` {#env-clients}
 
 Mapping of client name to settings, exposed to specs through the

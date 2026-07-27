@@ -8,7 +8,9 @@ from typing import Any, TypedDict
 
 import yaml
 
-from .placeholders import Unresolved, references
+from . import providers
+from .placeholders import PLACEHOLDER_RE, Unresolved, references
+from .placeholders import generated as is_generated
 
 TYPES_FILE = "resources.yaml"
 UNIVERSAL_TYPE_KEYS = frozenset({"system", "mode", "lifecycle", "id_field"})
@@ -84,6 +86,7 @@ def load_catalog(
 
     _link_dependents(nodes, problems)
     _check_placeholders(nodes, problems)
+    _check_generated_keys(nodes, problems)
     _check_systems(types, registered_systems, problems)
     _check_unique_names(nodes, problems)
     _check_acyclic(nodes, problems)
@@ -235,6 +238,42 @@ def _check_placeholders(nodes: dict[str, Node], problems: list[str]) -> None:
                     f"{nid}: body references ${{{referenced}.id}} but does not list it in depends_on, "
                     "so it will not be provisioned first"
                 )
+
+
+def _check_generated_keys(nodes: dict[str, Node], problems: list[str]) -> None:
+    """A *fresh* value in a key ATF has to look up again is the one incoherent combination.
+
+    `find` resolves the natural key and asks the backend for a match. A value that is new on every
+    pass never matches, so every run creates another record and a shared environment fills up with
+    them — quietly, because nothing fails. Refused here rather than seeded around: seeding would
+    make a generated value into an elaborate way of writing a literal, which is not what anyone
+    reaches for a generator to do.
+
+    Which providers are fresh is theirs to say, not this function's to guess — `${now+1d 09:00}`
+    in a key gives one record per day, which is exactly what someone writing it there is asking
+    for. Only where the lookup happens, too: an ephemeral resource is never looked up, and a field
+    outside the natural key is written once, at creation.
+    """
+    for nid, node in sorted(nodes.items()):
+        if node["lifecycle"] == "ephemeral":
+            continue
+        for key in natural_keys(node["config"]):
+            value = node["body"].get(key)
+            if not isinstance(value, str):
+                continue
+            generated = [
+                expression
+                for expression in PLACEHOLDER_RE.findall(value)
+                if is_generated(expression) and not providers.keyable(providers.split(expression)[0])
+            ]
+            if not generated:
+                continue
+            problems.append(
+                f"{nid}: {key} is part of the natural key and is generated fresh "
+                f"(${{{generated[0]}}}). "
+                "A value that changes every run never matches what is already there, so every run "
+                "would create another one. Write it out, or make the type ephemeral."
+            )
 
 
 def _check_systems(

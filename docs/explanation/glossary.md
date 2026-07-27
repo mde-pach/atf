@@ -25,6 +25,7 @@ says which page treats it properly.
 | [Ephemeral](#ephemeral) | Built fresh each run, deleted afterwards |
 | [Persistent](#persistent) | Found or created, then left in place |
 | [Placeholder](#placeholder) | A `${...}` value resolved at provisioning time |
+| [Provider](#provider) | A named source of generated values |
 | [Environment](#environment) | One deployment the suite can run against |
 | [Mutable environment](#mutable-env) | An environment ATF is allowed to change |
 | [Context](#context) | The per-scenario scratchpad |
@@ -224,6 +225,20 @@ it carries, how many records there are — which is what lets the cockpit say wh
 available to assert on. Descriptions never carry values, because they are written to run history.
 
 See the [specs and fixtures reference](../reference/specs-and-fixtures.md#context).
+
+## Provider {#provider}
+
+A named source of values that a catalog body or a step can interpolate: `${uuid}`, `${fake:email}`,
+`${now+1d 09:00}`.
+
+Registered the way an [adapter](#adapter) is, so a project plugs in whatever it needs. Values are
+fresh — an expression is evaluated once per [scenario](#scenario), so a `When` that generates one
+and the `Then` that checks it see the same answer, and the next scenario generates afresh.
+
+The one place a generated value is refused is a [natural key](#natural-key) ATF has to look up
+again: a value that changes every run never matches, so every run would create another record.
+
+See the [providers reference](../reference/providers.md).
 
 ## Fixture {#fixture}
 

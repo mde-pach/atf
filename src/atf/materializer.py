@@ -62,6 +62,9 @@ class Materializer:
         self.nodes: dict[str, Node] = {}
         self._ids: dict[str, Any] = {}
         self._cache: dict[str, Any] = {}
+        # Generated values, held for one scenario. A `${fake:email}` written in a body and again in
+        # the assertion checking it has to be the same email, or the assertion can never pass.
+        self._generated: dict[str, Any] = {}
         self.reload()
 
     # ---- catalog ----------------------------------------------------------
@@ -91,7 +94,15 @@ class Materializer:
     # call on it.
 
     def resolve(self, value: Any) -> Any:
-        return resolve_placeholders(value, self.identity_of)
+        return resolve_placeholders(value, self.identity_of, self._generated)
+
+    def forget_generated(self) -> None:
+        """Start a fresh scenario: whatever was generated for the last one is not this one's.
+
+        Called once per scenario by the plugin. Within a scenario the values stand still; across
+        scenarios they must not, or an ephemeral resource meant to be new every time is not.
+        """
+        self._generated.clear()
 
     def cached(self, key: str, loader: Callable[[], Any]) -> Any:
         if key not in self._cache:

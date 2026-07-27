@@ -17,6 +17,7 @@ from typing import Any
 from .adapters import Adapter, build
 from .config import Manifest, load_manifest, resolve_env, resolve_env_refs
 from .materializer import Materializer
+from .providers import configure as configure_providers
 
 
 @dataclass
@@ -42,6 +43,12 @@ def bootstrap(env: str | None = None, manifest_path: Path | None = None) -> Boot
         name: resolve_env_refs(raw, f"environments.{active}.clients.{name}")
         for name, raw in settings.clients.items()
     }
+    configure_providers(
+        {
+            name: resolve_env_refs(raw, f"environments.{active}.providers.{name}")
+            for name, raw in settings.providers.items()
+        }
+    )
 
     return Boot(
         manifest=manifest,

@@ -222,3 +222,80 @@ def test_a_reference_outside_depends_on_is_caught(write_catalog):
     with pytest.raises(CatalogError) as err:
         load_catalog(root, SYSTEMS)
     assert any("does not list it in depends_on" in problem for problem in err.value.problems)
+
+
+# ---- a generated value where ATF has to look one up again -------------------
+
+GENERATED_TYPES = """
+account:
+  system: fake
+  natural_key: email
+visitor:
+  system: fake
+  lifecycle: ephemeral
+  natural_key: email
+widget:
+  system: fake
+  mode: reference
+  natural_key: name
+"""
+
+
+def test_a_generated_natural_key_is_refused(write_catalog):
+    """`find` resolves the key and asks the backend for a match. A value that is new every run
+    never matches, so every run creates another record and the environment fills up quietly."""
+    root = write_catalog(
+        {
+            "resources.yaml": GENERATED_TYPES,
+            "accounts.yaml": "primary:\n  resource: account\n  body:\n    email: ${fake:email}\n",
+        }
+    )
+    with pytest.raises(CatalogError) as err:
+        load_catalog(root)
+
+    problem = "\n".join(err.value.problems)
+    assert "accounts.primary: email is part of the natural key and is generated" in problem
+    assert "Write it out, or make the type ephemeral" in problem
+
+
+def test_a_generated_key_on_an_ephemeral_resource_is_fine(write_catalog):
+    """One is never looked up — that is what ephemeral means — so nothing can accumulate."""
+    root = write_catalog(
+        {
+            "resources.yaml": GENERATED_TYPES,
+            "visitors.yaml": "walkin:\n  resource: visitor\n  body:\n    email: ${fake:email}\n",
+        }
+    )
+    _, nodes = load_catalog(root)
+    assert nodes["visitors.walkin"]["body"]["email"] == "${fake:email}"
+
+
+def test_a_generated_value_outside_the_natural_key_is_fine(write_catalog):
+    """It is only ever evaluated at creation; every later run finds the record and keeps it."""
+    root = write_catalog(
+        {
+            "resources.yaml": GENERATED_TYPES,
+            "accounts.yaml": (
+                "primary:\n  resource: account\n  body:\n"
+                "    email: primary@example.test\n    nickname: ${fake:first_name}\n"
+            ),
+        }
+    )
+    _, nodes = load_catalog(root)
+    assert nodes["accounts.primary"]["body"]["nickname"] == "${fake:first_name}"
+
+
+def test_a_node_reference_in_a_natural_key_is_not_a_generated_value(write_catalog):
+    """`${...id}` is resolved from the graph and is the same every run, which is the whole point."""
+    root = write_catalog(
+        {
+            "resources.yaml": GENERATED_TYPES + "\nnote:\n  system: fake\n  natural_key: [account_id, slug]\n",
+            "accounts.yaml": "primary:\n  resource: account\n  body:\n    email: a@b.test\n",
+            "notes.yaml": (
+                "first:\n  resource: note\n  depends_on: [accounts.primary]\n"
+                "  body:\n    slug: first\n    account_id: ${accounts.primary.id}\n"
+            ),
+        }
+    )
+    _, nodes = load_catalog(root)
+    assert nodes["notes.first"]["body"]["account_id"] == "${accounts.primary.id}"

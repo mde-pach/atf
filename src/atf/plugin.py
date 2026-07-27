@@ -20,6 +20,7 @@ from .bootstrap import Boot, bootstrap
 from .catalog import natural_keys
 from .context import EPHEMERAL_ATTR, Context, Recogniser
 from .materializer import Materializer
+from .placeholders import PLACEHOLDER_RE, Unresolved
 from .runner import PROGRESS_OUT
 
 # The read-and-compare steps are a plugin of their own so that the step definitions land in their
@@ -51,6 +52,8 @@ def client_config(env: str) -> dict[str, dict[str, Any]]:
 @pytest.fixture
 def context(materializer: Materializer) -> Context:
     """The per-scenario scratchpad: steps write what they create and read what they need."""
+    # A new context is a new scenario, which is the lifetime a generated value is held for.
+    materializer.forget_generated()
     return Context(recognise=recogniser(materializer))
 
 
@@ -125,6 +128,28 @@ def _provision(context: Context, request: pytest.FixtureRequest, resource_type: 
     if isinstance(context, Context):
         context.note(resource_type, resource_type=resource_type, node_id=engine.resolve_id(resource_type, name))
     return record
+
+
+def pytest_bdd_before_step_call(request, feature, scenario, step, step_func, step_func_args) -> None:
+    """Resolve `${...}` in every value a step was handed, whoever wrote the step.
+
+    Gherkin has no way to say "a fresh company name", so a value written between quotes is the
+    only place a generated one can come from. Doing it here rather than inside ATF's own steps is
+    what makes it true of *any* step: `When I rename it to "${fake:company}"` works in a step the
+    project wrote this morning, with nothing added to it.
+
+    pytest-bdd passes this the same dict it is about to call the step with, so resolving in place
+    is all there is to it. One evaluation per scenario means the `Then` that checks the rename
+    writes the same expression and sees the same answer.
+    """
+    engine: Materializer = request.getfixturevalue("materializer")
+    for name, value in list(step_func_args.items()):
+        if not isinstance(value, str) or PLACEHOLDER_RE.search(value) is None:
+            continue
+        try:
+            step_func_args[name] = str(engine.resolve(value))
+        except Unresolved as exc:
+            pytest.fail(f"{step.name!r}: {exc}")
 
 
 def _emit(event: dict[str, Any]) -> None:

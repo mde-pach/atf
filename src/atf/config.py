@@ -42,6 +42,7 @@ class DisplayConfig:
 class EnvConfig:
     adapters: dict[str, dict[str, Any]] = field(default_factory=dict)
     clients: dict[str, dict[str, Any]] = field(default_factory=dict)
+    providers: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -179,7 +180,8 @@ def _parse_environments(value: Any, problems: list[str]) -> dict[str, EnvConfig]
             continue
         adapters = _mapping_of_mappings(entry.get("adapters"), f"environments.{name}.adapters", problems)
         clients = _mapping_of_mappings(entry.get("clients"), f"environments.{name}.clients", problems)
-        out[str(name)] = EnvConfig(adapters=adapters, clients=clients)
+        supplied = _mapping_of_mappings(entry.get("providers"), f"environments.{name}.providers", problems)
+        out[str(name)] = EnvConfig(adapters=adapters, clients=clients, providers=supplied)
     return out
 
 

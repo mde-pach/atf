@@ -338,3 +338,80 @@ def test_the_capture_table_covers_every_pattern(pattern):
 
 def test_a_project_step_is_not_in_the_table():
     assert generic("I read its plan") is None
+
+
+# ---- a generated value, from the step that makes it to the step that checks it
+
+
+RENAME = '''
+
+import json
+from pathlib import Path
+
+from pytest_bdd import parsers, when
+
+
+@when(parsers.parse('I rename it to "{title}"'))
+def _(context, client_config, title):
+    path = Path(__file__).parent.parent.parent / client_config["api"]["path"]
+    data = json.loads(path.read_text())
+    for record in data["accounts"]:
+        if record["id"] == context.account["id"]:
+            record["plan"] = title
+    path.write_text(json.dumps(data, indent=2))
+'''
+
+
+def test_a_generated_value_survives_from_the_when_that_made_it_to_the_then(project):
+    """The whole point of naming a provider: an action takes a generated value in, and the
+    assertion checking it writes the same expression and sees the same answer."""
+    feature = """Feature: Generated
+  Scenario: An account reports the plan it was just moved to
+    Given the account "primary"
+    When I rename it to "${uuid}"
+    Then the account "primary" field "plan" is "${uuid}"
+"""
+    result = run_feature(project, "generated", feature, RENAME)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_two_calls_are_told_apart_by_a_discriminator(project):
+    feature = """Feature: Generated
+  Scenario: Two generated values are not the same value
+    Given the account "primary"
+    When I rename it to "${uuid}"
+    Then the account "primary" field "plan" is not "${uuid#other}"
+"""
+    result = run_feature(project, "discriminated", feature, RENAME)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_each_scenario_generates_its_own(project):
+    """Values stand still within a scenario; across scenarios they must not."""
+    feature = """Feature: Generated
+  Scenario Outline: Every row gets its own value
+    Given the account "<who>"
+    When I rename it to "${uuid}"
+    Then the account "<who>" field "plan" is "${uuid}"
+
+    Examples:
+      | who       |
+      | primary   |
+      | secondary |
+"""
+    result = run_feature(project, "per_scenario", feature, RENAME)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    plans = {record["plan"] for record in json.loads((project / "store.json").read_text())["accounts"]}
+    assert len(plans) == 2, "one value per scenario, not one for the whole run"
+
+
+def test_a_placeholder_that_cannot_resolve_says_which_one(project):
+    feature = """Feature: Generated
+  Scenario: A provider nobody registered
+    Given the account "primary"
+    Then the account "primary" field "plan" is "${nosuchprovider:x}"
+"""
+    result = run_feature(project, "unknown_provider", feature)
+    assert result.returncode != 0
+    assert "no provider registered as 'nosuchprovider'" in result.stdout

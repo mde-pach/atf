@@ -29,8 +29,9 @@ then_picker_opened:
 then_picker_filtered:
   resource: view
   represents: >
-    The options left after typing "belongs" — the suite defines exactly one Then containing that
-    word, so a picker that filters leaves exactly one.
+    The options left after typing "gone" — exactly one step ATF provides is worded that way, so a
+    picker that filters leaves exactly one. Deliberately one of ATF's own: with no feature chosen
+    yet, a step the suite declares in a module is not reachable and is not offered.
   depends_on:
     - cockpits.chained
     - pages.compose
@@ -40,7 +41,7 @@ then_picker_filtered:
     selector: "#compose-form .builder-step:last-of-type .combo-list li[role=option]:not([hidden])"
     after:
       - { do: click, at: "#compose-form .builder-step:last-of-type .combo-input" }
-      - { do: type, at: "#compose-form .builder-step:last-of-type .combo-input", text: "belongs" }
+      - { do: type, at: "#compose-form .builder-step:last-of-type .combo-input", text: "gone" }
 
 catalog_lineage_sentence:
   resource: view
@@ -54,3 +55,20 @@ catalog_lineage_sentence:
     cockpit: ${cockpits.chained.id}
     page: ${pages.groceries_node.id}
     selector: "div.card p.small"
+
+then_picker_survivor:
+  resource: view
+  represents: >
+    The one option left after typing "gone", identified by the value it would submit. Matched on
+    the attribute rather than the wording, because the wording is full of quotes and Gherkin has
+    no way to escape one inside a quoted value.
+  depends_on:
+    - cockpits.chained
+    - pages.compose
+  body:
+    cockpit: ${cockpits.chained.id}
+    page: ${pages.compose.id}
+    selector: "#compose-form .builder-step:last-of-type .combo-list li[data-value$='is gone']:not([hidden])"
+    after:
+      - { do: click, at: "#compose-form .builder-step:last-of-type .combo-input" }
+      - { do: type, at: "#compose-form .builder-step:last-of-type .combo-input", text: "gone" }

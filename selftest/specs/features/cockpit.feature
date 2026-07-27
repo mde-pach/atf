@@ -60,7 +60,7 @@ Feature: The cockpit
   Scenario: Typing narrows a step picker to what matches
     Given the view "then_picker_filtered"
     Then the view "then_picker_filtered" field "visible" is "1"
-    And the view "then_picker_filtered" field "data-value" is "the list belongs to the owner"
+    And the view "then_picker_survivor" field "visible" is "1"
 
   @browser
   Scenario: A small lineage reads as a sentence a person can follow

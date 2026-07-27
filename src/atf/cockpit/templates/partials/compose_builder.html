@@ -125,6 +125,16 @@
     </span>
   </header>
 
+  {% if elsewhere %}
+    {# Not an error: it is the rule, said where it bites. #}
+    <p class="small muted">
+      Steps in {% for name in elsewhere %}<code>{{ name }}</code>{{ ", " if not loop.last }}{% endfor %}
+      are not offered here — pytest scopes a step to the module that declares it. Put this scenario in the
+      feature that module already binds, or move the step into
+      <code>{{ rel(specs_dir) }}/conftest.py</code> where every feature can see it.
+    </p>
+  {% endif %}
+
   {% if not offered['when'] and not offered['then'] %}
     <div class="banner warn">
       This suite defines no <code>When</code> or <code>Then</code> steps yet, so there is nothing to pick. A step is a

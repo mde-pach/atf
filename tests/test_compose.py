@@ -68,6 +68,27 @@ def draft(**overrides) -> dict[str, str]:
     return {key: value for key, value in data.items() if value is not None}
 
 
+def fresh_feature(**overrides) -> dict[str, str]:
+    """A draft for a brand-new feature, using only steps a module that does not exist yet can see."""
+    data = {
+        "mode": "build",
+        "feature": "",
+        "feature_title": "Billing",
+        "title": "A brand new behaviour",
+        "kw_0": "given",
+        "rtype_0": "account",
+        "rname_0": "primary",
+        "kw_1": "then",
+        "pattern_1": FIELD_IS,
+        "p_1_resource_type": "account",
+        "p_1_name": "primary",
+        "p_1_field": "plan",
+        "p_1_value": "standard",
+    }
+    data.update(overrides)
+    return {key: value for key, value in data.items() if value is not None}
+
+
 def esc(text: str) -> str:
     """Exactly as Jinja would have written it into the page."""
     return str(escape(text))
@@ -87,10 +108,53 @@ def feature_file(project, name: str = "accounts.feature"):
 
 
 def test_the_picker_offers_only_steps_this_suite_actually_defines(client):
-    body = client.get("/compose").text
+    body = client.post("/compose/preview", data=draft()).text
     assert "I read its plan" in body  # a @when from the project
     assert esc('the plan is "{expected}"') in body  # a @then with a parameter
     assert "I invent a wording" not in body
+
+
+# ---- a step is only offered where it can actually be used -------------------
+
+
+def test_a_step_is_offered_only_where_the_binding_module_can_see_it(client):
+    """pytest scopes a step to the module that declares it, so a scenario elsewhere cannot use it.
+
+    Offering one anyway is offering a scenario that composes cleanly, saves cleanly, and then
+    fails to run for a reason nothing on the page mentions.
+    """
+    bound = client.post("/compose/preview", data=draft(feature="Accounts")).text
+    assert "I read its plan" in bound
+
+    fresh = client.post("/compose/preview", data=draft(feature="", feature_title="Billing")).text
+    assert 'data-value="I read its plan"' not in fresh, "test_accounts.py cannot reach a new module"
+    assert f'data-value="{esc(FIELD_IS)}"' in fresh, "ATF's own are a plugin's, so visible everywhere"
+    # And a step chosen before the feature changed stops resolving, rather than being kept and
+    # failing only when it runs.
+    assert "no when step this feature can reach" in fresh
+
+
+def test_a_step_that_cannot_be_reached_says_why_and_what_to_do_about_it(client):
+    body = client.post("/compose/preview", data=draft(feature="", feature_title="Billing")).text
+    assert "are not offered here" in body
+    assert "test_accounts.py" in body
+    assert "conftest.py" in body, "one of the two fixes is to move the step somewhere shared"
+
+
+def test_a_step_in_a_conftest_is_reachable_from_anywhere(client, project):
+    """Which is the fix the message recommends, so it had better be true."""
+    (project / "specs" / "conftest.py").write_text(
+        "from api import api  # noqa: F401\n"
+        "from pytest_bdd import when\n\n\n"
+        '@when("I do something shared")\n'
+        "def _(context):\n"
+        "    context.result = []\n",
+        encoding="utf-8",
+    )
+    client.cockpit.invalidate("dev")
+
+    fresh = client.post("/compose/preview", data=draft(feature="", feature_title="Billing")).text
+    assert "I do something shared" in fresh
 
 
 def test_the_generic_provisioning_step_is_never_offered_as_a_when_or_then(client):
@@ -115,7 +179,7 @@ def test_a_parameterised_step_gets_an_input_per_capture(client):
 def test_the_page_says_which_steps_are_yours_to_write_by_grouping_them(client):
     """Said by the shape of the list rather than by a paragraph above it: explaining what someone
     is looking at is what you do when it is not clear enough on its own."""
-    body = client.get("/compose").text
+    body = client.post("/compose/preview", data=draft()).text
     then_picker = body[body.index('name="pattern_2"'):]
     assert then_picker.index("Ready to use") < then_picker.index("This suite&#39;s own")
     assert "How a scenario is put together" not in body
@@ -134,7 +198,7 @@ def test_a_suite_with_no_when_or_then_steps_is_told_how_to_write_one(client):
 
 def test_the_steps_atf_provides_are_offered_apart_from_the_suites_own(client):
     """Which is the first thing an author needs: one group needs code, the other never does."""
-    body = client.get("/compose").text
+    body = client.post("/compose/preview", data=draft()).text
     assert "Ready to use" in body
     assert "This suite&#39;s own" in body
     assert esc(FIELD_IS) in body
@@ -264,7 +328,7 @@ def test_a_repeated_keyword_is_written_as_and(client):
 def test_an_unresolved_step_is_reported_in_words(client):
     body = client.post("/compose/preview", data=draft(pattern_1="I invent a wording")).text
     assert 'class="unresolved"' in body
-    assert "nothing in this suite defines a when step worded" in body
+    assert "no when step this feature can reach is worded" in body
     assert "disabled" in body
 
 
@@ -426,7 +490,7 @@ def test_a_new_feature_becomes_a_file_with_its_narrative(client, project):
     response = client.post(
         "/compose/apply",
         data={
-            **draft(feature="", feature_title="Billing", narrative="Billing follows the plan."),
+            **fresh_feature(narrative="Billing follows the plan."),
             "confirm": confirm(client),
         },
     )
@@ -533,8 +597,7 @@ def test_a_brand_new_feature_is_bound_without_anyone_writing_a_py_file(client, p
     """Composing a scenario and then being told to go and write Python is the point at which the
     interface stops being one."""
     body = client.post(
-        "/compose/apply",
-        data={**draft(feature="", feature_title="Billing"), "confirm": confirm(client)},
+        "/compose/apply", data={**fresh_feature(), "confirm": confirm(client)}
     ).text
     assert "so pytest collects it" in body
     assert "It will not run yet" not in body

@@ -217,8 +217,25 @@ def _starting_rows() -> list[Row]:
     return [Row(index=index, keyword=keyword) for index, keyword in enumerate(KEYWORDS)]
 
 
+def offered_steps(env: str, feature: str) -> dict[str, list[StepDef]]:
+    """The steps a scenario in `feature` can actually use, by keyword.
+
+    Everything the composer does with steps goes through here — what it offers, and what it
+    accepts. A step resolved from a wider set than it is offered from is a step someone can keep
+    by switching feature after choosing it, and then find missing only when it runs.
+    """
+    cockpit = app()
+    found = cockpit.discovery(env)
+    binding = _binding_module(found, feature) if feature else None
+    specs_dir = cockpit.manifest.specs_dir
+    return {
+        keyword: [step for step in found.steps_for(keyword) if reachable(step, binding, specs_dir)]
+        for keyword in KEYWORDS
+    }
+
+
 def _rows(env: str, fields: dict[str, str]) -> list[Row]:
-    found = app().discovery(env)
+    found = offered_steps(env, fields.get("feature", "").strip())
     prefix = "kw_"
     indices = sorted(
         int(key[len(prefix) :]) for key in fields if key.startswith(prefix) and key[len(prefix) :].isdigit()
@@ -232,7 +249,7 @@ def _rows(env: str, fields: dict[str, str]) -> list[Row]:
     return kept
 
 
-def _row(index: int, fields: dict[str, str], found: Discovery) -> Row | None:
+def _row(index: int, fields: dict[str, str], found: dict[str, list[StepDef]]) -> Row | None:
     keyword = fields.get(f"kw_{index}", "")
     if keyword not in KEYWORDS:
         return None
@@ -243,7 +260,7 @@ def _row(index: int, fields: dict[str, str], found: Discovery) -> Row | None:
         return row
 
     row.pattern = fields.get(f"pattern_{index}", "")
-    row.definition = next((step for step in found.steps_for(keyword) if step.pattern == row.pattern), None)
+    row.definition = next((step for step in found[keyword] if step.pattern == row.pattern), None)
     if row.definition is not None:
         row.values = {name: fields.get(f"p_{index}_{name}", "").strip() for name in row.definition.params}
     return row
@@ -331,7 +348,9 @@ def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
         row.problem = f"choose the {row.keyword} step this scenario uses"
         return
     if row.definition is None:
-        row.problem = f"nothing in this suite defines a {row.keyword} step worded {row.pattern!r}"
+        row.problem = (
+            f"no {row.keyword} step this feature can reach is worded {row.pattern!r}"
+        )
         row.text = row.pattern
         return
 
@@ -611,6 +630,62 @@ from pytest_bdd import scenarios
 scenarios("{path}")
 '''
 
+# A `scenarios(...)` call on its own line — what binds a feature to pytest.
+_SCENARIOS_CALL = re.compile(r"^[ \t]*scenarios\((?:[^()]|\([^()]*\))*\)[ \t]*$", re.MULTILINE)
+
+
+def _binding_module(found: Discovery, feature: str) -> Path | None:
+    """The module that hands this feature to pytest, if one does.
+
+    It matters far beyond collection: pytest-bdd registers every step as a fixture in the module
+    that declares it, so *which* module binds a feature decides which steps that feature can use.
+    """
+    for test in found.tests:
+        spec = found.spec(test.covers) if test.covers else None
+        if spec is not None and spec.feature == feature and test.file:
+            return Path(test.file)
+    return None
+
+
+def _rebound(source: str, feature: Path, module_dir: Path) -> str:
+    """A steps module, rewritten to bind `feature` instead of whatever it bound before.
+
+    Copying the module rather than writing a bare one is what makes a trial faithful: a step is
+    only visible to the module that declares it, so a scenario tried anywhere else would report
+    steps missing that will resolve perfectly well once it is saved.
+    """
+    call = f'scenarios("{Path(os.path.relpath(feature, module_dir)).as_posix()}")'
+    seen = False
+
+    def swap(match: re.Match[str]) -> str:
+        nonlocal seen
+        if seen:
+            return ""  # one feature per scratch module: the rest would collect twice
+        seen = True
+        return call
+
+    rewritten = _SCENARIOS_CALL.sub(swap, source)
+    return rewritten if seen else f"{rewritten}\n\n{call}\n"
+
+
+def reachable(step: StepDef, module: Path | None, specs_dir: Path) -> bool:
+    """Whether a step definition is visible from the module that will bind a feature.
+
+    pytest's fixture rules, which is what step lookup really is: a step declared in a module is
+    visible in that module, one declared in a `conftest.py` is visible below it, and one a plugin
+    registered — every step ATF itself defines — is visible everywhere.
+    """
+    if not step.file:
+        return True
+    path = Path(step.file)
+    try:
+        path.relative_to(specs_dir)
+    except ValueError:
+        return True
+    if path.name == "conftest.py":
+        return module is None or path.parent in module.parents
+    return module is not None and path == module
+
 
 def _bind(draft: Draft) -> str:
     """Write the module that makes a feature collectable, unless something already does.
@@ -647,16 +722,24 @@ def _try(env: str, draft: Draft) -> Trial:
     found = cockpit.discovery(env)
 
     name = f"atf_trying_{secrets.token_hex(4)}"
+    binding = _binding_module(found, draft.feature) if draft.feature else None
     feature = _inside(_features_dir(found) / f"{name}.feature")
-    module = _inside(_steps_dir(found) / f"test_{name}.py")
+    module = _inside((binding.parent if binding else _steps_dir(found)) / f"test_{name}.py")
     heading = draft.feature or draft.feature_title or "Trying a scenario"
 
     try:
         feature.parent.mkdir(parents=True, exist_ok=True)
         module.parent.mkdir(parents=True, exist_ok=True)
         feature.write_text(f"Feature: {heading}\n\n{draft.block}", encoding="utf-8")
+        # A copy of the module that will bind this scenario, so the trial sees the steps the real
+        # run will. Bare, when the feature is new and no module binds it yet — which is also the
+        # truth about what such a scenario would be able to reach.
         module.write_text(
-            BINDING.format(name=feature.name, path=Path(os.path.relpath(feature, module.parent)).as_posix()),
+            _rebound(binding.read_text(encoding="utf-8"), feature, module.parent)
+            if binding
+            else BINDING.format(
+                name=feature.name, path=Path(os.path.relpath(feature, module.parent)).as_posix()
+            ),
             encoding="utf-8",
         )
         summary = run_tests([str(module)], env, cockpit.manifest.root, specs_dir)
@@ -777,6 +860,13 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
 
     status = cockpit.status(env)
 
+    # Only the steps this scenario will actually be able to use. Offering one it cannot reach is
+    # offering a scenario that composes cleanly and then fails to run for a reason nothing on the
+    # page explains — pytest-bdd scopes a step to the module that declares it.
+    binding = _binding_module(found, draft.feature) if draft.feature else None
+    specs_dir = cockpit.manifest.specs_dir
+    offered = offered_steps(env, draft.feature)
+
     return {
         "env": env,
         "title": "Compose a scenario",
@@ -787,7 +877,8 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         "types": sorted(engine.types),
         "instances": instances,
         "status": status,
-        "offered": {keyword: found.steps_for(keyword) for keyword in KEYWORDS},
+        "offered": offered,
+        "elsewhere": _elsewhere(found, offered, binding, specs_dir),
         "keywords": KEYWORDS,
         "specs_dir": cockpit.manifest.specs_dir,
         # Choices carry what is needed to make them: a list of names tells you nothing about which
@@ -795,7 +886,7 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         "feature_options": _feature_options(found),
         "type_options": _type_options(engine, instances, status),
         "instance_options": lambda resource_type: _instance_options(instances.get(resource_type, []), status),
-        "step_options": {keyword: _step_options(found.steps_for(keyword)) for keyword in KEYWORDS},
+        "step_options": {keyword: _step_options(offered[keyword]) for keyword in KEYWORDS},
         # Only the steps ATF itself defines get a picker per parameter: they are the only ones
         # whose parameters ATF chose, so the only ones whose meaning it can know. A project's
         # step keeps a text box, because `{expected}` could be anything at all.
@@ -806,6 +897,25 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         ),
         "capture_kinds": (TYPE, NAME, FIELD, VALUE),
     }
+
+
+def _elsewhere(
+    found: Discovery, offered: dict[str, list[StepDef]], binding: Path | None, specs_dir: Path
+) -> list[str]:
+    """Modules holding steps this feature cannot use, so the reason can be said rather than felt.
+
+    The fix is one a person has to choose between — put the scenario in the feature whose module
+    already has the step, or move the step into a `conftest.py` where every feature can see it —
+    so the interface names both and picks neither.
+    """
+    shown = {step.pattern for steps in offered.values() for step in steps}
+    files = {
+        Path(step.file).name
+        for keyword in KEYWORDS
+        for step in found.steps_for(keyword)
+        if step.pattern not in shown and step.file and not reachable(step, binding, specs_dir)
+    }
+    return sorted(files)
 
 
 def _feature_options(found: Discovery) -> list[dict[str, str]]:

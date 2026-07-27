@@ -24,6 +24,7 @@ this suite is what the tutorial's toy version grows into.
 | Custom adapter, multi-step create + teardown | `guest` — sign up → activate → poll until ready |
 | Ephemeral lifecycle | `guest` — built per run, deleted afterwards |
 | A read-only environment | `staging`, absent from `mutable_envs` |
+| Read-and-compare steps ATF provides | every `Then` but one, across both features |
 
 ## Driving it from the CLI or cockpit
 
@@ -52,12 +53,33 @@ you provisioned. See
 
 `atf seed staging` exits 2: `staging` is not in `mutable_envs`.
 
+## How little step code this needs
+
+Seven scenarios; four step functions, all of them in `specs/steps/test_lists.py`. Three are `When`s
+that call the API — performing an action is real code by definition. The fourth is a `Then`, because
+"all of them are open" is a claim about a response, not about a resource ATF can read back.
+
+`specs/steps/test_guests.py` has no step code at all: one `scenarios(…)` line, and both its
+scenarios assert through the steps ATF provides.
+
+The one worth reading twice is "Completing a task marks it done":
+
+```gherkin
+Given the task "laundry"
+When I complete the task          # yours: a PATCH against the API
+Then the task "laundry" field "done" is "true"     # ATF's: it reads the task back
+```
+
+The `Then` is generic even though the `When` changed the task behind ATF's back, because it goes
+back to the backend and looks rather than trusting what the scenario was handed. See
+[Read-and-compare steps](https://mde-pach.github.io/atf/reference/specs-and-fixtures/#read-and-compare-steps).
+
 ## Two things the catalog is doing on purpose
 
 **`tasks.laundry` exists so `tasks.milk` stays open.** Persistent resources are get-or-created and
 left in place, so a scenario that *mutates* one must own it. "Completing a task marks it done"
-closes `laundry`; "A task lands on its list" asserts `milk` is still open. Point both at the same
-task and the second scenario fails on the second run.
+closes `laundry`; "A list carries only open tasks" asserts `milk` is still open. Point both at the
+same task and the second scenario fails on the second run.
 
 **The guest is one adapter, not three steps.** Signing up, activating and polling until ready is a
 chain no declarative config expresses — so it lives in `adapters.py`, and the catalog treats a

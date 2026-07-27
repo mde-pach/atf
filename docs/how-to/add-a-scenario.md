@@ -49,9 +49,27 @@ explains why.
 When you do need a new instance, it is one YAML block; see
 [How to add a resource](add-a-resource.md).
 
+## Check whether you need to write anything at all
+
+Before writing a step, look at what a `Then` is really claiming. If it is a field of a resource the
+catalog declares, ATF already has a step for it:
+
+```gherkin
+  Scenario: A closed account is on no plan
+    Given the account "closed"
+    Then the account "closed" field "plan" is ""
+    And the account "closed" field "status" is not "active"
+```
+
+Those need no code, in any suite. They read the resource back through the adapter at the moment they
+run, so they hold even after a `When` of yours has changed it — see
+[read-and-compare steps](../reference/specs-and-fixtures.md#read-and-compare-steps). Writing a step
+by hand to compare one field is re-implementing something the framework does.
+
 ## Add the missing vocabulary
 
-Any `When` or `Then` line that does not already exist is a function in the steps module:
+What is left after that is genuinely yours: performing an action, and any claim that is not about
+one field of one resource. Each is a function in the steps module:
 
 ```python
 @when("I attempt to bill the account")
@@ -84,7 +102,7 @@ copying the scenario:
 ```gherkin
   Scenario Outline: Accounts report their own plan
     Given the account "<who>"
-    Then the plan is "<plan>"
+    Then the account "<who>" field "plan" is "<plan>"
 
     Examples:
       | who       | plan     |

@@ -86,15 +86,25 @@ cat specs/features/accounts.feature
 Feature: Accounts
   An account owns the projects created under it.
 
-  Scenario: A project belongs to its account
+  Scenario: A project is created under its account
+    Given the project "alpha"
+    Then the project "alpha" exists
+    And the project "alpha" field "slug" is "alpha"
+
+  Scenario: A project is listed under its account
     Given the account "primary"
     And the project "alpha"
     When I list the projects of the account
     Then the project "alpha" is listed
 ```
 
-Look at the first line: `Given the account "primary"`. That names the resource you just read. You
-did not write that step — ATF provides one like it for every resource in your catalog.
+Look at the first scenario: not one of its three lines is code you wrote. `Given the project "alpha"`
+names a resource in your catalog and ATF makes it exist; the two `Then` lines read it back through
+the same adapter and compare a field you named. ATF provides those steps to every suite.
+
+The second scenario is the other half. Listing projects is an action against *your* API, and "is
+listed" is a claim about what came back rather than about the resource itself — so both are yours,
+in `specs/steps/test_accounts.py`. Knowing which half a line falls in is most of writing a suite.
 
 ## See what does not exist yet
 
@@ -123,12 +133,13 @@ atf run
 ```
 
 ```
-  [ passed] specs/steps/test_accounts.py::test_a_project_belongs_to_its_account  0.02s
+  [ passed] specs/steps/test_accounts.py::test_a_project_is_created_under_its_account  0.02s
+  [ passed] specs/steps/test_accounts.py::test_a_project_is_listed_under_its_account   0.02s
 
-1 passed, 0 failed, 0 skipped, 0 errored in dev
+2 passed, 0 failed, 0 skipped, 0 errored in dev
 ```
 
-You have run your first test, and it passed.
+You have run your first tests, and they passed.
 
 Notice what you did not do. You never told the test to create an account. The scenario said
 `Given the account "primary"`, so ATF resolved that to the catalog node, saw that
@@ -205,13 +216,14 @@ atf run
 ```
 
 ```
-  [ passed] specs/steps/test_accounts.py::test_a_new_account_has_no_projects  0.01s
-  [ passed] specs/steps/test_accounts.py::test_a_project_belongs_to_its_account  0.02s
+  [ passed] specs/steps/test_accounts.py::test_a_new_account_has_no_projects          0.01s
+  [ passed] specs/steps/test_accounts.py::test_a_project_is_created_under_its_account  0.02s
+  [ passed] specs/steps/test_accounts.py::test_a_project_is_listed_under_its_account   0.02s
 
-2 passed, 0 failed, 0 skipped, 0 errored in dev
+3 passed, 0 failed, 0 skipped, 0 errored in dev
 ```
 
-Two tests, both green — one per scenario. Count what you wrote: one YAML block, three lines of
+Three tests, all green — one per scenario. Count what you wrote: one YAML block, three lines of
 Gherkin, one assertion. The account was created for you.
 
 ## What you have done

@@ -145,9 +145,9 @@ outcome and duration and a summary. For a test that failed, it also prints the *
 run reached** and the last line of the failure:
 
 ```
-  [ failed] specs/steps/test_lists.py::test_a_task_lands_on_its_list  0.03s
-           at: When I read the tasks on the list
-           AssertionError: assert 'Buy milk' in []
+  [ failed] specs/steps/test_lists.py::test_completing_a_task_marks_it_done  0.03s
+           at: Then the task "laundry" field "done" is "true"
+           Failed: task 'laundry' field 'done' is false (a true/false value), not "true"
 ```
 
 The results are added to the [run history](cockpit.md#run-history). Writing that history is

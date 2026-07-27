@@ -241,7 +241,16 @@ FEATURE = """\
 Feature: Accounts
   An account owns the projects created under it.
 
-  Scenario: A project belongs to its account
+  # Nothing below this line needs step code: ATF reads the resource back through the
+  # adapter its type declares, and compares the field you named.
+  Scenario: A project is created under its account
+    Given the project "alpha"
+    Then the project "alpha" exists
+    And the project "alpha" field "slug" is "alpha"
+
+  # This one does: listing projects is an action against your API, and "is listed" is a
+  # claim about what came back rather than about the resource itself.
+  Scenario: A project is listed under its account
     Given the account "primary"
     And the project "alpha"
     When I list the projects of the account
@@ -253,8 +262,9 @@ from pytest_bdd import parsers, scenarios, then, when
 
 scenarios("../features/accounts.feature")
 
-# `Given the <type> "<name>"` is provided by ATF. Everything below is your vocabulary:
-# each step reads its subject from `context` and writes the outcome back.
+# `Given the <type> "<name>"` is ATF's, and so is the family of read-and-compare steps the
+# first scenario uses. Everything below is your vocabulary: each step reads its subject from
+# `context` and writes the outcome back.
 
 
 @when("I list the projects of the account")
@@ -301,10 +311,12 @@ export ATF_ACTOR=...          # every other *_env pointer in atf.yaml wants one 
 - **A resource** — a node in `catalog/*.yaml`, plus its type in `catalog/resources.yaml`.
 - **A spec** — a `Scenario` in `specs/features/*.feature`, bound by `scenarios(...)` in a
   `specs/steps/test_*.py` module.
-- **A behaviour** — one `When`/`Then` in that steps module.
+- **A behaviour** — one `When`/`Then` in that steps module, but check first whether you need one:
+  asserting on a field of a resource the catalog declares takes no code at all.
 
-Tests and fixtures follow automatically: each resource type becomes a pytest fixture, and
-`Given the <type> "<name>"` provisions any resource in the catalog.
+Tests and fixtures follow automatically: each resource type becomes a pytest fixture,
+`Given the <type> "<name>"` provisions any resource in the catalog, and
+`Then the <type> "<name>" field "<f>" is "<v>"` reads it back and checks it.
 """
 
 

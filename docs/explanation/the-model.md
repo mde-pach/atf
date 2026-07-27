@@ -85,6 +85,13 @@ Per-type *fixtures* are a different matter, and those ATF does generate. A fixtu
 is discoverable by `pytest --fixtures`, injectable into a plain test, and named on the type's page in
 the cockpit. It is a real thing a test can depend on; a step is not.
 
+The same argument is why there is a *family* of
+[read-and-compare steps](../reference/specs-and-fixtures.md#read-and-compare-steps) and not one per
+type either. "Does this exist", "is this field that value" and "has this gone" are three behaviours
+parameterised by type, not three behaviours per type. One generic step was the right count for
+provisioning and the wrong count for everything else: every suite went on to write the same
+assertions by hand, which is what a missing framework layer looks like from the outside.
+
 ## Where the line on record shape falls {#record-shape}
 
 The record an adapter returns is passed to your steps untouched. When a step reads

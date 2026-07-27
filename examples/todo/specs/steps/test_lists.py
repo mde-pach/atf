@@ -1,6 +1,15 @@
-"""Vocabulary for the list behaviours: the only hand-written step code in this suite."""
+"""The only hand-written step code in this suite, and only where it has to be.
 
-from pytest_bdd import parsers, scenarios, then, when
+Three `When`s, because each performs an action against the API — that is real code by definition.
+One `Then`, because "all of them" is a claim about a response, not about a resource ATF can read
+back for itself.
+
+Everything else these features assert is a field of a catalog resource, and ATF reads those:
+`Then the task "laundry" field "done" is "true"` needs nothing here, even though the `When` above
+it changed the task through the API. The assertion goes back to the backend and looks.
+"""
+
+from pytest_bdd import scenarios, then, when
 
 scenarios("../features/lists.feature")
 
@@ -20,22 +29,6 @@ def _(context, api):
     context.result = api.complete(context.task)
 
 
-@then(parsers.parse('the plan is "{expected}"'))
-def _(context, expected):
-    assert context.owner["plan"] == expected
-
-
-@then(parsers.parse('the list "{slug}" is among them'))
-def _(context, slug):
-    assert slug in [item["slug"] for item in context.result]
-
-
-@then(parsers.parse('the task "{title}" is open'))
-def _(context, title):
-    task = next(item for item in context.result if item["title"] == title)
-    assert task["done"] is False
-
-
-@then("the task is done")
+@then("the tasks that came back are all open")
 def _(context):
-    assert context.result["done"] is True
+    assert context.result and all(task["done"] is False for task in context.result)

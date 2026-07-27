@@ -80,7 +80,9 @@ def test_the_scaffolded_suite_runs_green(tmp_path, monkeypatch):
             timeout=300,
         )
         assert completed.returncode == 0, completed.stdout + completed.stderr
-        assert "1 passed" in completed.stdout
+        # One scenario needing no step code, one needing a When and a Then: the scaffold has to
+        # show both, because knowing which is which is most of writing a suite.
+        assert "2 passed" in completed.stdout
     finally:
         stub.stop()
 

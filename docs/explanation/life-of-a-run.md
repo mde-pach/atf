@@ -7,11 +7,11 @@ keys, the adapter methods and the cockpit's states all stop being arbitrary.
 The scenario:
 
 ```gherkin
-Scenario: A task lands on its list
+Scenario: A list carries only open tasks
   Given the todo_list "groceries"
   And the task "milk"
   When I read the tasks on the list
-  Then the task "Buy milk" is open
+  Then the tasks that came back are all open
 ```
 
 Nothing here says "create a list". The first two lines *declare* what must exist.

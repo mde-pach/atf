@@ -3,9 +3,9 @@ Feature: Guests and labels
 
   Scenario: A guest is ready as soon as it is provisioned
     Given the guest "visitor"
-    When I read the guest
-    Then the guest is ready
+    Then the guest "visitor" field "state" is "ready"
 
   Scenario: The environment's label is available
     Given the label "urgent"
-    Then the label "urgent" is found
+    Then the label "urgent" exists
+    And the label "urgent" field "name" is "Urgent"

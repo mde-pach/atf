@@ -73,11 +73,101 @@ def pytest_collection_modifyitems(items):
             item.add_marker(pytest.mark.skip(reason="work in progress"))
 ```
 
+## Read-and-compare steps {#read-and-compare-steps}
+
+Six more steps, registered by the plugin, available in every suite without writing anything. They
+exist because every project was writing the same family for itself: `the plan is "standard"` is not
+domain knowledge, it is a record read through an adapter ATF already has and compared with a value
+you already wrote.
+
+| Step | Passes when |
+|---|---|
+| `Then the <type> "<name>" exists` | Reading the resource back finds it. |
+| `Then the <type> "<name>" is gone` | Reading it back finds nothing. |
+| `Then the <type> "<name>" field "<f>" is "<v>"` | The record's `<f>` compares equal to `<v>`. |
+| `Then the <type> "<name>" field "<f>" is not "<v>"` | It does not. |
+| `Then the result contains the <type> "<name>"` | One of the records in `context.result` is that resource. |
+| `Then the result does not contain the <type> "<name>"` | None of them is. |
+
+They name a field; they never require one. ATF reads the field you named and compares it with the
+value you wrote, and knows nothing else about it — see
+[where the line on record shape falls](../explanation/the-model.md#record-shape).
+
+### They read the resource back, not the context {#reading-back}
+
+Each step resolves its resource from the catalog and asks the adapter for it *at the moment the step
+runs*. It never looks at what an earlier step left on [`context`](#context).
+
+That is what keeps an assertion independent of the action before it:
+
+```gherkin
+Given the task "laundry"
+When I complete the task                        # your code, a PATCH against the API
+Then the task "laundry" field "done" is "true"  # ATF's, and it re-reads
+```
+
+The `When` is real code because performing an action is; the `Then` is still generic, because it
+goes back to the backend and looks. A step that compared against the record the scenario was handed
+would still be reporting `false`.
+
+The listing cache is dropped before each read, so a step always sees the environment as it is now.
+
+**Ephemeral resources are the exception, and a forced one.** An
+[ephemeral](../explanation/lifecycles.md) resource is never looked up — that is what ephemeral
+means — so these steps use the record the scenario built. `is gone` therefore refuses on an
+ephemeral type rather than passing vacuously.
+
+### Comparing a written value with a real one {#comparing}
+
+Gherkin has only strings; records have booleans, numbers, timestamps and `null`. The *record's*
+value decides how the written one is read, never the other way round:
+
+| Record holds | `"<v>"` matches when it is |
+|---|---|
+| a boolean | `true`/`yes`/`1`, or `false`/`no`/`0`, in any case |
+| a number | any spelling of the same number — `3`, `3.0` |
+| nothing (`null`) | empty, `null` or `none` |
+| a timestamp | the same instant, however it is spelled — `Z` or `+00:00` |
+| a list or mapping | its JSON |
+| text | exactly that text |
+
+Reading the *written* side first is how `"0"` starts matching `false`, so ATF does not. The same
+rule decides whether an adapter's `find` recognised an existing resource — one comparison, in
+`atf.compare`.
+
+### What they say when they fail {#failures}
+
+A failure names the field, both values, and what kind of thing each is:
+
+```
+task 'milk' field 'done' is true (a true/false value), not "false"
+```
+
+A resource that could not be read names what was looked for; an unknown field lists what the record
+actually carries; an unknown type or instance lists the ones the catalog declares.
+
+### `the result` {#the-result}
+
+`result` is the one attribute of the context ATF itself names: what a step produced. The two
+`contains` steps read it, accepting a single record or a list of them, and recognise a resource the
+same two ways the cockpit does — by the identity it has in this environment, or by its
+[natural key](../explanation/glossary.md#natural-key).
+
+```python
+@when("I list the owner's lists")
+def _(context, api):
+    context.result = api.lists_of(context.owner)
+```
+
+```gherkin
+Then the result contains the todo_list "groceries"
+```
+
 ## Fixtures {#fixtures}
 
 | Fixture | Scope | Value |
 |---|---|---|
-| [`context`](#context) | function | An empty `SimpleNamespace`, the per-scenario scratchpad. |
+| [`context`](#context) | function | An empty `atf.context.Context`, the per-scenario scratchpad. |
 | [`<resource_type>`](#resource-type-fixtures) | function | `Callable[[str], Record]` — provisions that type by instance name. |
 | [`materializer`](#materializer-fixture) | session | The `Materializer` for the active environment. |
 | [`env`](#env) | session | The active environment name. |
@@ -94,6 +184,28 @@ other attribute belongs to your suite.
 
 The record assigned is whatever the adapter returned, untouched. Its field names are the suite's
 contract with its own backend — ATF neither defines nor validates them.
+
+It behaves exactly like the `types.SimpleNamespace` it used to be — `context.foo = x`,
+`context.foo`, `del context.foo`, and an `AttributeError` for anything never set — so no existing
+step changes. It additionally *describes* what is set on it:
+
+| Member | Value |
+|---|---|
+| `values` | Everything a step put here, without ATF's own bookkeeping. |
+| `slots` | A `Slot` per attribute: its `name`, `kind`, the `fields` it carries, a `count`, and the `resource_type` it is or looks like. |
+| `note(name, …)` | Say what a slot is when the setter knows more than the value shows. The provisioning step uses it. |
+
+A `Slot` never holds a value, only names, kinds and counts. What a scenario was holding when it
+finished is reported to the run and kept in [run history](cli.md#atf-import-run) on disk, and a record
+carries a token as readily as a title.
+
+Two attribute names mean something to ATF:
+
+- **`result`** — what a step produced. Named so that
+  [`the result contains …`](#the-result) is possible at all; without an agreed word there is nothing
+  for a generic step to say "the result" about.
+- **`_ephemeral`** — the ephemeral resources this scenario built, read by teardown and by an
+  assertion on one of them. Attributes starting with `_` are ATF's own and are not described.
 
 ### `<resource_type>` {#resource-type-fixtures}
 

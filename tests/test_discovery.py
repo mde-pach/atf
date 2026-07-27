@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 
 from atf.catalog import load_catalog
-from atf.discovery import discover, parse_feature, slug
+from atf.discovery import (
+    PROVISION_PATTERN,
+    Discovery,
+    StepDef,
+    discover,
+    fill,
+    matching_step,
+    parse_feature,
+    pattern_regex,
+    slug,
+)
+from atf.discovery import _step_defs as step_defs
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
@@ -205,6 +217,94 @@ def test_discovery_links_fixtures_without_running(found):
     assert "account" in test.fixtures  # generated factory, attributed from the catalog
     assert "api" in test.fixtures  # declared by the step definition
     assert "context" in test.fixtures
+
+
+# ---- step definitions: the vocabulary a scenario may be written in ----------
+
+
+def test_step_definitions_are_discovered_with_their_captures(found):
+    """The composer can only offer wordings that really exist, so they are read from the registry."""
+    by_pattern = {step.pattern: step for step in found.steps}
+
+    plan = by_pattern['the plan is "{expected}"']
+    assert plan.keyword == "then"
+    assert plan.params == ["expected"]
+    assert plan.file.endswith("test_accounts.py")
+
+    assert by_pattern["I read its plan"].keyword == "when"
+    assert by_pattern["I read its plan"].params == []
+    assert by_pattern["I list the projects of the account"].keyword == "when"
+    assert by_pattern['the project "{name}" is listed'].params == ["name"]
+
+
+def test_steps_no_scenario_uses_yet_are_still_discovered(found):
+    """A picker that only showed steps already in use could never help write a new scenario."""
+    assert 'the state is "{expected}"' in {step.pattern for step in found.steps_for("then")}
+
+
+def test_the_generic_provisioning_step_is_a_given_and_only_a_given(found):
+    """It is offered as the resource picker instead, and twice would teach the wrong model."""
+    provisioning = next(step for step in found.steps if step.pattern == PROVISION_PATTERN)
+    assert provisioning.keyword == "given"
+    assert provisioning.params == ["resource_type", "name"]
+    assert "provisions accounts.primary" in provisioning.docstring
+
+    assert PROVISION_PATTERN in {step.pattern for step in found.steps_for("given")}
+    for keyword in ("when", "then"):
+        assert PROVISION_PATTERN not in {step.pattern for step in found.steps_for(keyword)}
+
+
+def test_pytest_bdds_own_debugging_step_is_not_part_of_a_projects_vocabulary(found):
+    assert "trace" not in {step.pattern for step in found.steps}
+
+
+def test_a_keywordless_step_is_offered_under_every_keyword():
+    """`@step` without a type matches any keyword, so a picker must offer it under all three."""
+    found = Discovery(steps=[StepDef(keyword="*", pattern="something happens")])
+    for keyword in ("given", "when", "then"):
+        assert [step.pattern for step in found.steps_for(keyword)] == ["something happens"]
+
+
+def test_step_definitions_are_deduplicated_and_junk_is_dropped():
+    observed = {
+        "steps": [
+            {"keyword": "when", "pattern": "I wait", "params": []},
+            {"keyword": "WHEN", "pattern": "I wait", "params": []},
+            {"keyword": "when", "pattern": "", "params": []},
+            {"keyword": "nonsense", "pattern": "I wait", "params": []},
+        ]
+    }
+    assert [(step.keyword, step.pattern) for step in step_defs(observed)] == [("when", "I wait")]
+
+
+def test_discovery_without_pytest_bdd_information_degrades_to_no_steps():
+    assert step_defs({}) == []
+
+
+def test_a_pattern_is_filled_in_and_matched_back(found):
+    then_steps = found.steps_for("then")
+    assert fill('the plan is "{expected}"', {"expected": "standard"}) == 'the plan is "standard"'
+    assert fill('the plan is "{expected}"', {}) == 'the plan is "{expected}"'
+
+    matched = matching_step('the plan is "standard"', then_steps)
+    assert matched is not None and matched.pattern == 'the plan is "{expected}"'
+    assert matching_step("I read its plan", found.steps_for("when")) is not None
+    assert matching_step("a wording nobody defined", then_steps) is None
+    # A `Then` wording is not offered for a `When`, so the two pickers cannot be confused.
+    assert matching_step('the plan is "standard"', found.steps_for("when")) is None
+
+
+def test_a_pattern_read_as_a_regex_keeps_its_literals_literal():
+    assert re.fullmatch(pattern_regex('the plan is "{expected}"'), 'the plan is "standard"')
+    assert re.fullmatch(pattern_regex("a.b {x}"), "a.b anything")
+    assert not re.fullmatch(pattern_regex("a.b {x}"), "axb anything")
+
+
+def test_a_step_declared_with_a_regex_parser_still_matches():
+    """`parsers.re` leaves a regular expression as the pattern, so matching has to try it as one."""
+    steps = [StepDef(keyword="then", pattern=r"the plan is (?P<expected>\w+)")]
+    assert matching_step("the plan is standard", steps) is steps[0]
+    assert matching_step("the plan was standard", steps) is None
 
 
 def test_background_steps_belong_to_every_scenario(tmp_path, catalog):

@@ -1,4 +1,8 @@
-"""Placeholder resolution (§6.3). Pure functions; no I/O."""
+"""Resolution of the `${...}` placeholders a catalog body may contain.
+
+Two forms: `${<node id>.id}` for a dependency's identity, and `${now+Nd HH:MM}` for a timestamp
+relative to now. Pure functions; no I/O.
+"""
 
 from __future__ import annotations
 

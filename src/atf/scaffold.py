@@ -1,4 +1,4 @@
-"""Templates written by `atf init` (§15)."""
+"""The file templates `atf init` writes into a new suite."""
 
 from __future__ import annotations
 
@@ -20,14 +20,15 @@ environments:
   dev:
     adapters:
       rest:
-        base_url: https://dev.example.com
-        # Secrets are pointers, never literals: `*_env` names an environment variable.
+        # Hosts and secrets are pointers, never literals: `*_env` names an environment variable.
+        # Until ATF_URL points at a real service, `adapters.py` stands one in.
+        base_url_env: ATF_URL
         auth: { header: X-Actor, value_env: ATF_ACTOR }
         # pagination: { results_key: results, count_key: count }
         timeout: 30
     clients:
       api:
-        base_url: https://dev.example.com
+        base_url_env: ATF_URL
         auth: { header: X-Actor, value_env: ATF_ACTOR }
 
 display:
@@ -70,17 +71,31 @@ alpha:
 """
 
 ADAPTERS = '''\
-"""Custom adapters for this suite.
+"""Custom adapters for this suite — and, until you have a backend, a stand-in for one.
 
 Register a factory per system; `bootstrap` imports this module and hands each factory the
-environment's settings from the manifest. Delete this file if the built-in `rest` and
-`reference` adapters cover everything.
+environment's settings from the manifest. The built-in `rest` and `reference` adapters cover
+most catalogs: write one of your own when a resource takes more than a POST to exist.
 """
 
+import os
+import sys
+from pathlib import Path
 from typing import Any
 
 from atf.adapters import Context, Record, register
 from atf.catalog import Node
+
+# ATF imports this module before it resolves the manifest's `*_env` pointers, so it is the one
+# place that can stand a backend up for every entry point alike — `atf run`, `atf status`,
+# `atf seed`, `atf serve`. Point ATF_URL at a real service and none of this runs.
+if not os.environ.get("ATF_URL"):
+    sys.path.insert(0, str(Path(__file__).parent))
+    from fake_backend import FakeAPI
+
+    os.environ.setdefault("ATF_ACTOR", "local")
+    os.environ["ATF_URL"] = FakeAPI().start()
+    print(f"no ATF_URL set — serving a stand-in API on {os.environ['ATF_URL']}")
 
 
 class ExampleAdapter:
@@ -100,6 +115,94 @@ class ExampleAdapter:
 
 
 # register("example", ExampleAdapter)
+'''
+
+FAKE_BACKEND = '''\
+"""A stand-in backend, so the suite runs before you have a service to point it at.
+
+Collections are whatever you ask for: `POST /accounts` creates one and gives it an id,
+`GET /accounts?email=...` lists them filtered by any query parameter, `DELETE /accounts/{id}`
+removes it. In memory, loopback only, gone when the process exits. Delete this file — and the
+block at the top of `adapters.py` — once ATF_URL names something real.
+"""
+
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+ACTOR_HEADER = "X-Actor"
+
+
+class FakeAPI:
+    def __init__(self) -> None:
+        self.data: dict[str, list[dict[str, Any]]] = {}
+        self.counter = 0
+
+    def start(self, port: int = 0) -> str:
+        """Serve on a background thread and return the base URL."""
+        api = self
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args: Any) -> None:
+                return
+
+            def do_GET(self) -> None:
+                api.handle(self, "GET")
+
+            def do_POST(self) -> None:
+                api.handle(self, "POST")
+
+            def do_DELETE(self) -> None:
+                api.handle(self, "DELETE")
+
+        server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        host, bound = server.server_address[0], server.server_address[1]
+        return f"http://{host}:{bound}"
+
+    def handle(self, handler: BaseHTTPRequestHandler, method: str) -> None:
+        parsed = urlparse(handler.path)
+        parts = [part for part in parsed.path.split("/") if part]
+        # Any value will do — the point is that the manifest's auth pointer reaches the backend.
+        if not handler.headers.get(ACTOR_HEADER):
+            return send(handler, 401, {"detail": f"{ACTOR_HEADER} header required"})
+        if not parts:
+            return send(handler, 404, {"detail": "no route"})
+
+        records = self.data.setdefault(parts[0], [])
+        if method == "GET" and len(parts) == 1:
+            query = {key: values[0] for key, values in parse_qs(parsed.query).items()}
+            matching = [item for item in records if all(str(item.get(k)) == v for k, v in query.items())]
+            return send(handler, 200, matching)
+        if method == "POST" and len(parts) == 1:
+            self.counter += 1
+            record = {**body(handler), "id": f"{parts[0][:3]}-{self.counter}"}
+            records.append(record)
+            return send(handler, 201, record)
+        if method == "DELETE" and len(parts) == 2:
+            self.data[parts[0]] = [item for item in records if str(item.get("id")) != parts[1]]
+            return send(handler, 204, None)
+        send(handler, 404, {"detail": "no route"})
+
+
+def body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
+    length = int(handler.headers.get("Content-Length") or 0)
+    payload = json.loads(handler.rfile.read(length)) if length else {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def send(handler: BaseHTTPRequestHandler, status: int, payload: Any) -> None:
+    raw = b"" if payload is None else json.dumps(payload).encode()
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json")
+    handler.send_header("Content-Length", str(len(raw)))
+    handler.end_headers()
+    if raw:
+        handler.wfile.write(raw)
 '''
 
 CONFTEST = """\
@@ -168,6 +271,7 @@ GITIGNORE = """\
 __pycache__/
 .pytest_cache/
 .report.json
+.atf/
 """
 
 README = """\
@@ -177,11 +281,19 @@ An ATF suite. The catalog declares the resources specs need; ATF makes them exis
 test runs.
 
 ```sh
-export ATF_ACTOR=...          # whatever your manifest's *_env pointers name
-atf status dev                # what exists in the environment
-atf seed dev                  # make the absent resources exist
 atf run                       # run the specs (nonzero exit on failure — use this as a CI guard)
 atf serve                     # the cockpit, on http://127.0.0.1:8000
+atf status dev                # what exists in the environment
+atf seed dev                  # make the absent resources exist
+```
+
+That works as it stands: with `ATF_URL` unset, `adapters.py` starts `fake_backend.py` in process, so
+the suite runs against a stand-in backend. Point it at the real thing when you have one — the
+stand-in then never starts, and you can delete it:
+
+```sh
+export ATF_URL=https://dev.example.com
+export ATF_ACTOR=...          # every other *_env pointer in atf.yaml wants one too
 ```
 
 ## Adding things
@@ -204,6 +316,7 @@ def scaffold(root: Path, name: str) -> list[Path]:
         "catalog/accounts.yaml": ACCOUNTS,
         "catalog/projects.yaml": PROJECTS,
         "adapters.py": ADAPTERS,
+        "fake_backend.py": FAKE_BACKEND,
         "conftest.py": CONFTEST,
         "specs/conftest.py": SPECS_CONFTEST,
         "specs/api.py": API,

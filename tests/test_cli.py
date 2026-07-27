@@ -170,7 +170,7 @@ def test_unknown_env_is_a_clear_error(project, capsys):
     assert "unknown environment" in capsys.readouterr().err
 
 
-# ---- the example project (§17) ---------------------------------------------
+# ---- the example project ---------------------------------------------------
 
 
 def example_env(url: str) -> dict[str, str]:

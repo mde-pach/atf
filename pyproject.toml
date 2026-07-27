@@ -16,6 +16,12 @@ dependencies = [
     "pytest-json-report>=1.5",
 ]
 
+[project.urls]
+# The single place the project's own URL lives: `src/atf/` must name no domain, so the cockpit
+# reads this from installed metadata rather than hard-coding a link into a generic framework.
+Documentation = "https://mde-pach.github.io/atf/"
+Source = "https://github.com/mde-pach/atf"
+
 [project.scripts]
 atf = "atf.cli:main"
 

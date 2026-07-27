@@ -1,4 +1,4 @@
-"""Find-only adapter for resources that must already exist (§7.5)."""
+"""Find-only adapter for resources that must already exist in the environment."""
 
 from __future__ import annotations
 

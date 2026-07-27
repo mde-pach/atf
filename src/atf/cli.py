@@ -1,8 +1,9 @@
-"""The `atf` command (§15)."""
+"""The `atf` command: init, serve, seed, status, run, import-run."""
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from pathlib import Path
 from typing import Any
@@ -10,9 +11,11 @@ from typing import Any
 from .bootstrap import bootstrap
 from .catalog import CatalogError
 from .config import ConfigError, load_manifest, resolve_manifest
-from .materializer import BLOCKED, EPHEMERAL, PRESENT
+from .materializer import BLOCKED, CREATED, EPHEMERAL, PRESENT, REFERENCE
+from .runner import ERROR, FAILED
 from .runner import run as run_tests
 from .scaffold import scaffold
+from .store import ReportError, RunStore
 
 BANNER = """\
 ATF cockpit — {url}
@@ -68,6 +71,11 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--env")
     run.set_defaults(handler=cmd_run)
 
+    imported = sub.add_parser("import-run", help="record a pytest --json-report file from CI as a run")
+    imported.add_argument("env")
+    imported.add_argument("report", type=Path)
+    imported.set_defaults(handler=cmd_import_run)
+
     return parser
 
 
@@ -85,7 +93,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     print(f"Scaffolded an ATF suite in {root}:")
     for path in written:
         print(f"  {path.relative_to(root)}")
-    print("\nNext: edit atf.yaml + catalog/, then `atf status dev`.")
+    print("\nNext: `atf run` — it passes as it stands, against a stand-in backend. Then `atf serve`.")
     return 0
 
 
@@ -144,9 +152,9 @@ def _tally(results: list[dict[str, Any]]) -> str:
         action = str(result["action"])
         if not result["ok"]:
             counts["blocked" if action == BLOCKED else "failed"] += 1
-        elif action == "created":
+        elif action == CREATED:
             counts["created"] += 1
-        elif action == "reference":
+        elif action == REFERENCE:
             counts["found"] += 1
         else:
             counts["already present"] += 1
@@ -177,10 +185,18 @@ def cmd_status(args: argparse.Namespace) -> int:
 def cmd_run(args: argparse.Namespace) -> int:
     boot = bootstrap(args.env)
     summary = run_tests(args.paths or None, boot.env, boot.manifest.root, boot.manifest.specs_dir)
+    # History is a convenience, not the point of the command: a read-only checkout still runs.
+    with contextlib.suppress(OSError):
+        RunStore(boot.manifest.root).save(summary.as_record(boot.env))
 
     for nodeid, result in sorted(summary.results.items()):
         print(f"  [{result.outcome:>7}] {nodeid}  {result.duration:.2f}s")
-        if result.outcome in {"failed", "error"} and result.detail:
+        if result.outcome not in {FAILED, ERROR}:
+            continue
+        step = result.failed_step
+        if step is not None:
+            print(f"           at: {step.keyword} {step.text}".rstrip())
+        if result.detail:
             print(f"           {result.detail.splitlines()[-1]}")
 
     counts = summary.counts
@@ -191,6 +207,28 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not summary.results and summary.returncode != 0:
         print(summary.output, file=sys.stderr)
     return 0 if summary.returncode == 0 else 1
+
+
+def cmd_import_run(args: argparse.Namespace) -> int:
+    """Ingest a report produced by a CI run, so the cockpit knows what CI knows."""
+    manifest = load_manifest(resolve_manifest())
+    manifest.env(args.env)  # raises ConfigError, with the known environments, when it is not one
+
+    store = RunStore(manifest.root)
+    try:
+        record = store.import_report(args.report, args.env)
+    except ReportError as exc:
+        print(f"atf: {exc}", file=sys.stderr)
+        return 2
+
+    counts = record.counts
+    print(
+        f"Imported {len(record.results)} results into {record.env}: "
+        f"{counts['passed']} passed, {counts['failed']} failed, "
+        f"{counts['skipped']} skipped, {counts['error']} errored."
+    )
+    print(f"Stored as run {record.id} in {store.dir}")
+    return 0
 
 
 def _subset(engine, resource_type: str | None, name: str | None) -> list[str] | None:

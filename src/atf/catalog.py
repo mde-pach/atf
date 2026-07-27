@@ -14,7 +14,8 @@ UNIVERSAL_TYPE_KEYS = frozenset({"system", "mode", "lifecycle", "id_field"})
 MODES = frozenset({"create", "reference"})
 LIFECYCLES = frozenset({"persistent", "ephemeral"})
 
-# Fixture names a generated per-type factory (§10.2) must never shadow.
+# The plugin generates one fixture per resource type, named after the type. These names are
+# already taken, so a type using one would shadow it silently.
 PYTEST_BUILTIN_FIXTURES = frozenset(
     {
         "cache",

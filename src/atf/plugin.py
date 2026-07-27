@@ -1,4 +1,4 @@
-"""pytest plugin (§10): context, generated resource factories, one generic step, teardown.
+"""The pytest plugin: context, generated resource factories, one generic step, teardown.
 
 Enable it from a consuming project's `conftest.py`:
 
@@ -7,6 +7,8 @@ Enable it from a consuming project's `conftest.py`:
 
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
@@ -17,6 +19,7 @@ from pytest_bdd import given, parsers
 from .adapters import Record
 from .bootstrap import Boot, bootstrap
 from .materializer import Materializer
+from .runner import PROGRESS_OUT
 
 _BOOT: Boot = bootstrap()
 
@@ -48,10 +51,13 @@ def context() -> SimpleNamespace:
 
 
 def _make_factory(resource_type: str) -> Any:
-    def _factory(materializer: Materializer, context: SimpleNamespace) -> Callable[[str], Record]:
+    def _factory(
+        request: pytest.FixtureRequest, materializer: Materializer, context: SimpleNamespace
+    ) -> Callable[[str], Record]:
         def provision(name: str) -> Record:
             record, provisioned = materializer.ensure_closure(resource_type, name)
             _track_ephemeral(context, materializer, provisioned)
+            _report_provisioned(request.node.nodeid, provisioned)
             return record
 
         return provision
@@ -85,6 +91,23 @@ def _provision(context: SimpleNamespace, request: pytest.FixtureRequest, resourc
     record = request.getfixturevalue(resource_type)(name)
     setattr(context, resource_type, record)
     return record
+
+
+def _report_provisioned(nodeid: str, provisioned: dict[str, Record]) -> None:
+    """Tell whoever is watching this run what the test just had to bring into existence.
+
+    Only when `ATF_PROGRESS_OUT` names the channel the run was launched with — under a plain
+    `pytest`, nothing is written and nothing changes.
+    """
+    path = os.environ.get(PROGRESS_OUT)
+    if not path or not provisioned:
+        return
+    event = {"event": "provisioned", "nodeid": nodeid, "ids": sorted(provisioned)}
+    try:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event) + "\n")
+    except OSError:
+        pass
 
 
 def _track_ephemeral(

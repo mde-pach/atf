@@ -1,14 +1,19 @@
-"""The provisioning engine (§8). Domain-free: it dispatches to adapters and never branches per system."""
+"""The provisioning engine.
+
+Walks a resource's dependency closure, orders it dependency-first, and asks the adapter for each
+node in turn: does this exist, and if not, create it. Domain-free — it dispatches to adapters and
+never branches per system.
+"""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar, cast
 
-from .adapters import Adapter, Record, close_adapter, registered_systems
-from .catalog import Node, find_node, load_catalog
+from .adapters import Adapter, Browsable, Record, can_browse, close_adapter, registered_systems
+from .catalog import UNIVERSAL_TYPE_KEYS, Node, find_node, load_catalog
 from .placeholders import Unresolved
 from .placeholders import resolve as resolve_placeholders
 
@@ -21,6 +26,12 @@ UNSUPPORTED = "unsupported"
 ERROR = "error"
 BLOCKED = "blocked"
 
+CREATED = "created"
+EXISTS = "exists"
+REFERENCE = "reference"
+
+_T = TypeVar("_T")
+
 
 class ProvisioningError(Exception):
     def __init__(self, node_id: str, detail: str) -> None:
@@ -31,6 +42,15 @@ class ProvisioningError(Exception):
 
 class UnknownResource(LookupError):
     pass
+
+
+class ScopeRequired(Exception):
+    """Browsing this type needs a parent named first, because its listing is scoped to one."""
+
+    def __init__(self, resource_type: str, fields: list[str]) -> None:
+        self.resource_type = resource_type
+        self.fields = fields
+        super().__init__(f"listing {resource_type!r} needs {', '.join(fields)} to scope it")
 
 
 class Materializer:
@@ -66,7 +86,9 @@ class Materializer:
         except KeyError:
             raise UnknownResource(f"unknown resource {nid!r}") from None
 
-    # ---- adapter-facing context (§7.1) ------------------------------------
+    # ---- adapter-facing context ---------------------------------------------
+    # The materializer passes itself to adapters as `ctx`; these are the methods an adapter may
+    # call on it.
 
     def resolve(self, value: Any) -> Any:
         return resolve_placeholders(value, self.identity_of)
@@ -129,6 +151,59 @@ class Materializer:
 
     # ---- reads ------------------------------------------------------------
 
+    def browse_fields(self, resource_type: str) -> list[str]:
+        """Fields a scoped listing needs before it can run — empty when the type lists globally.
+
+        A type whose `list_path` is scoped to a parent (`/owners/{owner_id}/lists`) cannot be
+        enumerated without knowing which parent, so the caller has to supply one.
+        """
+        import string
+
+        entry = self.types.get(resource_type) or {}
+        template = entry.get("list_path")
+        if not isinstance(template, str) or not template:
+            return []
+        return [name for _, name, _, _ in string.Formatter().parse(template) if name]
+
+    def browse(self, resource_type: str, limit: int = 200, scope: dict[str, Any] | None = None) -> list[Record]:
+        """Every record this type already has in the environment.
+
+        Answers the question a catalog author actually starts with — "what is out there?" — so a
+        node can be written from a real record instead of guessed. Adapters opt in by implementing
+        `browse`; one that does not simply has nothing to show.
+        """
+        entry = self.types.get(resource_type)
+        if entry is None:
+            raise KeyError(f"no resource type {resource_type!r} in the catalog")
+        adapter = self.adapters.get(str(entry.get("system", "")))
+        if adapter is None or not can_browse(adapter):
+            return []
+
+        needed = [field for field in self.browse_fields(resource_type) if field not in (scope or {})]
+        if needed:
+            raise ScopeRequired(resource_type, needed)
+        return cast("Browsable", adapter).browse(self.probe(resource_type, scope), self, limit)
+
+    def probe(self, resource_type: str, scope: dict[str, Any] | None = None) -> Node:
+        """A node that exists only to carry a type's config to an adapter, with no instance behind it."""
+        entry = self.types.get(resource_type) or {}
+        config = {key: value for key, value in entry.items() if key not in UNIVERSAL_TYPE_KEYS}
+        return Node(
+            id=f"{resource_type}.*",
+            collection="",
+            name="*",
+            resource=resource_type,
+            system=str(entry.get("system", "")),
+            mode=str(entry.get("mode", "create")),
+            lifecycle=str(entry.get("lifecycle", "persistent")),
+            id_field=str(entry.get("id_field", "id")),
+            config=config,
+            represents="",
+            depends_on=[],
+            dependents=[],
+            body=dict(scope or {}),
+        )
+
     def find_existing(self, node: Node) -> Record | None:
         if node["lifecycle"] == EPHEMERAL:
             return None
@@ -167,13 +242,35 @@ class Materializer:
 
     # ---- writes -----------------------------------------------------------
 
-    def materialize(self, subset: Iterable[str], keep_going: bool = False) -> dict[str, Any]:
+    def provisionable(self, node_id: str) -> tuple[bool, str]:
+        """Whether provisioning this node can create it, and why not when it cannot.
+
+        Callers offering a "create it" action ask first: attempting either of these can only
+        report the same refusal back, so the honest UI never offers the button.
+        """
+        node = self.node(node_id)
+        if node["mode"] == "reference":
+            return False, "reference resources must already exist in the environment — ATF never creates them"
+        if node["lifecycle"] == EPHEMERAL:
+            return False, "built fresh for every run by the test that needs it"
+        return True, ""
+
+    def materialize(
+        self,
+        subset: Iterable[str],
+        keep_going: bool = False,
+        on_start: Callable[[str], None] | None = None,
+        on_result: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
         """Provision `subset` and everything it depends on, dependency-first.
 
         Stops at the first failure by default: provisioning failures are usually correlated (a bad
         token, an unreachable backend), so continuing turns one clear error into many identical
         ones. With `keep_going`, a failed node's dependents are reported `blocked` and independent
         subtrees are still attempted — useful when seeding a whole catalog.
+
+        `on_start` and `on_result` observe the pass as it happens, node by node, for a caller
+        showing progress; they see exactly the entries the return value collects.
         """
         # A listing is memoised for the duration of one pass, not the session: the materializer is
         # session-scoped, and the system under test mutates the same backend between passes.
@@ -196,26 +293,29 @@ class Materializer:
             # Dependencies come first in topo order, so checking the direct ones is transitive.
             blocker = next((dep for dep in node["depends_on"] if dep in stalled), None)
             if blocker is not None:
-                results.append(
-                    {
-                        "id": nid,
-                        "action": BLOCKED,
-                        "ok": False,
-                        "detail": f"depends on {blocker}, which did not provision",
-                    }
-                )
+                blocked = {
+                    "id": nid,
+                    "action": BLOCKED,
+                    "ok": False,
+                    "detail": f"depends on {blocker}, which did not provision",
+                }
+                results.append(blocked)
                 stalled.add(nid)
+                _notify(on_result, blocked)
                 continue
 
+            _notify(on_start, nid)
             outcome = self._attempt(node)
             results.append(outcome)
             if outcome["ok"]:
                 record = outcome.pop("record")
                 self._ids[nid] = record.get(node["id_field"])
                 records[nid] = record
+                _notify(on_result, outcome)
                 continue
 
             stalled.add(nid)
+            _notify(on_result, outcome)
             if not keep_going:
                 break
 
@@ -240,16 +340,16 @@ class Materializer:
 
     def _provision(self, node: Node, adapter: Adapter) -> tuple[Record | None, str]:
         if node["mode"] == "reference":
-            return adapter.find(node, self), "reference"
+            return adapter.find(node, self), REFERENCE
 
         existing = None if node["lifecycle"] == EPHEMERAL else adapter.find(node, self)
         if existing is not None:
-            return existing, "exists"
+            return existing, EXISTS
 
         body = self.resolve(node["body"])
         record = adapter.create(node, body, self)
         self.invalidate_cache()
-        return record, "created"
+        return record, CREATED
 
     def create_closure(self, nid: str, keep_going: bool = False) -> dict[str, Any]:
         return self.materialize(self.closure(nid), keep_going=keep_going)
@@ -308,6 +408,11 @@ class Materializer:
                 adapter.delete(node, record, self)
             except Exception as exc:
                 log.warning("teardown of %s failed: %s", nid, _short(exc))
+
+
+def _notify(callback: Callable[[_T], None] | None, value: _T) -> None:
+    if callback is not None:
+        callback(value)
 
 
 def _short(exc: BaseException) -> str:

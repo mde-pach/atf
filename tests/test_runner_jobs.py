@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 
 import pytest
 
 from atf import runner
-from atf.jobs import DONE_STATES, PENDING, RUNNING, JobRunner
+from atf.bootstrap import bootstrap
+from atf.jobs import PENDING, PROVISION, RUN, RUNNING, JobRunner
+from atf.store import RunStore
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
@@ -16,6 +19,16 @@ REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 def project(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONPATH", REPO_SRC)
     return write_sample_project(tmp_path / "suite")
+
+
+@pytest.fixture
+def engine(project, monkeypatch):
+    """The provisioning engine of the sample project, in this process."""
+    monkeypatch.setenv("ATF_MANIFEST", str(project / "atf.yaml"))
+    # The suite's adapter module resolves its store path relative to its own file, so a module
+    # left over from another temp project would write to the wrong place.
+    sys.modules.pop("suite_adapters", None)
+    return bootstrap("dev").materializer
 
 
 def wait_for(predicate, timeout: float = 120.0, interval: float = 0.02):
@@ -77,6 +90,80 @@ def test_timeout_is_reported_not_raised(project):
     assert "timed out" in summary.output
 
 
+def test_a_run_is_timestamped_for_the_history(project):
+    before = time.time()
+    summary = runner.run(None, "dev", project, project / "specs")
+    assert before <= summary.started_at <= summary.finished_at <= time.time()
+
+    record = summary.as_record("dev")
+    assert record.env == "dev" and record.id
+    assert record.counts == summary.counts
+
+
+# ---- step capture -----------------------------------------------------------
+
+
+def test_a_passing_scenario_reports_its_gherkin_steps(project):
+    summary = runner.run(None, "dev", project, project / "specs")
+
+    result = next(r for r in summary.results.values() if "standard_account" in r.nodeid)
+    assert [(step.keyword, step.text) for step in result.steps] == [
+        ("Given", 'the account "primary"'),
+        ("When", "I read its plan"),
+        ("Then", 'the plan is "standard"'),
+    ]
+    assert all(step.state == "passed" for step in result.steps)
+    assert result.failed_step is None
+
+
+def test_a_failing_scenario_names_the_step_that_failed(project):
+    steps = project / "specs" / "steps" / "test_accounts.py"
+    steps.write_text(steps.read_text().replace("assert context.result == expected", "assert False, 'boom'"))
+
+    summary = runner.run(None, "dev", project, project / "specs")
+    failure = next(r for r in summary.results.values() if r.outcome == "failed")
+
+    failed = failure.failed_step
+    assert failed is not None
+    assert failed.keyword == "Then" and failed.text.startswith("the plan is")
+    assert "boom" in failed.error
+    assert [step.state for step in failure.steps[:-1]] == ["passed"] * (len(failure.steps) - 1)
+
+
+def test_the_steps_after_a_failure_are_reported_skipped(project):
+    feature = project / "specs" / "features" / "visitors.feature"
+    feature.write_text(
+        feature.read_text().replace(
+            '    When I read its state\n    Then the state is "ready"\n',
+            '    When I read its state\n    Then the state is "wrong"\n    And the state is "ready"\n',
+        ),
+        encoding="utf-8",
+    )
+
+    summary = runner.run(None, "dev", project, project / "specs")
+    failure = next(r for r in summary.results.values() if "visitor_is_ready" in r.nodeid)
+    assert [step.state for step in failure.steps] == ["passed", "passed", "failed", "skipped"]
+
+
+def test_a_plain_pytest_test_simply_has_no_steps(project):
+    plain = project / "specs" / "steps" / "test_plain.py"
+    plain.write_text("def test_plain():\n    assert True\n", encoding="utf-8")
+
+    summary = runner.run([f"{plain}::test_plain"], "dev", project, project / "specs")
+    result = next(iter(summary.results.values()))
+    assert result.outcome == "passed" and result.steps == []
+
+
+def test_a_test_reports_what_it_provisioned(project):
+    summary = runner.run(None, "dev", project, project / "specs")
+
+    result = next(r for r in summary.results.values() if "project_belongs" in r.nodeid)
+    assert result.provisioned == ["accounts.primary", "projects.alpha"]
+
+    badge = next(r for r in summary.results.values() if "badge_is_issued" in r.nodeid)
+    assert "visitors.walkin" in badge.provisioned, "a dependency provisioned on the way counts"
+
+
 # ---- jobs -----------------------------------------------------------------
 
 
@@ -87,6 +174,7 @@ def test_job_streams_queued_running_then_passed(project):
     jobs = JobRunner(project, project / "specs")
     job = jobs.start_run(nodeids, "dev")
 
+    assert job.kind == RUN
     assert job.counts[PENDING] == len(nodeids)
     assert jobs.active("dev") is job
 
@@ -94,7 +182,7 @@ def test_job_streams_queued_running_then_passed(project):
 
     assert job.done and job.returncode == 0
     assert job.completed == len(nodeids)
-    assert all(state.state in DONE_STATES for state in job.states.values())
+    assert all(item.done for item in job.items.values())
     assert job.counts["passed"] == 7
     assert job.counts["skipped"] == 1
     assert job.elapsed > 0
@@ -108,9 +196,22 @@ def test_a_running_test_is_reported_as_running(project):
     jobs = JobRunner(project, project / "specs")
     job = jobs.start_run([f"{slow}::test_slow"], "dev")
 
-    wait_for(lambda: any(state.state == RUNNING for state in job.states.values()), timeout=30)
+    wait_for(lambda: any(item.state == RUNNING for item in job.items.values()), timeout=30)
     wait_for(lambda: job.done, timeout=60)
     assert job.counts[PENDING] == 0
+
+
+def test_items_are_labelled_for_the_progress_view(project):
+    jobs = JobRunner(project, project / "specs")
+    job = jobs.start_run([], "dev")
+    wait_for(lambda: job.done)
+
+    labels = {item.label for item in job.items.values()}
+    assert "A standard account reports its plan" in labels
+
+    named = jobs.start_run(["specs/steps/test_x.py::test_y"], "dev", labels={"specs/steps/test_x.py::test_y": "Given"})
+    assert named.items["specs/steps/test_x.py::test_y"].label == "Given"
+    wait_for(lambda: named.done)
 
 
 def test_job_results_fold_into_run_results(project):
@@ -120,8 +221,19 @@ def test_job_results_fold_into_run_results(project):
 
     merged = job.merged()
     assert len(merged) == 8
-    assert all(result.outcome in DONE_STATES for result in merged.values())
+    assert all(result.outcome in {"passed", "failed", "skipped", "error"} for result in merged.values())
     assert job.summary().counts["passed"] == 7
+
+
+def test_a_job_captures_steps_and_provisioning_too(project):
+    jobs = JobRunner(project, project / "specs")
+    job = jobs.start_run([], "dev")
+    wait_for(lambda: job.done)
+
+    item = next(item for item in job.items.values() if "project_belongs" in item.id)
+    assert [step.keyword for step in item.steps] == ["Given", "And", "When", "Then"]
+    assert item.provisioned == ["accounts.primary", "projects.alpha"]
+    assert job.merged()[item.id].steps == item.steps
 
 
 def test_only_one_active_job_per_env(project):
@@ -155,8 +267,9 @@ def test_failures_appear_in_job_state(project):
     wait_for(lambda: job.done)
 
     assert job.counts["failed"] >= 1
-    failed = next(state for state in job.states.values() if state.state == "failed")
+    failed = next(item for item in job.items.values() if item.state == "failed")
     assert "boom" in failed.detail
+    assert failed.failed_step is not None and failed.failed_step.keyword == "Then"
     assert job.returncode != 0
 
 
@@ -194,7 +307,7 @@ def test_a_run_with_huge_output_still_finishes(project):
 
     assert job.done, "80KB of output must not deadlock the child on a full pipe"
     assert job.returncode not in (None, 0)
-    assert any(state.state == "failed" for state in job.states.values())
+    assert any(item.state == "failed" for item in job.items.values())
     assert "noisy failure" in job.output
 
 
@@ -215,3 +328,102 @@ def test_a_hanging_run_is_killed_and_the_slot_is_released(project):
     following = jobs.start_run([], "dev")
     assert following is not job
     wait_for(lambda: following.done, timeout=120)
+
+
+# ---- runs reach the store ---------------------------------------------------
+
+
+def test_a_finished_run_job_is_persisted(project):
+    store = RunStore(project)
+    jobs = JobRunner(project, project / "specs", store=store)
+    job = jobs.start_run([], "dev")
+    wait_for(lambda: job.done)
+
+    record = store.latest("dev")
+    assert record is not None
+    assert record.env == "dev" and record.returncode == 0
+    assert record.counts["passed"] == 7
+    assert record.started_at == job.started_at
+
+    result = next(r for r in record.results.values() if "project_belongs" in r.nodeid)
+    assert [step.keyword for step in result.steps] == ["Given", "And", "When", "Then"]
+    assert result.provisioned == ["accounts.primary", "projects.alpha"]
+
+
+def test_a_provision_job_is_not_persisted_as_a_run(project, engine):
+    store = RunStore(project)
+    jobs = JobRunner(project, project / "specs", store=store)
+    job = jobs.start_provision(["accounts.primary"], "dev", engine)
+    wait_for(lambda: job.done)
+
+    assert store.latest("dev") is None
+
+
+# ---- provision jobs ---------------------------------------------------------
+
+
+def test_a_provision_job_reports_every_node(project, engine):
+    jobs = JobRunner(project, project / "specs")
+    job = jobs.start_provision(["projects.alpha"], "dev", engine)
+
+    assert job.kind == PROVISION
+    assert list(job.items) == ["accounts.primary", "projects.alpha"], "the closure, dependency first"
+
+    wait_for(lambda: job.done)
+
+    assert job.returncode == 0
+    assert [item.state for item in job.items.values()] == ["created", "created"]
+    assert job.counts["created"] == 2
+    assert job.completed == job.total
+
+
+def test_provisioning_twice_reports_what_was_already_there(project, engine):
+    jobs = JobRunner(project, project / "specs")
+    wait_for(lambda: jobs.start_provision(["accounts.primary"], "dev", engine).done)
+
+    again = jobs.start_provision(["accounts.primary"], "dev", engine)
+    wait_for(lambda: again.done)
+    assert again.items["accounts.primary"].state == "exists"
+
+
+def test_a_reference_that_does_not_exist_is_an_error_not_a_reference(project, engine):
+    jobs = JobRunner(project, project / "specs")
+    job = jobs.start_provision(["widgets.imported"], "dev", engine)
+    wait_for(lambda: job.done)
+
+    item = job.items["widgets.imported"]
+    assert item.state == "error"
+    assert "not found" in item.detail
+    assert job.returncode == 1
+
+
+def test_a_failure_blocks_its_dependents(project, engine, monkeypatch):
+    def explode(self, node, body, ctx):
+        raise RuntimeError("no room at the inn")
+
+    monkeypatch.setattr(type(engine.adapters["store"]), "create", explode)
+
+    jobs = JobRunner(project, project / "specs")
+    job = jobs.start_provision(["projects.alpha"], "dev", engine)
+    wait_for(lambda: job.done)
+
+    assert job.items["accounts.primary"].state == "error"
+    assert "no room at the inn" in job.items["accounts.primary"].detail
+    assert job.items["projects.alpha"].state == "blocked"
+    assert "did not provision" in job.items["projects.alpha"].detail
+    assert "no room at the inn" in job.output
+
+
+def test_an_environment_never_runs_and_provisions_at_once(project, engine):
+    jobs = JobRunner(project, project / "specs")
+    running = jobs.start_run([], "dev")
+    refused = jobs.start_provision(["accounts.primary"], "dev", engine)
+
+    assert refused is running, "the active run holds the environment"
+    wait_for(lambda: running.done)
+
+    provision = jobs.start_provision(["accounts.primary"], "dev", engine)
+    assert provision.kind == PROVISION
+    wait_for(lambda: provision.done)
+    assert jobs.get(provision.id) is provision
+    assert jobs.history()[0] is provision

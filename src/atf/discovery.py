@@ -1,4 +1,4 @@
-"""Turns a project into the structured model the cockpit renders (§11).
+"""Turns a project into the structured model the cockpit renders.
 
 Specs come from a static parse of the `.feature` files; tests and fixtures come from pytest
 itself, because pytest-bdd only resolves step fixtures while a run is happening.
@@ -21,6 +21,18 @@ from .catalog import Node, find_node
 PROVISION_RE = re.compile(r'\bthe ([A-Za-z_][A-Za-z0-9_]*) "([^"]+)"')
 _STEP_KEYWORDS = ("Given", "When", "Then", "And", "But", "*")
 _COLLECT_TIMEOUT = 300
+
+# ATF's own generic provisioning step, defined in `plugin.py`. It is the only step definition the
+# framework itself contributes, and the composer offers it as a resource picker rather than as a
+# line of wording, so it must be recognisable by pattern here.
+PROVISION_PATTERN = 'the {resource_type} "{name}"'
+
+GIVEN, WHEN, THEN = "given", "when", "then"
+ANY_KEYWORD = "*"
+_KEYWORDS = frozenset({GIVEN, WHEN, THEN, ANY_KEYWORD})
+
+# A `{capture}` in a step pattern, with the optional `:format` pytest-bdd's parse parser allows.
+CAPTURE_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::[^{}]*)?\}")
 
 
 @dataclass
@@ -69,11 +81,41 @@ class Fixture:
 
 
 @dataclass
+class StepDef:
+    """One step definition the project registers — the vocabulary a scenario may be written in.
+
+    `pattern` is the parser's raw expression exactly as the author wrote it, so it is both what a
+    picker shows and what a composed step's wording is built from.
+    """
+
+    keyword: str
+    pattern: str
+    params: list[str] = field(default_factory=list)
+    file: str = ""
+    docstring: str = ""
+
+
+@dataclass
 class Discovery:
     specs: list[Spec] = field(default_factory=list)
     tests: list[Test] = field(default_factory=list)
     fixtures: list[Fixture] = field(default_factory=list)
+    steps: list[StepDef] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+
+    def steps_for(self, keyword: str) -> list[StepDef]:
+        """The definitions a picker for one keyword should offer.
+
+        A `@step` registered without a type matches any keyword, so it is offered under all three.
+        ATF's generic provisioning step is offered as `given` only: `When the account "primary"` is
+        legal Gherkin but never what anyone means, and a composer that offers it twice teaches the
+        wrong model.
+        """
+        wanted = keyword.lower()
+        offered = [step for step in self.steps if step.keyword in {wanted, ANY_KEYWORD}]
+        if wanted == GIVEN:
+            return offered
+        return [step for step in offered if step.pattern != PROVISION_PATTERN]
 
     def spec(self, spec_id: str) -> Spec | None:
         return next((spec for spec in self.specs if spec.id == spec_id), None)
@@ -113,7 +155,76 @@ def discover(
     result.errors = errors
     _attach_tests(result, observed, nodes)
     result.fixtures = _fixtures(root, env, observed, resource_types, errors, result.tests)
+    result.steps = _step_defs(observed)
     return result
+
+
+# ---- step patterns ---------------------------------------------------------
+
+
+def fill(pattern: str, values: dict[str, str]) -> str:
+    """A step pattern with its `{captures}` replaced by the values chosen for them.
+
+    A capture with no value keeps its placeholder, so a half-built step reads as a half-built step
+    rather than as a sentence with a hole silently closed up.
+    """
+    return CAPTURE_RE.sub(lambda match: values.get(match.group(1)) or match.group(0), pattern)
+
+
+def pattern_regex(pattern: str) -> str:
+    """A step pattern as a regular expression: literals escaped, every capture a wildcard."""
+    pieces = CAPTURE_RE.split(pattern)
+    out = [re.escape(pieces[0])]
+    for index in range(1, len(pieces), 2):
+        out.append("(.+?)")
+        out.append(re.escape(pieces[index + 1]))
+    return "".join(out)
+
+
+def matching_step(text: str, steps: list[StepDef]) -> StepDef | None:
+    """The definition a step's wording resolves to, or None if this suite defines no such step.
+
+    Matching happens here rather than in pytest-bdd because the parsers themselves live in the
+    collection subprocess: what survives is the raw expression. An exact hit wins, then the
+    expression read as a `{capture}` template, then the expression read as a regular expression —
+    which is what a step declared with `parsers.re` needs.
+    """
+    for step in steps:
+        if step.pattern == text:
+            return step
+    for as_regex in (pattern_regex, str):
+        for step in steps:
+            try:
+                if re.fullmatch(as_regex(step.pattern), text):
+                    return step
+            except re.error:
+                continue
+    return None
+
+
+def _step_defs(observed: dict[str, Any]) -> list[StepDef]:
+    """Every step definition the collection pass saw, deduplicated and in picker order.
+
+    Two modules may register the same wording; a picker that offers it twice is offering a choice
+    that does not exist.
+    """
+    seen: dict[tuple[str, str], StepDef] = {}
+    for entry in observed.get("steps") or []:
+        keyword = str(entry.get("keyword", "")).lower()
+        pattern = str(entry.get("pattern", ""))
+        if not pattern or keyword not in _KEYWORDS:
+            continue
+        seen.setdefault(
+            (keyword, pattern),
+            StepDef(
+                keyword=keyword,
+                pattern=pattern,
+                params=[str(name) for name in entry.get("params") or []],
+                file=str(entry.get("file", "")),
+                docstring=str(entry.get("docstring", "")),
+            ),
+        )
+    return [seen[key] for key in sorted(seen)]
 
 
 # ---- specs (static parse) -------------------------------------------------
@@ -245,9 +356,11 @@ def _example_values(name: str, spec: Spec) -> list[str]:
 _OBSERVER = '''
 import json
 import os
+import re
 
 _PATH = os.environ["ATF_OBSERVE_OUT"]
-_DATA = {"items": {}, "fixtures": {}}
+_DATA = {"items": {}, "fixtures": {}, "steps": []}
+_CAPTURE = re.compile(r"\\{([A-Za-z_][A-Za-z0-9_]*)(?::[^{}]*)?\\}")
 
 
 def _step_fixtures(item, scenario):
@@ -287,6 +400,82 @@ def _step_fixtures(item, scenario):
     return names
 
 
+def _expression(parser):
+    """The raw expression a step parser was built from.
+
+    pytest-bdd spells it differently depending on version and parser class, so probe rather than
+    assume: `name` on every `StepParser`, `pattern` where one is exposed, the compiled `regex` for
+    a `parsers.re` step, and `str()` as the answer of last resort.
+    """
+    for attribute in ("name", "pattern"):
+        value = getattr(parser, attribute, None)
+        if isinstance(value, str) and value:
+            return value
+    value = getattr(getattr(parser, "regex", None), "pattern", None)
+    if isinstance(value, str) and value:
+        return value
+    return str(parser)
+
+
+def _capture_names(parser, expression):
+    """The parameters a step takes, in the order the wording puts them."""
+    groups = getattr(getattr(parser, "regex", None), "groupindex", None) or {}
+    if groups:
+        return sorted(groups, key=lambda name: groups[name])
+    ordered = []
+    for name in _CAPTURE.findall(expression):
+        if name not in ordered:
+            ordered.append(name)
+    return ordered
+
+
+def _step_definitions(session):
+    """Every step definition registered anywhere in this suite, used or not.
+
+    pytest-bdd stores each one as a fixture named `pytestbdd_stepdef_*` whose function carries a
+    `_pytest_bdd_step_context`, so the fixture registry after collection is the whole vocabulary
+    the project offers — including steps no scenario has reached for yet, which is exactly what a
+    composer needs to show. Every failure here is swallowed: discovery runs on every page render.
+    """
+    found = []
+    manager = getattr(session, "_fixturemanager", None)
+    if manager is None:
+        return found
+    try:
+        from pytest_bdd.steps import StepNamePrefix
+
+        prefix = StepNamePrefix.step_def.value
+    except Exception:
+        prefix = "pytestbdd_stepdef"
+
+    for name, definitions in list((getattr(manager, "_arg2fixturedefs", None) or {}).items()):
+        if not str(name).startswith(prefix):
+            continue
+        for fixturedef in definitions or []:
+            try:
+                context = getattr(getattr(fixturedef, "func", None), "_pytest_bdd_step_context", None)
+                if context is None:
+                    continue
+                function = context.step_func
+                # pytest-bdd registers its own `trace` step for all three keywords. It is a
+                # debugger hook, not part of any project's vocabulary.
+                if str(getattr(function, "__module__", "")).split(".")[0] == "pytest_bdd":
+                    continue
+                expression = _expression(context.parser)
+                found.append(
+                    {
+                        "keyword": context.type or "*",
+                        "pattern": expression,
+                        "params": _capture_names(context.parser, expression),
+                        "file": getattr(getattr(function, "__code__", None), "co_filename", "") or "",
+                        "docstring": " ".join((getattr(function, "__doc__", "") or "").split()),
+                    }
+                )
+            except Exception:
+                continue
+    return found
+
+
 def pytest_collection_modifyitems(session, config, items):
     for item in items:
         scenario = getattr(getattr(item, "obj", None), "__scenario__", None)
@@ -308,6 +497,11 @@ def pytest_collection_modifyitems(session, config, items):
 
 
 def pytest_sessionfinish(session, exitstatus):
+    # Read after collection has finished, so every steps module has been imported and registered.
+    try:
+        _DATA["steps"] = _step_definitions(session)
+    except Exception:
+        _DATA["steps"] = []
     with open(_PATH, "w") as handle:
         json.dump(_DATA, handle)
 '''

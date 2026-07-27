@@ -1,4 +1,4 @@
-"""Built-in generic REST adapter: configurable get-or-create over a JSON API (§7.3)."""
+"""Built-in generic REST adapter: configurable get-or-create over a JSON API."""
 
 from __future__ import annotations
 
@@ -97,6 +97,15 @@ class RestAdapter:
             f"POST {path}: created, but no record carrying {node['id_field']!r} could be read back — "
             "set `record_key` if the response wraps it, or check the natural key round-trips"
         )
+
+    def browse(self, node: Node, ctx: Context, limit: int = 200) -> list[Record]:
+        """Every record this type already has, so a catalog can be written from the environment.
+
+        The same listing `find` filters — unfiltered. A type whose `list_path` is scoped to a
+        parent needs those fields in the probe's body, exactly as a lookup would.
+        """
+        url, params = self._listing(node, ctx)
+        return [record for record in self._list(url, params) if isinstance(record, dict)][:limit]
 
     def delete(self, node: Node, record: Record, ctx: Context) -> None:
         config = node["config"]

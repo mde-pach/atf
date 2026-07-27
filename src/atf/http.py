@@ -1,4 +1,4 @@
-"""Shared HTTP plumbing: auth schemes (§7.4), retries and paginated listings.
+"""Shared HTTP plumbing: auth schemes, retries and paginated listings.
 
 Adapters and system-under-test clients apply auth the same way, so both live here.
 """

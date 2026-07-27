@@ -1,4 +1,4 @@
-"""Guards for the acceptance criteria that are properties of the framework itself (§20)."""
+"""Guards for the properties the framework promises, independent of any one project."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def test_adapters_are_registered_as_factories_not_instances():
 
 
 def test_every_entry_point_configures_itself_through_bootstrap():
-    """plugin, cockpit deps and CLI must all funnel through `bootstrap` (§4.3)."""
+    """plugin, cockpit deps and CLI must all funnel through `bootstrap`."""
     for module in ("plugin.py", "cockpit/deps.py", "cli.py"):
         source = (SRC / module).read_text(encoding="utf-8")
         assert "bootstrap" in source, module

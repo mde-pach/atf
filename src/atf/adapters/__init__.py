@@ -1,4 +1,4 @@
-"""Adapter SPI and the factory registry (§7). Importing this module registers the built-ins."""
+"""Adapter SPI and the factory registry. Importing this module registers the built-ins."""
 
 from __future__ import annotations
 
@@ -33,6 +33,21 @@ class Adapter(Protocol):
     def create(self, node: Node, body: Record, ctx: Context) -> Record: ...
 
     def delete(self, node: Node, record: Record, ctx: Context) -> None: ...
+
+
+class Browsable(Protocol):
+    """Optional: an adapter that can enumerate what a resource type already has in an environment.
+
+    `find` answers "is this one node there?"; browsing answers "what is there at all?", which is
+    what lets a catalog be written from an environment instead of typed from scratch. The node
+    passed in is a probe carrying the type's config and whatever body fields scope the listing.
+    """
+
+    def browse(self, node: Node, ctx: Context, limit: int = 200) -> list[Record]: ...
+
+
+def can_browse(adapter: Adapter) -> bool:
+    return callable(getattr(adapter, "browse", None))
 
 
 class Closeable(Protocol):
@@ -97,12 +112,14 @@ _register_builtins()
 
 __all__ = [
     "Adapter",
+    "Browsable",
     "Closeable",
     "AdapterFactory",
     "Context",
     "NoopDelete",
     "Record",
     "build",
+    "can_browse",
     "close_adapter",
     "register",
     "registered_systems",

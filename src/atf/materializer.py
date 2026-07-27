@@ -238,7 +238,10 @@ class Materializer:
             return {"status": ABSENT, "detail": ""}
         identity = record.get(node["id_field"])
         self._ids[node["id"]] = identity
-        return {"status": PRESENT, "detail": "", "identity": identity}
+        # The record travels with the status because a caller offering an assertion on one of its
+        # fields needs to know which fields there are, and what each holds right now. Reading it a
+        # second time would ask the backend the same question twice per page.
+        return {"status": PRESENT, "detail": "", "identity": identity, "record": record}
 
     # ---- writes -----------------------------------------------------------
 

@@ -685,6 +685,9 @@ th.num, td.num { text-align: right; }
 }
 .field textarea { min-height: 88px; resize: vertical; font-family: var(--font-mono); font-size: 12.5px; }
 .field .hint { font-size: 12px; color: var(--text-dim); }
+/* What a field currently holds, said beside the box it is typed into. Deliberately not a `.hint`:
+   it is the answer, and it must not turn red the moment the field it belongs to is empty. */
+.field .note { font-size: 12px; color: var(--text-dim); }
 .field.bad input, .field.bad select, .field.bad textarea { border-color: var(--bad); }
 .field.bad .hint { color: var(--bad); }
 .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
@@ -789,6 +792,9 @@ th.num, td.num { text-align: right; }
    two hundred resources cannot be a dropdown. */
 
 .combo { position: relative; min-width: 0; flex: 1 1 240px; max-width: 420px; }
+/* Inside a labelled field the flex axis is vertical, and a 240px basis becomes a 240px-tall
+   control with its hint stranded at the bottom of the row. There it sizes to its input. */
+.field > .combo { flex: 0 0 auto; max-width: none; }
 .combo-input {
   width: 100%;
   padding: 7px 28px 7px 10px;

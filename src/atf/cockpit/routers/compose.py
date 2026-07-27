@@ -38,8 +38,9 @@ from ...discovery import (
     parse_feature,
     slug,
 )
+from ...steps import FIELD, NAME, TYPE, VALUE, generic
 from ..view import cockpit as app
-from ..view import current_env, page, partial, plural, require_confirmation
+from ..view import current_env, field_choices, page, partial, plural, require_confirmation
 
 router = APIRouter()
 
@@ -257,7 +258,7 @@ def _resolve(draft: Draft, nodes: dict[str, Node], found: Discovery) -> None:
         if row.given:
             _resolve_given(row, nodes)
         else:
-            _resolve_step(row, found)
+            _resolve_step(row, found, nodes)
 
     # Only a row that produced a line counts as something for the next one to continue, so an
     # unfinished row in the middle can never leave an `And` with no keyword above it.
@@ -280,7 +281,7 @@ def _resolve_given(row: Row, nodes: dict[str, Node]) -> None:
     row.node_id = node["id"]
 
 
-def _resolve_step(row: Row, found: Discovery) -> None:
+def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
     if not row.pattern:
         row.problem = f"choose the {row.keyword} step this scenario uses"
         return
@@ -293,6 +294,17 @@ def _resolve_step(row: Row, found: Discovery) -> None:
     missing = [name for name in row.definition.params if not row.values.get(name)]
     if missing:
         row.problem = f"give {'a value' if len(missing) == 1 else 'values'} for {', '.join(missing)}"
+        return
+
+    # A step ATF defines names a catalog resource, so the composer can hold it to the catalog
+    # exactly as it holds a Given row — rather than writing a line that only fails when it runs.
+    if generic(row.definition.pattern) is not None and NAME in row.definition.params:
+        resource_type, name = row.values.get(TYPE, ""), row.values.get(NAME, "")
+        node = find_node(nodes, resource_type, name)
+        if node is None:
+            row.problem = f"the catalog declares no {resource_type} called {name!r}"
+            return
+        row.node_id = node["id"]
 
 
 def _gherkin(title: str, rows: list[Row]) -> str:
@@ -652,6 +664,15 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         "type_options": _type_options(engine, instances, status),
         "instance_options": lambda resource_type: _instance_options(instances.get(resource_type, []), status),
         "step_options": {keyword: _step_options(found.steps_for(keyword)) for keyword in KEYWORDS},
+        # Only the steps ATF itself defines get a picker per parameter: they are the only ones
+        # whose parameters ATF chose, so the only ones whose meaning it can know. A project's
+        # step keeps a text box, because `{expected}` could be anything at all.
+        "generic": generic,
+        "field_options": lambda resource_type, name: _field_options(engine, status, resource_type, name),
+        "current_value": lambda resource_type, name, field: _current_value(
+            engine, status, resource_type, name, field
+        ),
+        "capture_kinds": (TYPE, NAME, FIELD, VALUE),
     }
 
 
@@ -709,14 +730,49 @@ def _instance_options(members: list[Node], status: dict[str, Any]) -> list[dict[
 
 
 def _step_options(steps: list[StepDef]) -> list[dict[str, str]]:
-    from pathlib import Path as _Path
+    """Every step of one keyword, the suite's own first.
 
+    The split is the honest one and it is the first thing an author needs: the steps ATF brings
+    need no code and work in any suite, and the steps below them are this project's own — which
+    is also where a missing wording has to be written.
+    """
+    options: list[dict[str, str]] = []
+    for step in steps:
+        mine = generic(step.pattern) is None
+        options.append(
+            {
+                "value": step.pattern,
+                "label": step.pattern,
+                "meta": Path(step.file).name if step.file else "",
+                "desc": step.docstring,
+                "group": "Defined by this suite" if mine else "Provided by ATF — no code needed",
+            }
+        )
+    return sorted(options, key=lambda option: (option["group"], option["label"]))
+
+
+def _field_options(
+    engine: Any, status: dict[str, Any], resource_type: str, name: str
+) -> list[dict[str, str]]:
+    """The fields of one resource, each carrying what it holds right now.
+
+    Choosing a field from a list of bare names is guessing. Choosing `done` while the interface
+    says it is currently `false` is writing an assertion with the answer in front of you.
+    """
+    node = find_node(engine.nodes, resource_type, name)
+    if node is None:
+        return []
     return [
-        {
-            "value": step.pattern,
-            "label": step.pattern,
-            "meta": _Path(step.file).name if step.file else "",
-            "desc": step.docstring,
-        }
-        for step in steps
+        {"value": choice.name, "label": choice.name, "meta": choice.current, "desc": choice.source}
+        for choice in field_choices(node, status.get(node["id"]))
     ]
+
+
+def _current_value(engine: Any, status: dict[str, Any], resource_type: str, name: str, field: str) -> str:
+    node = find_node(engine.nodes, resource_type, name)
+    if node is None:
+        return ""
+    return next(
+        (choice.current for choice in field_choices(node, status.get(node["id"])) if choice.name == field),
+        "",
+    )

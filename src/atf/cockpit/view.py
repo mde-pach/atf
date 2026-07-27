@@ -7,6 +7,7 @@ scenario runnable, what would provisioning it actually do, can I ship.
 
 from __future__ import annotations
 
+import json
 import secrets
 import time
 from contextvars import ContextVar
@@ -18,7 +19,7 @@ from urllib.parse import urlencode
 from fastapi import HTTPException, Request
 from fastapi.templating import Jinja2Templates
 
-from ..catalog import Node
+from ..catalog import Node, natural_keys
 from ..discovery import Spec, Step, Test
 from ..materializer import ABSENT, EPHEMERAL, ERROR, PRESENT, UNSUPPORTED
 from ..runner import FAILED, PASSED, SKIPPED, StepResult, TestResult
@@ -505,6 +506,65 @@ def build_graph(nodes: dict[str, Node], focus: str, status: dict[str, dict[str, 
             )
 
     return Graph(boxes=boxes, edges=edges, width=width, height=height, focus=focus)
+
+
+# ---- the fields of a resource, for an assertion built in the interface -------
+
+
+@dataclass
+class FieldChoice:
+    """One field an assertion can name, and what it holds right now."""
+
+    name: str
+    current: str = ""
+    source: str = ""
+
+    @property
+    def hint(self) -> str:
+        if self.current:
+            return f"currently {self.current} · {self.source}" if self.source else f"currently {self.current}"
+        return self.source
+
+
+def field_choices(node: Node, entry: dict[str, Any] | None) -> list[FieldChoice]:
+    """The fields of one resource, best-known first.
+
+    Three sources, in decreasing authority: what the environment's record actually carries, what
+    the catalog body declares, and the two fields the type itself names — its identity and whatever
+    it is recognised by. A field is only ever *offered*; nothing here requires one to exist, which
+    is the line the framework holds on record shape.
+    """
+    record = (entry or {}).get("record") or {}
+    declared = node["body"]
+    named = [node["id_field"], *natural_keys(node["config"])]
+
+    ordered: list[str] = []
+    for name in [*named, *sorted(record), *sorted(declared)]:
+        if name not in ordered:
+            ordered.append(str(name))
+
+    choices: list[FieldChoice] = []
+    for name in ordered:
+        if name in record:
+            choices.append(FieldChoice(name, _written(record[name]), "on the record in this environment"))
+        elif name in declared:
+            choices.append(FieldChoice(name, _written(declared[name]), "declared in the catalog"))
+        elif name == node["id_field"]:
+            choices.append(FieldChoice(name, "", "the identity field, assigned when it is created"))
+        else:
+            choices.append(FieldChoice(name, "", "part of the natural key"))
+    return choices
+
+
+def _written(value: Any) -> str:
+    """A record's value as a scenario would write it between quotes."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, dict | list):
+        return json.dumps(value, default=str)[:60]
+    return str(value)[:60]
 
 
 def lineage_sentence(node: Node, nodes: dict[str, Node]) -> str:

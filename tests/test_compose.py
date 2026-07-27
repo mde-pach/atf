@@ -13,6 +13,7 @@ from markupsafe import escape
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import Cockpit, set_cockpit
 from atf.discovery import parse_feature
+from atf.steps import FIELD_IS
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
@@ -127,6 +128,97 @@ def test_a_suite_with_no_when_or_then_steps_is_told_how_to_write_one(client):
     assert "defines no <code>When</code> or <code>Then</code> steps yet" in body
     assert "steps/test_*.py" in body
     assert "How steps are written" in body
+
+
+def test_the_steps_atf_provides_are_offered_apart_from_the_suites_own(client):
+    """Which is the first thing an author needs: one group needs code, the other never does."""
+    body = client.get("/compose").text
+    assert "Provided by ATF — no code needed" in body
+    assert "Defined by this suite" in body
+    assert esc(FIELD_IS) in body
+
+
+# ---- assertions built from the catalog, with no step code -------------------
+
+
+def assertion(**overrides) -> dict[str, str]:
+    """A draft whose Then is one of ATF's own steps, filled in from the catalog."""
+    return draft(
+        pattern_2=FIELD_IS,
+        p_2_expected=None,
+        p_2_resource_type=overrides.pop("resource_type", "account"),
+        p_2_name=overrides.pop("name", "primary"),
+        p_2_field=overrides.pop("field", "plan"),
+        p_2_value=overrides.pop("value", "standard"),
+        **overrides,
+    )
+
+
+def test_a_generic_step_gets_a_picker_per_parameter_not_four_text_boxes(client):
+    body = client.post("/compose/preview", data=assertion()).text
+    assert 'name="p_2_resource_type"' in body
+    assert 'name="p_2_name"' in body
+    assert 'name="p_2_field"' in body
+    # The value is the one thing the catalog cannot choose, so it stays a box — with the answer
+    # beside it.
+    assert 'name="p_2_value"' in body
+    assert "which kind of resource" in body and "which field" in body
+
+
+def test_the_field_picker_offers_what_the_environment_holds_and_what_it_is_worth_now(client):
+    body = client.post("/compose/preview", data=assertion()).text
+    assert 'data-value="plan"' in body
+    assert 'data-value="email"' in body
+    assert "on the record in this environment" in body or "declared in the catalog" in body
+
+
+def test_the_current_value_is_shown_beside_the_box_it_is_written_into(client):
+    body = " ".join(client.post("/compose/preview", data=assertion(field="plan")).text.split())
+    assert "<code>plan</code> is <code>standard</code> in dev right now." in body
+    assert 'class="note"' in body, "the current value is an answer, not a fault"
+
+
+def test_a_generic_assertion_composes_into_gherkin(client):
+    body = client.post("/compose/preview", data=assertion()).text
+    assert 'Then the account "primary" field "plan" is "standard"' in preview_of(body)
+
+
+def test_a_generic_assertion_is_held_to_the_catalog_before_it_is_written(client):
+    body = client.post("/compose/preview", data=assertion(name="ghost")).text
+    assert "the catalog declares no account called &#39;ghost&#39;" in body
+
+
+def test_an_assertion_shows_the_resource_it_names_with_its_status(client):
+    body = client.post("/compose/preview", data=assertion()).text
+    assert "accounts.primary" in body
+
+
+def test_a_scenario_of_nothing_but_generic_steps_can_be_written(client, project):
+    """The whole point: resources, and an assertion, with no step code anywhere."""
+    data = {
+        "mode": "build",
+        "feature": "Accounts",
+        "title": "An account carries the plan it declares",
+        "confirm": confirm(client),
+        "kw_0": "given",
+        "rtype_0": "account",
+        "rname_0": "primary",
+        "kw_1": "then",
+        "pattern_1": FIELD_IS,
+        "p_1_resource_type": "account",
+        "p_1_name": "primary",
+        "p_1_field": "plan",
+        "p_1_value": "standard",
+    }
+    response = client.post("/compose/apply", data=data)
+    assert response.status_code == 200, response.text
+
+    written = feature_file(project).read_text()
+    assert 'Then the account "primary" field "plan" is "standard"' in written
+
+    specs = parse_feature(feature_file(project), {}, set())
+    assert "An account carries the plan it declares" in [spec.scenario for spec in specs]
+    assert "have no definition yet" not in response.text, "a step ATF provides is already defined"
 
 
 # ---- the live loop ----------------------------------------------------------

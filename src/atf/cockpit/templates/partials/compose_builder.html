@@ -5,6 +5,77 @@
 {% set post = u('/compose/preview') %}
 {% set swap = 'hx-target="#compose-body" hx-swap="innerHTML"' %}
 
+{# The parameters of one step. A step ATF defines names a resource, one of its fields and a value,
+   and every one of those is a choice the catalog can already make for you — so it is a picker, and
+   each option carries what is needed to pick it. A step this project defines gets a text box,
+   because `{expected}` could mean anything and guessing would be worse than asking. #}
+{% macro captures(row, spec) %}
+  {% set rtype = row.values.get('resource_type', '') %}
+  {% set rname = row.values.get('name', '') %}
+  {% set chosen_field = row.values.get('field', '') %}
+  <div class="field-row">
+    {% for name in row.definition.params %}
+      {% set kind = name if spec and name in capture_kinds else '' %}
+
+      {% if kind == 'resource_type' %}
+        <div class="field">
+          <label>which kind of resource</label>
+          {{ ui.combo('p_' ~ row.index ~ '_resource_type', type_options, rtype,
+                      placeholder='which kind of resource…', empty='No such resource type.') }}
+        </div>
+
+      {% elif kind == 'name' %}
+        {% if rtype %}
+          <div class="field">
+            <label>which {{ rtype }}</label>
+            {{ ui.combo('p_' ~ row.index ~ '_name', instance_options(rtype), rname,
+                        placeholder='which ' ~ rtype ~ '…',
+                        empty='No ' ~ rtype ~ ' by that name. Declare one first.') }}
+          </div>
+        {% endif %}
+
+      {% elif kind == 'field' %}
+        {% if rtype and rname %}
+          <div class="field">
+            <label>which field</label>
+            {{ ui.combo('p_' ~ row.index ~ '_field', field_options(rtype, rname), chosen_field,
+                        placeholder='which field…', empty='Nothing ATF can see is called that.') }}
+            <span class="hint">
+              What the catalog declares and what {{ env }} holds. Provision it and whatever the backend
+              adds of its own appears here too.
+            </span>
+          </div>
+        {% endif %}
+
+      {% elif kind == 'value' %}
+        {% set now = current_value(rtype, rname, chosen_field) %}
+        <div class="field{{ ' bad' if not row.values.get(name) }}">
+          <label for="p-{{ row.index }}-{{ name }}">the value it must be</label>
+          <input id="p-{{ row.index }}-{{ name }}" name="p_{{ row.index }}_{{ name }}"
+                 value="{{ row.values.get(name, '') }}" autocomplete="off"
+                 placeholder="{{ now or 'what this field must hold' }}">
+          {# Not a `.hint`: what the field holds right now is the answer, and a hint inside a field
+             still being filled in is coloured as a fault. #}
+          {% if chosen_field and now %}
+            <span class="note"><code>{{ chosen_field }}</code> is <code>{{ now }}</code> in {{ env }} right now.</span>
+          {% else %}
+            <span class="note">
+              Written between quotes, so <code>false</code> reaches a true/false field and <code>3</code> a number.
+            </span>
+          {% endif %}
+        </div>
+
+      {% else %}
+        <div class="field{{ ' bad' if not row.values.get(name) }}">
+          <label for="p-{{ row.index }}-{{ name }}">{{ name }}</label>
+          <input id="p-{{ row.index }}-{{ name }}" name="p_{{ row.index }}_{{ name }}"
+                 value="{{ row.values.get(name, '') }}" autocomplete="off">
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+{% endmacro %}
+
 <input type="hidden" name="mode" value="{{ draft.mode }}">
 
 <div class="card stack">
@@ -137,14 +208,13 @@
               </div>
 
               {% if row.definition and row.definition.params %}
-                <div class="field-row">
-                  {% for name in row.definition.params %}
-                    <div class="field{{ ' bad' if not row.values.get(name) }}">
-                      <label for="p-{{ row.index }}-{{ name }}">{{ name }}</label>
-                      <input id="p-{{ row.index }}-{{ name }}" name="p_{{ row.index }}_{{ name }}"
-                             value="{{ row.values.get(name, '') }}" autocomplete="off">
-                    </div>
-                  {% endfor %}
+                {{ captures(row, generic(row.definition.pattern)) }}
+              {% endif %}
+
+              {% if row.node_id %}
+                {% set state = status.get(row.node_id, {}).get('status', '') %}
+                <div class="drop">
+                  {{ ui.ref('resource', u('/catalog/node/' ~ row.node_id), row.node_id, status=state) }}
                 </div>
               {% endif %}
 

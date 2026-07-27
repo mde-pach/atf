@@ -319,7 +319,12 @@ def _write_claim(row: Row, nodes: dict[str, Node]) -> None:
     row.pattern = claimed.pattern
     row.values = {}
 
-    about = row.target if row.subject == RESULT_SUBJECT else row.subject.removeprefix(NODE_SUBJECT)
+    # A claim about a resource names it; a claim about the result names one only when the result is
+    # being searched for it. A claim about a field of the result names no resource at all.
+    if claimed.subject == RESULT_OF:
+        about = row.target if claimed.target == "resource" else ""
+    else:
+        about = row.subject.removeprefix(NODE_SUBJECT)
     node = nodes.get(about)
     if node is not None:
         row.values = {TYPE: node["resource"], NAME: node["name"]}
@@ -341,7 +346,7 @@ def _read_claim(row: Row, nodes: dict[str, Node]) -> None:
     named = find_node(nodes, row.values.get(TYPE, ""), row.values.get(NAME, ""))
     if claimed.subject == RESULT_OF:
         row.subject = RESULT_SUBJECT
-        row.target = named["id"] if named else ""
+        row.target = (named["id"] if named else "") if claimed.target == "resource" else row.values.get(VALUE, "")
     else:
         row.subject = f"{NODE_SUBJECT}{named['id']}" if named else ""
         row.target = row.values.get(VALUE, "")
@@ -1012,6 +1017,10 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         ),
         "aspect_options": lambda row: _aspect_options(
             engine, status, row.subject.removeprefix(NODE_SUBJECT)
+        ),
+        "held_fields": lambda: sorted(
+            {field for result in cockpit.results(env).values() for slot in result.held
+             if slot.name == RESULT_OF for field in slot.fields}
         ),
         "comparison_options": lambda subject, aspect: [
             {"value": item.key, "label": item.label, "meta": "", "desc": ""}

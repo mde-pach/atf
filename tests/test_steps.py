@@ -17,6 +17,8 @@ from atf.steps import (
     GENERIC_STEPS,
     GONE,
     RESULT_CONTAINS,
+    RESULT_FIELD_IS,
+    RESULT_FIELD_IS_NOT,
     RESULT_LACKS,
     generic,
 )
@@ -61,6 +63,8 @@ PASSING = {
     FIELD_IS_NOT: 'the account "primary" field "plan" is not "trial"',
     RESULT_CONTAINS: 'the result contains the account "primary"',
     RESULT_LACKS: 'the result does not contain the account "secondary"',
+    RESULT_FIELD_IS: 'the result field "plan" is "standard"',
+    RESULT_FIELD_IS_NOT: 'the result field "plan" is not "trial"',
 }
 
 
@@ -415,3 +419,82 @@ def test_a_placeholder_that_cannot_resolve_says_which_one(project):
     result = run_feature(project, "unknown_provider", feature)
     assert result.returncode != 0
     assert "no provider registered as 'nosuchprovider'" in result.stdout
+
+
+# ---- asserting on a field of what a step produced ---------------------------
+
+
+def test_a_field_of_what_a_step_produced_is_compared(project):
+    """Your rename example, whole: an action takes a generated value in, and the assertion checks
+    the value that came back against the same expression."""
+    feature = """Feature: Produced
+  Scenario: The rename comes back in what the API returned
+    Given the account "primary"
+    When I rename it to "${uuid}"
+    Then the result field "plan" is "${uuid}"
+    And the result field "plan" is not "standard"
+"""
+    steps = '''
+
+import json
+from pathlib import Path
+
+from pytest_bdd import parsers, when
+
+
+@when(parsers.parse('I rename it to "{title}"'))
+def _(context, client_config, title):
+    path = Path(__file__).parent.parent.parent / client_config["api"]["path"]
+    data = json.loads(path.read_text())
+    for record in data["accounts"]:
+        if record["id"] == context.account["id"]:
+            record["plan"] = title
+            context.result = dict(record)
+    path.write_text(json.dumps(data, indent=2))
+'''
+    result = run_feature(project, "produced", feature, steps)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_field_assertion_on_a_listing_says_to_use_contains(project):
+    feature = """Feature: Produced
+  Scenario: A listing has no one field
+    Given the account "primary"
+    And the project "alpha"
+    When I list the projects of the account
+    Then the result field "slug" is "alpha"
+"""
+    steps = '''
+
+from pytest_bdd import when
+
+
+@when("I list the projects of the account")
+def _(context, api):
+    context.result = [{"slug": "alpha"}, {"slug": "beta"}]
+'''
+    result = run_feature(project, "listing_field", feature, steps)
+    assert result.returncode != 0
+    assert "a field assertion needs one" in result.stdout
+    assert "the result contains the <type>" in result.stdout
+
+
+def test_an_unknown_field_on_the_result_lists_what_it_carries(project):
+    feature = """Feature: Produced
+  Scenario: The result has no such field
+    Given the account "primary"
+    When I read its plan
+    Then the result field "nope" is "x"
+"""
+    steps = '''
+
+from pytest_bdd import when
+
+
+@when("I read its plan")
+def _(context):
+    context.result = {"plan": context.account["plan"]}
+'''
+    result = run_feature(project, "unknown_result_field", feature, steps)
+    assert result.returncode != 0
+    assert "the result has no field 'nope' — it carries plan" in result.stdout

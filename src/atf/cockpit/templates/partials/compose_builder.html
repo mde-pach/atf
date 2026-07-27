@@ -76,7 +76,8 @@
    four boxes every time, so the row never changes shape — only which of them apply. What gets
    written is the Gherkin it always was, and a scenario written by hand reads back into these. #}
 {% macro claim_row(row) %}
-  {% set on_field = row.aspect and row.subject != 'result' %}
+  {# Naming a field is what decides what can be claimed, whatever the claim is about. #}
+  {% set on_field = row.aspect | length > 0 %}
   {% set claimed = claim(row.compare) %}
   <div class="field-row">
     <div class="field">
@@ -85,7 +86,15 @@
                   placeholder='what is this about…', empty='Nothing here can be asserted on yet.') }}
     </div>
 
-    {% if row.subject and row.subject != 'result' and not row.subject.startswith('step:') %}
+    {% if row.subject == 'result' %}
+      {# What a step produced is only knowable by running it, so this is typed rather than picked —
+         with the fields the last run actually saw offered as completions. #}
+      <div class="field">
+        <label for="aspect-{{ row.index }}">assert</label>
+        <input id="aspect-{{ row.index }}" name="aspect_{{ row.index }}" value="{{ row.aspect }}"
+               autocomplete="off" list="held-fields" placeholder="a field of it, or leave empty">
+      </div>
+    {% elif row.subject and not row.subject.startswith('step:') %}
       <div class="field">
         <label>assert</label>
         {{ ui.combo('aspect_' ~ row.index, aspect_options(row), row.aspect,
@@ -121,6 +130,10 @@
     {% endif %}
   </div>
 {% endmacro %}
+
+<datalist id="held-fields">
+  {% for name in held_fields() %}<option value="{{ name }}">{% endfor %}
+</datalist>
 
 <input type="hidden" name="mode" value="{{ draft.mode }}">
 

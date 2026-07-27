@@ -88,6 +88,8 @@ you already wrote.
 | `Then the <type> "<name>" field "<f>" is not "<v>"` | It does not. |
 | `Then the result contains the <type> "<name>"` | One of the records in `context.result` is that resource. |
 | `Then the result does not contain the <type> "<name>"` | None of them is. |
+| `Then the result field "<f>" is "<v>"` | The single record in `context.result` has that `<f>`. |
+| `Then the result field "<f>" is not "<v>"` | It does not. |
 
 They name a field; they never require one. ATF reads the field you named and compares it with the
 value you wrote, and knows nothing else about it — see
@@ -162,6 +164,23 @@ def _(context, api):
 ```gherkin
 Then the result contains the todo_list "groceries"
 ```
+
+A field assertion on the result needs *one* record — a listing of five has no one `title`, so it is
+refused rather than guessed at, and the message points at `contains`.
+
+Together with a [provider](providers.md), that closes the loop on an action that takes a value in
+and hands one back:
+
+```gherkin
+Given the todo_list "groceries"
+When I rename it to "${fake:company}"
+Then the result field "title" is "${fake:company}"
+```
+
+Both lines write the same expression and see the same company, because a provider call is
+[evaluated once per scenario](providers.md#one-evaluation). Every value a step is handed has its
+placeholders resolved, whoever wrote the step — so this works in a step written this morning, with
+nothing added to it.
 
 ## Fixtures {#fixtures}
 

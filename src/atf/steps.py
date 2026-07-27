@@ -50,6 +50,8 @@ FIELD_IS = 'the {resource_type} "{name}" field "{field}" is "{value}"'
 FIELD_IS_NOT = 'the {resource_type} "{name}" field "{field}" is not "{value}"'
 RESULT_CONTAINS = 'the result contains the {resource_type} "{name}"'
 RESULT_LACKS = 'the result does not contain the {resource_type} "{name}"'
+RESULT_FIELD_IS = 'the result field "{field}" is "{value}"'
+RESULT_FIELD_IS_NOT = 'the result field "{field}" is not "{value}"'
 
 # A capture's parameter name is also what it means, because ATF chose both. A project's step may
 # well have a parameter called `field` that means something else entirely, which is why only the
@@ -115,6 +117,20 @@ GENERIC_STEPS: tuple[GenericStep, ...] = (
         (TYPE, NAME),
         needs=(RESULT,),
     ),
+    GenericStep(
+        "then",
+        RESULT_FIELD_IS,
+        "Compare one field of what the last step produced with a value.",
+        (FIELD, VALUE),
+        needs=(RESULT,),
+    ),
+    GenericStep(
+        "then",
+        RESULT_FIELD_IS_NOT,
+        "Require one field of what the last step produced to differ from a value.",
+        (FIELD, VALUE),
+        needs=(RESULT,),
+    ),
 )
 
 _BY_PATTERN = {step.pattern: step for step in GENERIC_STEPS}
@@ -157,6 +173,8 @@ COMPARISONS: tuple[Comparison, ...] = (
     Comparison("is-not", "is not", FIELD_IS_NOT, RESOURCE, field=True, target="value"),
     Comparison("contains", "contains", RESULT_CONTAINS, RESULT_OF, target="resource"),
     Comparison("lacks", "does not contain", RESULT_LACKS, RESULT_OF, target="resource"),
+    Comparison("result-is", "is", RESULT_FIELD_IS, RESULT_OF, field=True, target="value"),
+    Comparison("result-is-not", "is not", RESULT_FIELD_IS_NOT, RESULT_OF, field=True, target="value"),
 )
 
 _BY_KEY = {item.key: item for item in COMPARISONS}
@@ -245,6 +263,41 @@ def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: st
         pytest.fail(
             f"the result contains {node['id']}, which it must not. {_looked_for(engine, node, records)}"
         )
+
+
+@then(parsers.parse(RESULT_FIELD_IS))
+def _(context: Any, field: str, value: str) -> None:
+    """Compare one field of what the last step produced with a value."""
+    actual = _result_field(context, field)
+    if not written_matches(actual, value):
+        pytest.fail(f"the result's {field!r} is {describe(actual)}, not {describe(value)}")
+
+
+@then(parsers.parse(RESULT_FIELD_IS_NOT))
+def _(context: Any, field: str, value: str) -> None:
+    """Require one field of what the last step produced to differ from a value."""
+    actual = _result_field(context, field)
+    if written_matches(actual, value):
+        pytest.fail(f"the result's {field!r} is {describe(actual)}, which is what it must not be")
+
+
+def _result_field(context: Any, field: str) -> Any:
+    """One field of the single record a step produced.
+
+    A list is refused rather than guessed at: "the result" of a step that returned five records has
+    no one field, and picking the first would be a different assertion than the one written.
+    """
+    records = _result(context)
+    if len(records) != 1:
+        pytest.fail(
+            f"the result holds {len(records)} records, and a field assertion needs one. "
+            'Use `the result contains the <type> "<name>"` for a listing.'
+        )
+    record = records[0]
+    if field not in record:
+        carries = ", ".join(sorted(map(str, record))) or "no fields at all"
+        pytest.fail(f"the result has no field {field!r} — it carries {carries}.")
+    return record[field]
 
 
 # ---- reading ---------------------------------------------------------------

@@ -1,0 +1,10 @@
+# A cockpit is a resource: `atf serve` over a workspace, started when a scenario needs it and
+# stopped when that scenario ends. Its identity is the URL it came up on.
+
+chained:
+  resource: cockpit
+  represents: A cockpit serving the two-resource chained suite — the interface under test.
+  depends_on:
+    - workspaces.chained
+  body:
+    workspace: ${workspaces.chained.id}

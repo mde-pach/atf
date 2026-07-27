@@ -1,7 +1,28 @@
-# One type: a real consuming suite, scaffolded on disk for the duration of a scenario.
-# Ephemeral, so every scenario gets a pristine one and it is torn down afterwards.
+# The types this suite provisions. A workspace is a real consuming suite on disk; a cockpit is
+# `atf serve` running over one; a page and an element are what that cockpit shows.
+#
+# The last two are `mode: reference` — they are observed and could never be created, which is also
+# what makes them safe: nothing here can change the interface it is reading.
 
 workspace:
   system: workspace
-  lifecycle: ephemeral
+  lifecycle: ephemeral      # every scenario gets a pristine one, torn down afterwards
   natural_key: suite
+
+cockpit:
+  system: cockpit
+  lifecycle: ephemeral      # two scenarios sharing a server would share what the first provisioned
+  natural_key: workspace
+  id_field: url
+
+page:
+  system: page
+  mode: reference
+  natural_key: [cockpit, path]
+  id_field: path
+
+element:
+  system: element
+  mode: reference
+  natural_key: [page, selector]
+  id_field: selector

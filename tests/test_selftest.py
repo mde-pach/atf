@@ -18,7 +18,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 SELFTEST = REPO / "selftest"
 
-SCENARIOS = 8
+SCENARIOS = 16
 
 
 def run_selftest(*args: str, src: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -84,6 +84,13 @@ def test_the_self_hosted_suite_uses_atf_rather_than_reimplementing_it():
             "torn_down_afterwards",
             id="ephemeral teardown",
         ),
+        pytest.param(
+            "cockpit/routers/catalog.py",
+            "GRAPH_FROM = 3",
+            "GRAPH_FROM = 0",
+            "a_small_lineage_is_a_sentence_not_a_diagram",
+            id="the interface, through the interface",
+        ),
     ],
 )
 def test_the_self_hosted_suite_catches_regressions(module, find, replace, expected_failure, tmp_path):
@@ -95,7 +102,7 @@ def test_the_self_hosted_suite_catches_regressions(module, find, replace, expect
     src = tmp_path / "src"
     shutil.copytree(REPO / "src", src)
 
-    path = src / "atf" / module
+    path = src / "atf" / Path(module)
     original = path.read_text(encoding="utf-8")
     assert find in original, f"{module}: the mutation target moved — update this test"
     path.write_text(original.replace(find, replace), encoding="utf-8")
@@ -104,4 +111,4 @@ def test_the_self_hosted_suite_catches_regressions(module, find, replace, expect
     assert result.returncode != 0, f"{module}: the suite stayed green with the code broken"
     assert expected_failure in result.stdout, result.stdout
 
-    assert (REPO / "src" / "atf" / module).read_text(encoding="utf-8") == original, "the repo must be untouched"
+    assert (REPO / "src" / "atf" / Path(module)).read_text(encoding="utf-8") == original, "the repo must be untouched"

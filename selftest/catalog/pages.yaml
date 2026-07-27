@@ -1,0 +1,56 @@
+# The cockpit's own pages, declared the way any resource is. Provisioning one starts the server
+# it is served by, because that is what it depends on.
+
+overview:
+  resource: page
+  represents: The front page — the one-sentence verdict on whether the suite can ship.
+  depends_on:
+    - cockpits.chained
+  body:
+    cockpit: ${cockpits.chained.id}
+    path: /
+
+catalog:
+  resource: page
+  represents: The catalog, navigated by resource type.
+  depends_on:
+    - cockpits.chained
+  body:
+    cockpit: ${cockpits.chained.id}
+    path: /catalog
+
+owner_type:
+  resource: page
+  represents: One resource type — its instances and what the environment holds, in one table.
+  depends_on:
+    - cockpits.chained
+  body:
+    cockpit: ${cockpits.chained.id}
+    path: /catalog/type/owner
+
+groceries_node:
+  resource: page
+  represents: One resource — what would be sent to create it, and what it hangs off.
+  depends_on:
+    - cockpits.chained
+  body:
+    cockpit: ${cockpits.chained.id}
+    path: /catalog/node/lists.groceries
+
+scenarios:
+  resource: page
+  represents: Every behaviour the suite describes, and whether it can run here.
+  depends_on:
+    - cockpits.chained
+  body:
+    cockpit: ${cockpits.chained.id}
+    path: /scenarios
+
+compose:
+  resource: page
+  represents: The composer — where a scenario is written without opening an editor.
+  depends_on:
+    - cockpits.chained
+  body:
+    cockpit: ${cockpits.chained.id}
+    path: /compose

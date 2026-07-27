@@ -1,4 +1,5 @@
-# ATF testing ATF. The resources are suites-under-test; the system under test is the `atf` CLI.
+# ATF testing ATF. The resources are suites-under-test and the cockpit's own pages; the systems
+# under test are the `atf` CLI and the interface it serves.
 
 catalog: ./catalog
 specs: ./specs
@@ -6,6 +7,7 @@ default_env: local
 
 adapters:
   - selftest_adapters
+  - cockpit_adapter
 
 mutable_envs: [local]
 
@@ -14,6 +16,9 @@ environments:
     adapters:
       workspace:
         suites: ./suites
+      cockpit: {}
+      page: {}
+      element: {}
     clients:
       atf:
         backend_url_env: SELFTEST_BACKEND
@@ -22,3 +27,6 @@ environments:
 display:
   systems:
     workspace: { label: Workspace, color: "#7857d8" }
+    cockpit: { label: Cockpit, color: "#2f6be0" }
+    page: { label: Page, color: "#0f8f6f" }
+    element: { label: Element, color: "#b8860b" }

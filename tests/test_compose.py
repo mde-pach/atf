@@ -13,7 +13,7 @@ from markupsafe import escape
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import Cockpit, set_cockpit
 from atf.discovery import parse_feature
-from atf.steps import FIELD_IS
+from atf.steps import FIELD_IS, RESULT_CONTAINS
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
@@ -633,3 +633,65 @@ def test_the_composer_renders_a_whole_document_and_no_new_css(client):
     body = client.get("/compose").text
     assert "<!doctype html>" in body.lower()
     assert "<style" not in body
+
+
+# ---- only the steps the scenario can actually use ---------------------------
+
+
+def with_given(resource_type: str, name: str, **overrides) -> dict[str, str]:
+    """A draft holding one resource, and empty When and Then rows to see what they offer."""
+    data = {
+        "mode": "build",
+        "feature": "Accounts",
+        "title": "A brand new behaviour",
+        "kw_0": "given",
+        "rtype_0": resource_type,
+        "rname_0": name,
+        "kw_1": "when",
+        "kw_2": "then",
+    }
+    data.update(overrides)
+    return {key: value for key, value in data.items() if value is not None}
+
+
+def test_a_step_is_offered_only_once_the_context_holds_what_it_reads(client):
+    """The reported failure: a step whose subject the scenario never provisioned composed cleanly
+    and was only found out by running it."""
+    holding_a_visitor = client.post("/compose/preview", data=with_given("visitor", "walkin")).text
+    assert 'data-value="I list the projects of the account"' not in holding_a_visitor
+
+    holding_an_account = client.post("/compose/preview", data=with_given("account", "primary")).text
+    assert 'data-value="I list the projects of the account"' in holding_an_account
+
+
+def test_a_step_reading_the_result_waits_for_something_to_produce_one(client):
+    before = client.post("/compose/preview", data=with_given("account", "primary")).text
+    assert esc(RESULT_CONTAINS) not in before
+
+    after = client.post(
+        "/compose/preview",
+        data=with_given("account", "primary", pattern_1="I list the projects of the account"),
+    ).text
+    assert esc(RESULT_CONTAINS) in after
+
+
+def test_a_catalog_resolved_assertion_never_waits_for_anything(client):
+    """It reads the resource back through the adapter, so it needs nothing put on the context."""
+    body = client.post("/compose/preview", data=with_given("visitor", "walkin")).text
+    assert esc(FIELD_IS) in body
+
+
+def test_what_is_not_offered_is_counted_and_explained(client):
+    """A hidden option is a mystery; a count and the reason is an instruction."""
+    body = " ".join(client.post("/compose/preview", data=with_given("visitor", "walkin")).text.split())
+    assert "not offered here: nothing above this row puts" in body
+    assert "<code>result</code>" in body
+
+
+def test_a_step_chosen_before_its_subject_was_removed_stops_resolving(client):
+    """Otherwise removing the Given above it leaves a scenario that writes and then fails."""
+    body = client.post(
+        "/compose/preview",
+        data=with_given("visitor", "walkin", pattern_1="I list the projects of the account"),
+    ).text
+    assert "nothing above this puts account on the context" in body

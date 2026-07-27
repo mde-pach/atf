@@ -6,6 +6,7 @@ itself, because pytest-bdd only resolves step fixtures while a run is happening.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -86,6 +87,10 @@ class StepDef:
 
     `pattern` is the parser's raw expression exactly as the author wrote it, so it is both what a
     picker shows and what a composed step's wording is built from.
+
+    `needs` and `produces` are what the step reads from and writes to the per-scenario context,
+    read out of its source. They are what lets an interface offer only the steps a scenario can
+    actually use, instead of letting someone compose one that fails at the first `When`.
     """
 
     keyword: str
@@ -93,6 +98,8 @@ class StepDef:
     params: list[str] = field(default_factory=list)
     file: str = ""
     docstring: str = ""
+    needs: list[str] = field(default_factory=list)
+    produces: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -156,6 +163,7 @@ def discover(
     _attach_tests(result, observed, nodes)
     result.fixtures = _fixtures(root, env, observed, resource_types, errors, result.tests)
     result.steps = _step_defs(observed)
+    _attach_context_use(result.steps)
     return result
 
 
@@ -200,6 +208,108 @@ def matching_step(text: str, steps: list[StepDef]) -> StepDef | None:
             except re.error:
                 continue
     return None
+
+
+# ---- what a step touches on the context ------------------------------------
+#
+# Steps talk to each other through `context`, and until now nothing outside the step's own body
+# knew which attributes. That is the whole reason someone can compose `When I complete the task`
+# without a task and only find out by running it. The source says so plainly, so read it.
+
+# The decorators pytest-bdd registers a step with. `step` takes any keyword.
+_STEP_DECORATORS = frozenset({"given", "when", "then", "step"})
+
+# The fixture ATF's steps share. A function that does not take it cannot touch the context.
+CONTEXT = "context"
+
+
+def context_use(path: Path) -> dict[str, tuple[list[str], list[str]]]:
+    """`{step wording: (what it reads from the context, what it writes)}` for one module.
+
+    Read from source rather than by running anything: discovery happens on every page render, and
+    against read-only environments, so it may never execute a step to find out what it does.
+
+    Total by construction — a module that will not parse, or a step whose wording is not a literal,
+    simply contributes nothing and is treated as touching nothing.
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError, ValueError):
+        return {}
+
+    found: dict[str, tuple[list[str], list[str]]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        if CONTEXT not in {argument.arg for argument in node.args.args}:
+            continue
+        reads, writes = _context_names(node)
+        for wording in _wordings(node):
+            found[wording] = (reads, writes)
+    return found
+
+
+def _wordings(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """The step wordings this function is registered under — it may carry several decorators."""
+    out: list[str] = []
+    for decorator in function.decorator_list:
+        if not isinstance(decorator, ast.Call) or not decorator.args:
+            continue
+        name = decorator.func.attr if isinstance(decorator.func, ast.Attribute) else getattr(decorator.func, "id", "")
+        if name not in _STEP_DECORATORS:
+            continue
+        wording = _literal(decorator.args[0])
+        if wording:
+            out.append(wording)
+    return out
+
+
+def _literal(node: ast.expr) -> str:
+    """A wording written plainly, or wrapped in a parser — `parsers.parse("…")` and friends."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Call) and node.args:
+        return _literal(node.args[0])
+    return ""
+
+
+def _context_names(function: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[list[str], list[str]]:
+    reads: list[str] = []
+    writes: list[str] = []
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Attribute) or not isinstance(node.value, ast.Name):
+            continue
+        if node.value.id != CONTEXT or node.attr.startswith("_"):
+            continue
+        into = writes if isinstance(node.ctx, ast.Store) else reads
+        if node.attr not in into:
+            into.append(node.attr)
+    # `context.result = f(context.result)` both reads and writes, and a step that rewrites what it
+    # was given still needs it there first.
+    return sorted(reads), sorted(writes)
+
+
+def _attach_context_use(steps: list[StepDef]) -> None:
+    """Read each module once, not once per step it declares."""
+    from .steps import generic as _generic
+
+    by_file: dict[str, list[StepDef]] = {}
+    for step in steps:
+        if step.file:
+            by_file.setdefault(step.file, []).append(step)
+
+    for file, members in by_file.items():
+        use = context_use(Path(file))
+        for step in members:
+            reads, writes = use.get(step.pattern, ([], []))
+            step.needs, step.produces = reads, writes
+
+    # ATF's own steps reach the context through `getattr`, which no attribute walk can see, so
+    # they say what they need instead. Declared beats inferred wherever both exist.
+    for step in steps:
+        generic = _generic(step.pattern)
+        if generic is not None:
+            step.needs = list(generic.needs)
 
 
 def _step_defs(observed: dict[str, Any]) -> list[StepDef]:
@@ -354,6 +464,7 @@ def _example_values(name: str, spec: Spec) -> list[str]:
 # environments outside `mutable_envs`. Collection alone imports the suite and resolves each step
 # to its definition, which is enough to learn the fixture closure — nothing is provisioned.
 _OBSERVER = '''
+import ast
 import json
 import os
 import re

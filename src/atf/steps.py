@@ -65,6 +65,9 @@ class GenericStep:
     pattern: str
     summary: str
     captures: tuple[str, ...]
+    # What the step reads from the context. Declared rather than read out of the source below,
+    # because these reach it through `getattr` and an attribute is what source analysis can see.
+    needs: tuple[str, ...] = ()
 
 
 GENERIC_STEPS: tuple[GenericStep, ...] = (
@@ -103,12 +106,14 @@ GENERIC_STEPS: tuple[GenericStep, ...] = (
         RESULT_CONTAINS,
         "Require the records the last step produced to include this resource.",
         (TYPE, NAME),
+        needs=(RESULT,),
     ),
     GenericStep(
         "then",
         RESULT_LACKS,
         "Require the records the last step produced not to include this resource.",
         (TYPE, NAME),
+        needs=(RESULT,),
     ),
 )
 

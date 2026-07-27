@@ -186,11 +186,24 @@
 
             {% else %}
               <div class="drop">
-                {{ ui.combo('pattern_' ~ row.index, step_options[row.keyword], row.pattern,
+                {{ ui.combo('pattern_' ~ row.index, step_options(row), row.pattern,
                             placeholder=('what the scenario does…' if row.keyword == 'when' else 'what must be true…'),
                             empty='No ' ~ row.keyword ~ ' step matches. Write one with @' ~ row.keyword
                                   ~ ' in a steps module.') }}
               </div>
+
+              {% set held_back = unusable(row) %}
+              {% if held_back %}
+                {# A hidden option is a mystery; a count and the reason is an instruction. #}
+                {% set wanted = held_back | map(attribute='needs') | sum(start=[]) | unique | list %}
+                <span class="note">
+                  {{ held_back | length }} more
+                  {{- ' step is' if held_back | length == 1 else ' steps are' }} not offered here: nothing
+                  above this row puts
+                  {% for name in wanted %}<code>{{ name }}</code>{{ " or " if not loop.last }}{% endfor %}
+                  on the context.
+                </span>
+              {% endif %}
 
               {% if row.definition and row.definition.params %}
                 {{ captures(row, generic(row.definition.pattern)) }}

@@ -76,6 +76,8 @@ class Row:
     values: dict[str, str] = field(default_factory=dict)
     definition: StepDef | None = None
     node_id: str = ""
+    # What the context holds by the time this row runs, so the row can say whether its step fits.
+    held: set[str] = field(default_factory=set)
     text: str = ""
     shown_keyword: str = ""
     problem: str = ""
@@ -317,6 +319,7 @@ def _build(env: str, fields: dict[str, str], rows: list[Row]) -> Draft:
 def _resolve(draft: Draft, nodes: dict[str, Node], found: Discovery) -> None:
     """Turn every row into the words it will write, and say plainly where it cannot yet."""
     for row in draft.rows:
+        row.held = held_before(draft.rows, row.index)
         if row.given:
             _resolve_given(row, nodes)
         else:
@@ -343,6 +346,24 @@ def _resolve_given(row: Row, nodes: dict[str, Node]) -> None:
     row.node_id = node["id"]
 
 
+def held_before(rows: list[Row], index: int) -> set[str]:
+    """What the context holds by the time row `index` runs.
+
+    A `Given` puts its record under the type's name; a `When` or `Then` puts whatever its own
+    source says it writes. This is the whole of what a step can read, so it is the whole of what
+    decides whether a step can be used here.
+    """
+    held: set[str] = set()
+    for row in rows:
+        if row.index == index:
+            break
+        if row.given and row.resource_type:
+            held.add(row.resource_type)
+        elif row.definition is not None:
+            held.update(row.definition.produces)
+    return held
+
+
 def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
     if not row.pattern:
         row.problem = f"choose the {row.keyword} step this scenario uses"
@@ -358,6 +379,14 @@ def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
     missing = [name for name in row.definition.params if not row.values.get(name)]
     if missing:
         row.problem = f"give {'a value' if len(missing) == 1 else 'values'} for {', '.join(missing)}"
+        return
+
+    absent = [name for name in row.definition.needs if name not in row.held]
+    if absent:
+        row.problem = (
+            f"nothing above this puts {' or '.join(absent)} on the context — "
+            f"add a row that does, above it"
+        )
         return
 
     # A step ATF defines names a catalog resource, so the composer can hold it to the catalog
@@ -886,7 +915,14 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         "feature_options": _feature_options(found),
         "type_options": _type_options(engine, instances, status),
         "instance_options": lambda resource_type: _instance_options(instances.get(resource_type, []), status),
-        "step_options": {keyword: _step_options(offered[keyword]) for keyword in KEYWORDS},
+        # Per row, not per keyword: what a step can read depends on what the rows above it put
+        # there, so the same picker two rows apart honestly offers different things.
+        "step_options": lambda row: _step_options(
+            [step for step in offered[row.keyword] if set(step.needs) <= row.held]
+        ),
+        "unusable": lambda row: [
+            step for step in offered[row.keyword] if not set(step.needs) <= row.held
+        ],
         # Only the steps ATF itself defines get a picker per parameter: they are the only ones
         # whose parameters ATF chose, so the only ones whose meaning it can know. A project's
         # step keeps a text box, because `{expected}` could be anything at all.

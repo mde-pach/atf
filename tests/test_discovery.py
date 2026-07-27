@@ -10,6 +10,7 @@ from atf.discovery import (
     PROVISION_PATTERN,
     Discovery,
     StepDef,
+    context_use,
     discover,
     fill,
     matching_step,
@@ -18,7 +19,7 @@ from atf.discovery import (
     slug,
 )
 from atf.discovery import _step_defs as step_defs
-from atf.steps import EXISTS, GENERIC_STEPS
+from atf.steps import EXISTS, GENERIC_STEPS, RESULT_CONTAINS
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
@@ -270,6 +271,27 @@ def test_the_read_and_compare_steps_are_part_of_every_suites_vocabulary(found):
     assert reading.file.endswith("steps.py")
 
 
+def test_a_step_declares_what_it_touches_on_the_context_by_being_read(found):
+    """Steps talk to each other through `context`, and nothing outside a step's body knew which
+    attributes — which is why someone could compose a step whose subject was never provisioned."""
+    reads = next(step for step in found.steps if step.pattern == "I list the projects of the account")
+    assert reads.needs == ["account"]
+    assert reads.produces == ["result"]
+
+    asserts = next(step for step in found.steps if step.pattern == 'the plan is "{expected}"')
+    assert asserts.needs == ["result"]
+    assert asserts.produces == []
+
+
+def test_atfs_own_steps_declare_what_they_need_rather_than_being_read(found):
+    """They reach the context through `getattr`, which no walk over attributes can see."""
+    contains = next(step for step in found.steps if step.pattern == RESULT_CONTAINS)
+    assert contains.needs == ["result"]
+
+    reads_nothing = next(step for step in found.steps if step.pattern == EXISTS)
+    assert reads_nothing.needs == [], "it resolves from the catalog, so it needs nothing put there"
+
+
 def test_pytest_bdds_own_debugging_step_is_not_part_of_a_projects_vocabulary(found):
     assert "trace" not in {step.pattern for step in found.steps}
 
@@ -354,3 +376,57 @@ def test_background_steps_belong_to_every_scenario(tmp_path, catalog):
     assert two.resources == ["accounts.primary"]
     # the Background step must not leak into the prose
     assert one.narrative == "Every scenario needs the same account."
+
+
+# ---- reading what a step touches, without running it ------------------------
+
+
+def context_use_of(tmp_path, source: str):
+    module = tmp_path / "steps_module.py"
+    module.write_text(source, encoding="utf-8")
+    return context_use(module)
+
+
+def test_several_wordings_on_one_function_all_get_its_needs(tmp_path):
+    use = context_use_of(
+        tmp_path,
+        'from pytest_bdd import then, parsers\n\n'
+        '@then("it is fine")\n'
+        '@then(parsers.parse(\'it is "{how}"\'))\n'
+        "def _(context):\n"
+        "    assert context.result\n",
+    )
+    assert use["it is fine"] == (["result"], [])
+    assert use['it is "{how}"'] == (["result"], [])
+
+
+def test_a_step_that_rewrites_what_it_was_given_both_needs_and_produces_it(tmp_path):
+    use = context_use_of(
+        tmp_path,
+        'from pytest_bdd import when\n\n@when("I filter them")\n'
+        "def _(context):\n    context.result = [x for x in context.result if x]\n",
+    )
+    assert use["I filter them"] == (["result"], ["result"])
+
+
+def test_a_function_that_does_not_take_the_context_is_not_analysed(tmp_path):
+    use = context_use_of(
+        tmp_path,
+        'from pytest_bdd import when\n\n@when("I do a thing")\ndef _(api):\n    api.go()\n',
+    )
+    assert use == {}
+
+
+def test_atfs_own_bookkeeping_is_not_a_dependency(tmp_path):
+    use = context_use_of(
+        tmp_path,
+        'from pytest_bdd import then\n\n@then("teardown ran")\n'
+        "def _(context):\n    assert context._ephemeral == []\n",
+    )
+    assert use["teardown ran"] == ([], [])
+
+
+def test_a_module_that_will_not_parse_says_nothing_rather_than_raising(tmp_path):
+    """Discovery runs on every page render. A half-written steps module must not take a page down."""
+    assert context_use_of(tmp_path, "def broken(:\n") == {}
+    assert context_use(tmp_path / "not-there.py") == {}

@@ -148,6 +148,24 @@ class StepResult:
 
 
 @dataclass
+class Held:
+    """What the scenario's context was holding when it finished — its shape, never its contents.
+
+    The answer to "what was there to assert on?", which nothing could give while the context was a
+    namespace that forgot. Values are deliberately absent: this is written to run history on disk,
+    and a record carries a token as readily as a title. See `atf.context`.
+    """
+
+    name: str
+    kind: str
+    fields: list[str] = field(default_factory=list)
+    count: int = 0
+    resource_type: str = ""
+    node_id: str = ""
+    guessed: bool = False
+
+
+@dataclass
 class TestResult:
     nodeid: str
     outcome: str
@@ -156,6 +174,7 @@ class TestResult:
     finished_at: float = 0.0
     steps: list[StepResult] = field(default_factory=list)
     provisioned: list[str] = field(default_factory=list)
+    held: list[Held] = field(default_factory=list)
 
     @property
     def failed_step(self) -> StepResult | None:
@@ -310,6 +329,8 @@ def fold_events(results: dict[str, TestResult], events: Path) -> None:
             result.steps.append(step_from(event))
         elif event.get("event") == "provisioned":
             result.provisioned.extend(nid for nid in _ids(event) if nid not in result.provisioned)
+        elif event.get("event") == "held":
+            result.held = held_from(event.get("slots"))
 
 
 def step_from(event: dict[str, Any]) -> StepResult:
@@ -319,6 +340,25 @@ def step_from(event: dict[str, Any]) -> StepResult:
         state=str(event.get("state", PASSED)),
         error=str(event.get("error", "")),
     )
+
+
+def held_from(raw: Any) -> list[Held]:
+    """Slot descriptions as reported or as read back from history — the same shape either way."""
+    if not isinstance(raw, list):
+        return []
+    return [
+        Held(
+            name=str(entry.get("name", "")),
+            kind=str(entry.get("kind", "")),
+            fields=[str(item) for item in entry.get("fields") or [] if isinstance(item, str)],
+            count=int(_number(entry.get("count"))),
+            resource_type=str(entry.get("resource_type", "")),
+            node_id=str(entry.get("node_id", "")),
+            guessed=bool(entry.get("guessed")),
+        )
+        for entry in raw
+        if isinstance(entry, dict)
+    ]
 
 
 def parse_report(report: Path) -> RunSummary:

@@ -1,39 +1,8 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import sys
-from pathlib import Path
 
-import pytest
-
-from tests.sample_project import write_sample_project
-
-REPO = Path(__file__).resolve().parents[1]
-
-
-def run_pytest(project: Path, *args: str, env: str = "dev") -> subprocess.CompletedProcess[str]:
-    """The plugin bootstraps at import, so it always runs in its own process."""
-    environment = {
-        **os.environ,
-        "ATF_MANIFEST": str(project / "atf.yaml"),
-        "ATF_ENV": env,
-        "PYTHONPATH": str(REPO / "src"),
-    }
-    return subprocess.run(
-        [sys.executable, "-m", "pytest", *args],
-        cwd=project,
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-
-
-@pytest.fixture
-def project(tmp_path):
-    return write_sample_project(tmp_path / "suite")
+from tests.sample_project import run_pytest
 
 
 def test_the_whole_sample_suite_passes(project):

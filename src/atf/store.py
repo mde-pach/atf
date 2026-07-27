@@ -15,7 +15,19 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .runner import ERROR, FAILED, PASSED, SKIPPED, RunRecord, StepResult, TestResult, parse_report, step_from
+from .runner import (
+    ERROR,
+    FAILED,
+    PASSED,
+    SKIPPED,
+    Held,
+    RunRecord,
+    StepResult,
+    TestResult,
+    held_from,
+    parse_report,
+    step_from,
+)
 
 DEFAULT_KEEP = 50
 STORE_DIR = ".atf"
@@ -191,6 +203,7 @@ def _result_from(nodeid: str, entry: dict[str, Any]) -> TestResult:
         finished_at=_number(entry.get("finished_at")),
         steps=_steps_from(steps),
         provisioned=[str(item) for item in provisioned] if isinstance(provisioned, list) else [],
+        held=held_from(entry.get("held")),
     )
 
 
@@ -204,4 +217,4 @@ def _number(value: Any) -> float:
     return float(value) if isinstance(value, (int, float)) else 0.0
 
 
-__all__ = ["DEFAULT_KEEP", "ReportError", "RunRecord", "RunStore", "StepResult", "TestResult"]
+__all__ = ["DEFAULT_KEEP", "Held", "ReportError", "RunRecord", "RunStore", "StepResult", "TestResult"]

@@ -6,7 +6,12 @@ next to the manifest, and the system-under-test client reads that same file.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
 
 MANIFEST = """
 catalog: ./catalog
@@ -401,3 +406,28 @@ def write_sample_project(root: Path) -> Path:
     (steps / "test_accounts.py").write_text(STEPS, encoding="utf-8")
     (steps / "test_visitors.py").write_text(VISITOR_STEPS, encoding="utf-8")
     return root
+
+
+def run_pytest(project: Path, *args: str, env: str = "dev") -> subprocess.CompletedProcess[str]:
+    """The plugin bootstraps at import, so a suite always runs in its own process."""
+    environment = {
+        **os.environ,
+        "ATF_MANIFEST": str(project / "atf.yaml"),
+        "ATF_ENV": env,
+        "PYTHONPATH": str(REPO / "src"),
+    }
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", *args],
+        cwd=project,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+
+def write_spec(project: Path, name: str, feature: str, steps: str = "") -> None:
+    """Add one more feature to a sample project, with whatever step code it needs of its own."""
+    (project / "specs" / "features" / f"{name}.feature").write_text(feature, encoding="utf-8")
+    binding = f'from pytest_bdd import scenarios\n\nscenarios("../features/{name}.feature")\n'
+    (project / "specs" / "steps" / f"test_{name}.py").write_text(binding + steps, encoding="utf-8")

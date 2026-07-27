@@ -18,6 +18,7 @@ from atf.discovery import (
     slug,
 )
 from atf.discovery import _step_defs as step_defs
+from atf.steps import EXISTS, GENERIC_STEPS
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
@@ -252,6 +253,21 @@ def test_the_generic_provisioning_step_is_a_given_and_only_a_given(found):
     assert PROVISION_PATTERN in {step.pattern for step in found.steps_for("given")}
     for keyword in ("when", "then"):
         assert PROVISION_PATTERN not in {step.pattern for step in found.steps_for(keyword)}
+
+
+def test_the_read_and_compare_steps_are_part_of_every_suites_vocabulary(found):
+    """They are registered by the plugin, so a project gets them without defining anything.
+
+    This is what makes them offerable in the composer: nothing about them is special-cased there,
+    they simply arrive through discovery like any other step the suite can use.
+    """
+    offered = {step.pattern for step in found.steps_for("then")}
+    assert {step.pattern for step in GENERIC_STEPS if step.keyword == "then"} <= offered
+
+    reading = next(step for step in found.steps if step.pattern == EXISTS)
+    assert reading.params == ["resource_type", "name"]
+    assert reading.docstring
+    assert reading.file.endswith("steps.py")
 
 
 def test_pytest_bdds_own_debugging_step_is_not_part_of_a_projects_vocabulary(found):

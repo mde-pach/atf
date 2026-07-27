@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 import httpx
 
 from .. import http
-from ..catalog import Node
+from ..catalog import Node, key_criteria, natural_keys
+from ..compare import matches as _matches
 from ..placeholders import Unresolved
 from . import Context, Record
 
@@ -130,31 +130,11 @@ class RestAdapter:
             raise ValueError(f"{node['id']}: resource type {node['resource']!r} needs a `path`")
         return path
 
-    def _natural_keys(self, node: Node) -> list[str]:
-        keys = node["config"].get("natural_key")
-        if isinstance(keys, str):
-            return [keys]
-        if isinstance(keys, list) and keys and all(isinstance(key, str) for key in keys):
-            return [str(key) for key in keys]
-        raise ValueError(f"{node['id']}: resource type {node['resource']!r} needs a `natural_key`")
-
     def _criteria(self, node: Node, ctx: Context) -> dict[str, Any] | None:
         """`{remote_field: expected}` to match on, or `None` when the identity can't be resolved yet."""
-        keys = self._natural_keys(node)
-        ref_field = node["config"].get("ref_field")
-        criteria: dict[str, Any] = {}
-        for key in keys:
-            if key not in node["body"]:
-                return None
-            try:
-                value = ctx.resolve(node["body"][key])
-            except Unresolved:
-                return None
-            if value is None:
-                return None
-            remote = str(ref_field) if (ref_field and len(keys) == 1) else key
-            criteria[remote] = value
-        return criteria
+        if not natural_keys(node["config"]):
+            raise ValueError(f"{node['id']}: resource type {node['resource']!r} needs a `natural_key`")
+        return key_criteria(node, ctx.resolve)
 
     def _listing(self, node: Node, ctx: Context) -> tuple[str, dict[str, Any]]:
         config = node["config"]
@@ -203,30 +183,3 @@ class RestAdapter:
         if record_key and isinstance(payload, dict):
             payload = payload.get(str(record_key))
         return payload if isinstance(payload, dict) else None
-
-
-def _matches(actual: Any, expected: Any) -> bool:
-    if actual is None:
-        return False
-    if actual == expected:
-        return True
-    if str(actual) == str(expected):
-        return True
-    return _same_instant(actual, expected)
-
-
-def _same_instant(actual: Any, expected: Any) -> bool:
-    left, right = _parse_datetime(actual), _parse_datetime(expected)
-    return left is not None and right is not None and left == right
-
-
-def _parse_datetime(value: Any) -> datetime | None:
-    if isinstance(value, datetime):
-        return value
-    if not isinstance(value, str):
-        return None
-    text = value.strip().replace("Z", "+00:00")
-    try:
-        return datetime.fromisoformat(text)
-    except ValueError:
-        return None

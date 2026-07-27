@@ -85,12 +85,32 @@ Per-type *fixtures* are a different matter, and those ATF does generate. A fixtu
 is discoverable by `pytest --fixtures`, injectable into a plain test, and named on the type's page in
 the cockpit. It is a real thing a test can depend on; a step is not.
 
-## What ATF deliberately does not define
+## Where the line on record shape falls {#record-shape}
 
 The record an adapter returns is passed to your steps untouched. When a step reads
-`context.account["email"]`, that field name is a contract between the suite and its own backend.
-ATF neither defines nor validates it, and it never will — the moment the framework has opinions
-about record shape, it stops being generic and starts being a client for one system.
+`context.account["email"]`, that field name is a contract between the suite and its own backend —
+and it is the *suite's* contract, not the framework's.
+
+It is tempting to state that as "ATF has no opinions about record shape", but that is drawn in the
+wrong place, and it is not what ATF has ever done. `natural_key: email` names a field. So does
+`id_field: uuid`, and so does every key of a body. Naming a field and having ATF read it is the
+oldest thing in the catalog.
+
+The line that actually holds is between two different acts:
+
+> **ATF never decides what a record contains.** It requires no field to exist, infers nothing from a
+> field's name, and interprets no value beyond comparing it with the one you wrote. **What it will do
+> is read a field you named.**
+
+That is why [the read-and-compare steps](../reference/specs-and-fixtures.md#read-and-compare-steps)
+are not a breach of the principle: `Then the task "milk" field "done" is "false"` names the field in
+the scenario, exactly as `natural_key` names one in the catalog. ATF reads `done`, compares it with
+`false`, and knows nothing else about it — not that tasks have a `done`, not that `done` is a
+boolean, not that a done task is finished.
+
+The test to apply to any new feature: could the framework be pointed at an entirely different
+backend without changing a line of its own code? Reading a field the author named passes. Assuming a
+task has a boolean called `done` does not, and would make ATF a client for one system.
 
 The same restraint runs throughout. Nothing in ATF names a product, a domain, a URL or a secret.
 Everything project-specific arrives through exactly three seams: the **adapters**, the

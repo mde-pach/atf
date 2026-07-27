@@ -32,10 +32,12 @@ from .runner import (
     PASSED,
     PLUGIN_MODULE,
     SKIPPED,
+    Held,
     RunSummary,
     StepResult,
     TestResult,
     child_env,
+    held_from,
     inject_progress_plugin,
     step_from,
 )
@@ -69,6 +71,7 @@ class ItemState:
     detail: str = ""
     steps: list[StepResult] = field(default_factory=list)
     provisioned: list[str] = field(default_factory=list)
+    held: list[Held] = field(default_factory=list)
 
     @property
     def done(self) -> bool:
@@ -122,6 +125,7 @@ class Job:
                 finished_at=finished,
                 steps=list(item.steps),
                 provisioned=list(item.provisioned),
+                held=list(item.held),
             )
             for item in list(self.items.values())
             if item.done
@@ -340,6 +344,8 @@ class JobRunner:
             item.provisioned.extend(
                 str(nid) for nid in event.get("ids", []) if str(nid) not in item.provisioned
             )
+        elif kind == "held":
+            item.held = held_from(event.get("slots"))
 
     # ---- provisioning -----------------------------------------------------
 

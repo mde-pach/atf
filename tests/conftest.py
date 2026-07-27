@@ -7,8 +7,15 @@ import pytest
 from atf.adapters import unregister
 from atf.materializer import Materializer
 from tests.fake_adapter import register_fake
+from tests.sample_project import write_sample_project
 
 pytest_plugins = ["pytester"]
+
+
+@pytest.fixture
+def project(tmp_path: Path):
+    """A complete consuming project on disk, run in its own process by `run_pytest`."""
+    return write_sample_project(tmp_path / "suite")
 
 
 @pytest.fixture

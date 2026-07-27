@@ -1,4 +1,4 @@
-"""The pytest plugin: context, generated resource factories, one generic step, teardown.
+"""The pytest plugin: context, generated resource factories, the steps ATF defines, teardown.
 
 Enable it from a consuming project's `conftest.py`:
 
@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -18,12 +17,17 @@ from pytest_bdd import given, parsers
 
 from .adapters import Record
 from .bootstrap import Boot, bootstrap
+from .catalog import natural_keys
+from .context import EPHEMERAL_ATTR, Context, Recogniser
 from .materializer import Materializer
 from .runner import PROGRESS_OUT
 
-_BOOT: Boot = bootstrap()
+# The read-and-compare steps are a plugin of their own so that the step definitions land in their
+# own module namespace. pytest reads `pytest_plugins` from any plugin it registers, so a suite that
+# enables `atf.plugin` gets them without naming a second thing.
+pytest_plugins = ["atf.steps"]
 
-EPHEMERAL_ATTR = "_ephemeral"
+_BOOT: Boot = bootstrap()
 
 
 @pytest.fixture(scope="session")
@@ -45,19 +49,45 @@ def client_config(env: str) -> dict[str, dict[str, Any]]:
 
 
 @pytest.fixture
-def context() -> SimpleNamespace:
+def context(materializer: Materializer) -> Context:
     """The per-scenario scratchpad: steps write what they create and read what they need."""
-    return SimpleNamespace()
+    return Context(recognise=recogniser(materializer))
+
+
+def recogniser(engine: Materializer) -> Recogniser:
+    """Which resource type a record the suite produced looks like — or nothing, when unsure.
+
+    A guess, and only ever used to describe what a scenario is holding. It answers only when
+    exactly one type fits, because a wrong label is worse than no label: two types matching means
+    the record does not say which it is.
+    """
+
+    def recognise(record: Record) -> str:
+        fits = [name for name, entry in sorted(engine.types.items()) if _fits(entry, record)]
+        return fits[0] if len(fits) == 1 else ""
+
+    return recognise
+
+
+def _fits(entry: dict[str, Any], record: Record) -> bool:
+    """A record fits a type when it carries the type's identity and everything it is known by."""
+    keys = natural_keys(entry)
+    if not keys:
+        return False
+    ref_field = entry.get("ref_field")
+    remote = [str(ref_field)] if (ref_field and len(keys) == 1) else keys
+    return str(entry.get("id_field", "id")) in record and all(key in record for key in remote)
 
 
 def _make_factory(resource_type: str) -> Any:
     def _factory(
-        request: pytest.FixtureRequest, materializer: Materializer, context: SimpleNamespace
+        request: pytest.FixtureRequest, materializer: Materializer, context: Context
     ) -> Callable[[str], Record]:
         def provision(name: str) -> Record:
             record, provisioned = materializer.ensure_closure(resource_type, name)
             _track_ephemeral(context, materializer, provisioned)
-            _report_provisioned(request.node.nodeid, provisioned)
+            if provisioned:
+                _emit({"event": "provisioned", "nodeid": request.node.nodeid, "ids": sorted(provisioned)})
             return record
 
         return provision
@@ -79,7 +109,7 @@ for _type in _BOOT.materializer.resource_types():
 
 
 @given(parsers.parse('the {resource_type} "{name}"'))
-def _provision(context: SimpleNamespace, request: pytest.FixtureRequest, resource_type: str, name: str) -> Record:
+def _provision(context: Context, request: pytest.FixtureRequest, resource_type: str, name: str) -> Record:
     """`Given the account "primary"` -> provisions accounts.primary onto `context.account`."""
     engine: Materializer = request.getfixturevalue("materializer")
     if resource_type not in engine.types:
@@ -90,19 +120,22 @@ def _provision(context: SimpleNamespace, request: pytest.FixtureRequest, resourc
     # through a dependency rather than named here.
     record = request.getfixturevalue(resource_type)(name)
     setattr(context, resource_type, record)
+    # The record itself does not say which catalog node it came from, and this is the one place
+    # that knows. Everything downstream reads it from the slot rather than guessing at it.
+    if isinstance(context, Context):
+        context.note(resource_type, resource_type=resource_type, node_id=engine.resolve_id(resource_type, name))
     return record
 
 
-def _report_provisioned(nodeid: str, provisioned: dict[str, Record]) -> None:
-    """Tell whoever is watching this run what the test just had to bring into existence.
+def _emit(event: dict[str, Any]) -> None:
+    """Tell whoever is watching this run what just happened.
 
     Only when `ATF_PROGRESS_OUT` names the channel the run was launched with — under a plain
     `pytest`, nothing is written and nothing changes.
     """
     path = os.environ.get(PROGRESS_OUT)
-    if not path or not provisioned:
+    if not path:
         return
-    event = {"event": "provisioned", "nodeid": nodeid, "ids": sorted(provisioned)}
     try:
         with open(path, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(event) + "\n")
@@ -111,7 +144,7 @@ def _report_provisioned(nodeid: str, provisioned: dict[str, Record]) -> None:
 
 
 def _track_ephemeral(
-    context: SimpleNamespace,
+    context: Context,
     materializer: Materializer,
     provisioned: dict[str, Record],
 ) -> None:
@@ -124,6 +157,17 @@ def _track_ephemeral(
 
 
 @pytest.fixture(autouse=True)
-def _teardown(materializer: Materializer, context: SimpleNamespace):
+def _teardown(request: pytest.FixtureRequest, materializer: Materializer, context: Context):
     yield
+    # What the scenario was holding when it finished: names, kinds and counts, never values. It is
+    # the answer to "what was there to assert on?", which nothing could say while the context was a
+    # namespace that forgot.
+    if isinstance(context, Context) and context.slots:
+        _emit(
+            {
+                "event": "held",
+                "nodeid": request.node.nodeid,
+                "slots": [slot.as_dict() for slot in context.slots.values()],
+            }
+        )
     materializer.teardown(getattr(context, EPHEMERAL_ATTR, []))

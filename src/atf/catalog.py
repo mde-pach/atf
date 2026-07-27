@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypedDict
 
 import yaml
 
-from .placeholders import references
+from .placeholders import Unresolved, references
 
 TYPES_FILE = "resources.yaml"
 UNIVERSAL_TYPE_KEYS = frozenset({"system", "mode", "lifecycle", "id_field"})
@@ -290,6 +291,46 @@ def _check_acyclic(nodes: dict[str, Node], problems: list[str]) -> None:
 
 def resource_types(nodes: dict[str, Node]) -> set[str]:
     return {node["resource"] for node in nodes.values()}
+
+
+def natural_keys(config: dict[str, Any]) -> list[str]:
+    """The body fields a resource of this type is recognised by, or `[]` if the type names none."""
+    keys = config.get("natural_key")
+    if isinstance(keys, str):
+        return [keys]
+    if isinstance(keys, list) and keys and all(isinstance(key, str) for key in keys):
+        return [str(key) for key in keys]
+    return []
+
+
+def key_criteria(node: Node, resolve: Callable[[Any], Any]) -> dict[str, Any] | None:
+    """`{the field the backend spells it as: the value expected there}` for a node's natural key.
+
+    The one definition of "which record out there is this node", shared by the adapter deciding
+    whether to create one and by a step deciding whether a record it was handed is that resource.
+
+    `None` when the question cannot be asked yet: the type names no natural key, the body omits one
+    of its fields, or a field holds a `${...}` whose dependency has no identity so far.
+    """
+    keys = natural_keys(node["config"])
+    if not keys:
+        return None
+
+    # A single-key type may name the field differently at the backend — `natural_key: name` matched
+    # against a record's `slug`. With several keys there is no one field to redirect.
+    ref_field = node["config"].get("ref_field")
+    criteria: dict[str, Any] = {}
+    for key in keys:
+        if key not in node["body"]:
+            return None
+        try:
+            value = resolve(node["body"][key])
+        except Unresolved:
+            return None
+        if value is None:
+            return None
+        criteria[str(ref_field) if (ref_field and len(keys) == 1) else key] = value
+    return criteria
 
 
 def find_node(nodes: dict[str, Node], resource_type: str, name: str) -> Node | None:

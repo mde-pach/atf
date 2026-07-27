@@ -100,7 +100,9 @@ def test_the_generic_provisioning_step_is_never_offered_as_a_when_or_then(client
         assert PROVISION_PATTERN not in [
             step.pattern for step in client.cockpit.discovery("dev").steps_for(keyword)
         ]
-    assert esc(PROVISION_PATTERN) not in client.get("/compose").text
+    # Checked as a whole option value, not as a substring: `the result contains the {resource_type}
+    # "{name}"` legitimately ends with the provisioning wording and is a different step.
+    assert f'data-value="{esc(PROVISION_PATTERN)}"' not in client.get("/compose").text
 
 
 def test_a_parameterised_step_gets_an_input_per_capture(client):

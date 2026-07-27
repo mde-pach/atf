@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from atf.runner import RunRecord, StepResult
+from atf.runner import Held, RunRecord, StepResult
 from atf.runner import TestResult as Result
 from atf.store import ReportError, RunStore
 
@@ -49,6 +49,7 @@ def test_a_saved_run_comes_back_whole(store):
             StepResult(keyword="Then", text="the plan is right", state="failed", error="AssertionError: boom"),
         ],
         provisioned=["accounts.primary"],
+        held=[Held(name="result", kind="records", fields=["id", "slug"], count=2, resource_type="project")],
     )
     store.save(saved)
 
@@ -58,6 +59,8 @@ def test_a_saved_run_comes_back_whole(store):
     restored = loaded.results["specs/steps/test_lists.py::test_a_list"]
     assert restored.outcome == "failed"
     assert restored.provisioned == ["accounts.primary"]
+    assert [slot.name for slot in restored.held] == ["result"]
+    assert restored.held[0].fields == ["id", "slug"] and restored.held[0].count == 2
     assert [step.keyword for step in restored.steps] == ["Given", "Then"]
     assert restored.failed_step is not None and restored.failed_step.error == "AssertionError: boom"
 

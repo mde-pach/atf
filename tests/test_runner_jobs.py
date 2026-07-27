@@ -164,6 +164,31 @@ def test_a_test_reports_what_it_provisioned(project):
     assert "visitors.walkin" in badge.provisioned, "a dependency provisioned on the way counts"
 
 
+def test_a_test_reports_what_its_context_was_holding(project):
+    """What was available to assert on, which nothing could say while the context was a namespace."""
+    summary = runner.run(None, "dev", project, project / "specs")
+
+    result = next(r for r in summary.results.values() if "project_belongs" in r.nodeid)
+    held = {slot.name: slot for slot in result.held}
+
+    assert held["account"].resource_type == "account"
+    assert held["account"].node_id == "accounts.primary", "the provisioning step knows, so it says"
+    assert held["account"].guessed is False
+    assert "email" in held["account"].fields
+
+    assert held["result"].kind == "records", "what the When produced, described without being told"
+    assert held["result"].count == 1
+    assert "slug" in held["result"].fields
+
+
+def test_what_a_context_held_never_carries_a_value(project):
+    """Run history goes to disk. A record carries a token as readily as a title."""
+    summary = runner.run(None, "dev", project, project / "specs")
+    everything = str([slot for result in summary.results.values() for slot in result.held])
+    assert "primary@example.test" not in everything
+    assert "email" in everything
+
+
 # ---- jobs -----------------------------------------------------------------
 
 

@@ -270,7 +270,14 @@ def test_status_reports_present_and_absent(catalog, api):
     api.seed("accounts", {"id": "a-1", "email": "primary@example.test"})
     materializer = engine(catalog, api)
     status = materializer.status()
-    assert status["accounts.primary"] == {"status": "present", "detail": "", "identity": "a-1"}
+    assert status["accounts.primary"] == {
+        "status": "present",
+        "detail": "",
+        "identity": "a-1",
+        # The record travels with the status: a caller offering an assertion on one of its fields
+        # needs to know which fields there are without asking the backend a second time.
+        "record": {"id": "a-1", "email": "primary@example.test"},
+    }
     # alpha's natural key needs the account id, which resolves live
     assert status["projects.alpha"]["status"] == "absent"
 

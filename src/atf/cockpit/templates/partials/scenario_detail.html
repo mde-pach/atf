@@ -20,11 +20,6 @@
       {% if view.flaky %}<span class="pill warn">flaky</span>{% endif %}
 
       <div class="actions">
-        {# Another behaviour of the same feature belongs in the same file, so the composer is
-           offered pointed at it rather than at a blank feature. #}
-        <a class="btn" href="{{ u('/compose', feature=view.spec.feature) }}">
-          <span class="glyph">＋</span>Add a scenario to {{ view.spec.feature }}
-        </a>
         <form hx-post="{{ u('/run') }}" hx-target="#activity" hx-swap="innerHTML" hx-disabled-elt="find button"
               {% if not why_not_run %}hx-confirm="Run this scenario against {{ env }}?"{% endif %}>
           <input type="hidden" name="confirm" value="{{ confirm_token }}">
@@ -102,60 +97,72 @@
         {% endfor %}
       </p>
     {% endif %}
-  </div>
 
-  {% if view.spec.examples or view.tests | length > 1 or view.state == "failing" or not view.tests %}
-    <div class="card stack">
-      <header>
-        <h2>What pytest collects</h2>
-        <span class="muted small">
-          One {{ ui.term("test", "test") }} per scenario, or one per row of its Examples table.
-        </span>
-      </header>
+    {# An outline is one behaviour run several times over, so the table of values belongs with the
+       Gherkin it fills in — not under a heading explaining what pytest does with it. #}
+    {% if view.spec.examples %}
+      <div class="scroll-x">
+        <table>
+          <thead>
+            <tr>
+              {% for column in view.spec.examples[0].keys() %}<th>{{ column }}</th>{% endfor %}
+              <th>outcome</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in view.spec.examples %}
+              {% set test = view.tests[loop.index0] if view.tests | length > loop.index0 else None %}
+              {% set result = results.get(test.nodeid) if test else None %}
+              <tr>
+                {% for value in row.values() %}<td class="mono">{{ value }}</td>{% endfor %}
+                {# One dot and one word per row: a column of lozenges is a column nobody reads. #}
+                <td class="state">
+                  <span class="flag {{ tone(result.outcome if result else 'not run') }}"></span>
+                  {{ result.outcome if result else "not run" }}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% elif view.tests | length > 1 %}
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>test</th><th>outcome</th><th class="num">duration</th></tr></thead>
+          <tbody>
+            {% for test in view.tests %}
+              {% set result = results.get(test.nodeid) %}
+              {% set outcome = result.outcome if result else "not run" %}
+              <tr>
+                <td class="mono">{{ test.params or test.nodeid.rsplit("::", 1)[-1] }}</td>
+                <td class="state"><span class="flag {{ tone(outcome) }}"></span>{{ outcome }}</td>
+                <td class="num">{% if result %}{{ dur(result.duration) }}{% else %}—{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
 
-      {% if view.spec.examples %}
-        <div class="scroll-x">
-          <h3>Examples</h3>
-          <table>
-            <thead><tr>{% for column in view.spec.examples[0].keys() %}<th>{{ column }}</th>{% endfor %}</tr></thead>
-            <tbody>
-              {% for row in view.spec.examples %}
-                <tr>{% for value in row.values() %}<td class="mono">{{ value }}</td>{% endfor %}</tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% endif %}
-
-      {% if not view.tests %}
+    {% if not view.tests %}
+      <div class="banner warn stack">
         {{ ui.empty(
           "No test covers this scenario, so nothing here ever runs it. Bind it with scenarios(…) in a "
           "steps/test_*.py module and pytest will collect one test per scenario.",
           "How scenarios become tests",
           docs('reference/specs-and-fixtures/')) }}
-      {% elif view.tests | length > 1 or view.state == "failing" %}
-        <div class="scroll-x">
-          <h3>Covering tests</h3>
-          <table>
-            <thead><tr><th>Test</th><th>Outcome</th><th class="num">Duration</th></tr></thead>
-            <tbody>
-              {% for test in view.tests %}
-                {% set result = results.get(test.nodeid) %}
-                {% set outcome = result.outcome if result else "not run" %}
-                <tr>
-                  <td class="mono">{{ test.params or test.nodeid.rsplit("::", 1)[-1] }}</td>
-                  {# One dot and one word per row: a column of lozenges is a column nobody reads. #}
-                  <td><span class="row"><span class="flag {{ tone(outcome) }}"></span>{{ outcome }}</span></td>
-                  <td class="num">{% if result %}{{ dur(result.duration) }}{% else %}—{% endif %}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% endif %}
-    </div>
-  {% endif %}
+      </div>
+    {% endif %}
 
-  <p class="small muted mono">{{ view.spec.file }}:{{ view.spec.line }}</p>
+    {# Where it lives, and the way to write the next one. Another behaviour of the same feature
+       belongs in the same file, so the composer is offered pointed at it. #}
+    <p class="row small muted">
+      <span class="mono">{{ rel(view.spec.file) }}:{{ view.spec.line }}</span>
+      <span class="grow"></span>
+      <a class="btn" href="{{ u('/compose', feature=view.spec.feature) }}">
+        <span class="glyph">＋</span>Add another to {{ view.spec.feature }}
+      </a>
+    </p>
+  </div>
 </div>
 {% endif %}

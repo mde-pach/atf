@@ -1,0 +1,49 @@
+{% import "partials/macros.html" as ui %}
+
+{# Everything standing between the instances table and the rest of what this environment holds.
+   Browsing is optional for an adapter and sometimes needs a parent named first, so each limitation
+   is stated as a fact rather than left to look like an empty table. #}
+
+{% if not records.browsable %}
+  <p class="small muted">
+    The adapter for {{ display.system(type.system).label }} cannot list what is out there, so only what the
+    catalog declares is shown. An adapter opts in by implementing <code>browse</code> — one method returning
+    the records a listing gives back.
+    {% if docs() %}<a href="{{ docs('reference/adapter-spi/') }}">Adapter SPI</a>{% endif %}
+  </p>
+
+{% elif records.scope_fields %}
+  <p class="small">
+    {{ type.name }}s are listed per parent here — the adapter reads <code>{{ type.config.list_path }}</code>, so
+    it needs <code>{{ records.scope_fields | join(', ') }}</code> before it can list anything.
+  </p>
+  {% if records.choices %}
+    {# Choosing a parent is a navigation, so each choice is a control. One that cannot be entered is
+       not a control at all — it is a name with a reason attached. #}
+    <div class="row">
+      {% for choice in records.choices %}
+        {% if choice.reason %}
+          <span class="muted small" title="{{ choice.node.id }} — {{ choice.reason }}">{{ choice.node.name }}
+            <span class="muted">({{ choice.reason }})</span></span>
+        {% else %}
+          <a class="btn" href="{{ u('/catalog/type/' ~ type.name, scope=choice.node.id) }}"
+             hx-get="{{ u('/catalog/type/' ~ type.name, scope=choice.node.id) }}"
+             hx-target="#focus" hx-swap="innerHTML" hx-push-url="true"
+             {% if records.scope and choice.node.id == records.scope.id %}aria-current="true"{% endif %}>
+            {% if records.scope and choice.node.id == records.scope.id %}<span class="flag ok"></span>{% endif %}
+            {{ choice.node.name }}
+          </a>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% else %}
+    {{ ui.empty("No resource in the catalog supplies that field yet. Declare the parent first, provision it, "
+                "and its " ~ type.name ~ "s can be listed.") }}
+  {% endif %}
+{% endif %}
+
+{% if records.error %}
+  <div class="banner warn small">{{ records.error }}</div>
+{% elif records.truncated %}
+  <p class="small muted">The first {{ records.rows | length }} records {{ env }} holds — there may be more.</p>
+{% endif %}

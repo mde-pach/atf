@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException, Request
 from markupsafe import Markup
 
 from ...adapters import can_browse
-from ...catalog import TYPES_FILE, Node
+from ...catalog import TYPES_FILE, Node, natural_keys
 from ...materializer import ABSENT, ERROR, ScopeRequired
 from ...placeholders import Unresolved, references
 from ..view import (
@@ -55,6 +55,13 @@ PLACEHOLDER = re.compile(r"\$\{[^}]*\}")
 BROWSE_LIMIT = 100
 MAX_COLUMNS = 8
 CELL_CHARS = 48
+
+# A record the environment has that no node declares. It is a state of a row in the one instances
+# table, not a state of a resource, so it is spelled here rather than in the materializer.
+UNDECLARED = "not declared"
+
+# Above this many nodes in a closure, the lineage is worth drawing rather than describing.
+GRAPH_FROM = 3
 
 _FOREIGN_KEY = re.compile(r"_(id|uuid)$")
 
@@ -158,6 +165,7 @@ def _context(
         # node selected the type page is not rendered, so browsing for it would be a wasted call.
         "records": None if node else environment_records(env, types.get(selected), scope_id),
         "instance_files": instance_files(),
+        "keys": natural_keys(types[selected].config) if selected in types else [],
         # The label is derived from the same call the action uses, so the two cannot disagree.
         # With nothing to provision the control is not rendered at all: a disabled button beside
         # an explanation of why it is disabled is two elements saying "ignore me".
@@ -169,6 +177,7 @@ def _context(
     }
     context.update(_node_context(env, node, nodes, status) if node else {})
     context.update(_type_context(env, types.get(selected), status))
+    context["rows"] = instance_rows(types.get(selected), status, context["records"]) if not node else []
     context.update(extra)
     return context
 
@@ -179,9 +188,12 @@ def _node_context(env: str, node: Node, nodes: dict[str, Node], status: dict[str
     node_id = node["id"]
     entry = status.get(node_id, {})
     creatable, why = cockpit.state(env).materializer.provisionable(node_id)
+    closure = closure_of(node_id, nodes)
 
     return {
-        "graph": build_graph(nodes, node_id, status),
+        # A diagram of three boxes is a diagram nobody needed: below that, the sentence says more in
+        # less space. The graph earns its room once the closure is genuinely hard to hold in mind.
+        "graph": build_graph(nodes, node_id, status) if len(closure) > GRAPH_FROM else None,
         "lineage": lineage_sentence(node, nodes),
         "needs": [nodes[dep] for dep in node["depends_on"] if dep in nodes],
         "needed_by": [nodes[dep] for dep in node["dependents"] if dep in nodes],
@@ -190,7 +202,7 @@ def _node_context(env: str, node: Node, nodes: dict[str, Node], status: dict[str
         "identity": entry.get("identity", ""),
         "state": entry.get("status", ""),
         "detail": entry.get("detail", ""),
-        "node_label": _node_label(node, closure_of(node_id, nodes)),
+        "node_label": _node_label(node, closure),
         "node_blocked": "" if creatable else why,
     }
 
@@ -336,11 +348,72 @@ def environment_records(env: str, view: TypeView | None, scope_id: str = "") -> 
     return out
 
 
-def natural_keys(config: dict[str, Any]) -> list[str]:
-    keys = config.get("natural_key")
-    if isinstance(keys, str):
-        return [keys]
-    return [str(key) for key in keys] if isinstance(keys, list) else []
+def remote_keys(config: dict[str, Any]) -> list[str]:
+    """The natural key as the *backend* spells it — what a record's own fields are called."""
+    keys = natural_keys(config)
+    ref_field = config.get("ref_field")
+    return [str(ref_field)] if (ref_field and len(keys) == 1) else keys
+
+
+@dataclass
+class InstanceRow:
+    """One row of a type's single table: a resource the catalog declares, or one only `env` has.
+
+    They were two tables and a nav entry for the same eight things. Whether a resource is declared
+    is one column of one table, and it is the column that says what to do about it.
+    """
+
+    label: str
+    status: str
+    detail: str
+    node: Node | None = None
+    identity: str = ""
+
+    @property
+    def declared(self) -> bool:
+        return self.node is not None
+
+
+def instance_rows(
+    view: TypeView | None, status: dict[str, dict[str, Any]], records: EnvRecords | None
+) -> list[InstanceRow]:
+    """Everything of this type: what the catalog declares first, then what only the environment has."""
+    if view is None:
+        return []
+    rows = [
+        InstanceRow(
+            label=node["name"],
+            status=str(status.get(node["id"], {}).get("status", "unknown")),
+            detail=node["represents"],
+            node=node,
+            identity=str(status.get(node["id"], {}).get("identity", "") or ""),
+        )
+        for node in view.nodes
+    ]
+
+    if records is None:
+        return rows
+
+    keys = remote_keys(view.config)
+    at = {name: position for position, name in enumerate(records.columns)}
+    for row in records.rows:
+        if row.node is not None:
+            continue
+        named = [row.cells[at[key]] for key in keys if key in at and row.cells[at[key]]]
+        rest = [
+            f"{name} {row.cells[position]}"
+            for name, position in at.items()
+            if name not in keys and name != records.id_field and row.cells[position]
+        ]
+        rows.append(
+            InstanceRow(
+                label=" · ".join(named) or row.identity or "no identity",
+                status=UNDECLARED,
+                detail=", ".join(rest[:MAX_COLUMNS]),
+                identity=row.identity,
+            )
+        )
+    return rows
 
 
 def instance_files() -> list[str]:

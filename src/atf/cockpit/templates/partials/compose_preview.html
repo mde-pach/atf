@@ -8,7 +8,7 @@
 <div class="card stack" id="compose-preview">
   <header>
     <h2>{{ "What was written" if draft.written else "What will be written" }}</h2>
-    {% if draft.where %}<span class="muted small mono">{{ draft.where }}</span>{% endif %}
+    {% if draft.where %}<span class="muted small mono">{{ rel(draft.where) }}</span>{% endif %}
     <div class="actions">
       {% if draft.mode == 'text' %}
         <button class="ghost" type="button" hx-post="{{ post }}" {{ swap | safe }} hx-vals='{"to_mode": "build"}'>
@@ -24,7 +24,7 @@
 
   {% if draft.written %}
     <div class="banner ok">
-      Written, and re-read from disk: <span class="mono">{{ draft.where }}</span> still parses.
+      Written, and re-read from disk: <span class="mono">{{ rel(draft.where) }}</span> still parses.
     </div>
     {% if draft.next_steps %}
       {# Never "done" while something real is still missing — the two gaps are different work. #}
@@ -86,7 +86,7 @@
   <div class="row">
     <button class="primary" type="button" hx-post="{{ u('/compose/apply') }}" {{ swap | safe }}
             hx-disabled-elt="this"
-            {% if not draft.written %}hx-confirm="Write this scenario into {{ draft.where }}?"{% endif %}
+            {% if not draft.written %}hx-confirm="Write this scenario into {{ rel(draft.where) }}?"{% endif %}
             {% if draft.problems or draft.written %}disabled aria-describedby="why-compose-apply"{% endif %}>
       {{ "Written" if draft.written else "Write this scenario" }}
     </button>

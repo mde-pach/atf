@@ -125,12 +125,16 @@ def provision(client, node_id: str) -> None:
 
 
 def test_the_type_page_lists_what_the_environment_already_has(client, project, browsable):
+    """One table: what the catalog declares, a divider, then what only the environment has."""
     seed(project, "accounts", {"id": "account-9", "email": "third@example.test", "plan": "trial"})
 
     body = client.get("/catalog/type/account").text
-    assert "In this environment" in body
-    assert "third@example.test" in body
+    assert "not declared in the catalog" in body
+    assert "third@example.test" in body  # the record, labelled by its natural key
+    assert "plan trial" in body  # and the rest of what it carries
     assert "Add to catalog" in body
+    # The declared instances are rows of the same table rather than a second list of them.
+    assert body.index("primary") < body.index("third@example.test")
 
 
 def test_a_record_the_catalog_already_declares_is_marked_not_offered(client, project, browsable):
@@ -143,11 +147,12 @@ def test_a_record_the_catalog_already_declares_is_marked_not_offered(client, pro
     assert body.count("Add to catalog") == 0
 
 
-def test_an_adapter_that_cannot_browse_says_so_instead_of_showing_an_empty_table(client):
+def test_an_adapter_that_cannot_browse_says_so_instead_of_leaving_the_table_short(client):
+    """The catalog's own instances are still listed — what is missing is the environment's half."""
     body = client.get("/catalog/type/account").text
     assert "cannot list what is out there" in body
     assert "implementing <code>browse</code>" in body
-    assert 'class="records"' not in body
+    assert "not declared in the catalog" not in body
 
 
 def test_a_scoped_listing_asks_which_parent_to_look_inside(client, project, browsable):
@@ -176,8 +181,9 @@ def test_browsing_inside_a_chosen_parent_lists_what_is_in_it(client, project, br
     seed(project, "notes", {"id": "note-1", "account_id": identity, "slug": "kept"})
 
     body = client.get("/catalog/type/note?scope=accounts.primary").text
-    assert 'class="records"' in body
-    assert "note-1" in body and "kept" in body
+    assert 'class="records instances"' in body
+    assert "kept" in body  # the record, labelled by its natural key
+    assert "identity=note-1" in body  # and carried into the form that would declare it
     assert "Add to catalog" in body
 
 

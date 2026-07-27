@@ -91,7 +91,7 @@
                   placeholder='Start a new feature', empty='No feature by that name.') }}
       <span class="hint">
         {%- if draft.feature %}The scenario is appended to that feature's file; nothing else in it moves.
-        {%- else %}A new <code>.feature</code> file is created under <code>{{ specs_dir }}</code>.{% endif -%}
+        {%- else %}A new <code>.feature</code> file is created under <code>{{ rel(specs_dir) }}</code>.{% endif -%}
       </span>
     </div>
 

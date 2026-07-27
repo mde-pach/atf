@@ -656,12 +656,28 @@ def glossary(key: str) -> Term | None:
     return TERMS.get(key)
 
 
+def relative(path: str) -> str:
+    """A path as the person who wrote it types it: from the suite root, not from `/`.
+
+    Every path the cockpit holds is absolute, because that is what pytest reports. Nobody reads a
+    file that way, and the leading half of it is the same on every line of every page.
+    """
+    if not path:
+        return ""
+    root = cockpit().manifest.root
+    try:
+        return Path(path).resolve().relative_to(root.resolve()).as_posix()
+    except (ValueError, OSError):
+        return path
+
+
 _GLOBALS: dict[str, Any] = {
     "tone": tone,
     "ago": ago,
     "dur": duration,
     "u": u,
     "docs": docs_url,
+    "rel": relative,
     "glossary": glossary,
     "NODE_W": NODE_W,
     "NODE_H": NODE_H,

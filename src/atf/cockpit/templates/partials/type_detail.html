@@ -1,7 +1,11 @@
 {% import "partials/macros.html" as ui %}
 
-{# Columns 2 and 3 when a resource type is selected. A type is the unit a scenario names, an
-   adapter binds to and pytest exposes as a fixture, so this is where those three meet. #}
+{# Column 2 when a resource type is selected. A type is the unit a scenario names, an adapter binds
+   to and pytest exposes as a fixture, so this is where those three meet.
+
+   One card and one table. The same eight resources used to appear in the left nav, in a "declared
+   in the catalog" list and in a table of what the environment holds — three lists of one thing.
+   Whether a resource is declared is a column, and it is the column that says what to do next. #}
 
 {% if not type %}
   <div class="card">
@@ -14,107 +18,102 @@
 <div class="card stack">
   <header>
     <h2>{{ type.name }}</h2>
-    <span class="muted small">{{ ui.term('resource_type') }}</span>
+    <span class="tag" style="color: {{ display.system(type.system).color }}">
+      {{ display.system(type.system).label }}</span>
     <span class="pill {{ type.tone }}">{{ type.present }} of {{ type.total }} present</span>
+
+    <div class="actions">
+      {# Declaring one is a change to the suite's source and works in every environment, so it
+         leads. Provisioning only matters when something is missing, so it stands beside it. #}
+      <button class="primary" type="button" hx-get="{{ u('/authoring/new', type=type.name) }}"
+              hx-target="#sheet" hx-swap="innerHTML"><span class="glyph">＋</span>New {{ type.name }}</button>
+      {% if type_targets %}
+        {% call ui.action(type_label, u('/provision'), '#activity', confirm_token, mutable, env,
+                          hint=type_label ~ " in " ~ env ~ "? Dependencies are created first.", primary=False) %}
+          {% for node_id in type_targets %}<input type="hidden" name="node" value="{{ node_id }}">{% endfor %}
+        {% endcall %}
+      {% endif %}
+    </div>
   </header>
 
+  {# One line, in the header where it is read, rather than a card around a single line of Gherkin. #}
   <p class="small">
-    Every {{ type.name }} lives in
-    <span class="tag" style="color: {{ display.system(type.system).color }}">
-      {{ display.system(type.system).label }}</span>,
-    so its {{ ui.term('adapter') }} is what finds and creates one.
+    <code>Given the {{ type.name }} "{{ type.nodes[0].name if type.nodes else 'name' }}"</code> — how a
+    {{ ui.term('scenario') }} asks for one. In plain pytest the <code>{{ type.name }}</code>
+    {{ ui.term('fixture') }} does the same.
   </p>
 
-  <div class="stack">
-    <h3>How a scenario asks for one</h3>
-    <pre class="payload mono">{{ type.example }}</pre>
-    <p class="small muted">
-      In plain pytest, ask for the <code>{{ type.name }}</code> {{ ui.term('fixture') }} instead — ATF generates
-      one per type, so a test never builds its own.
+  {# Only a setting that changes behaviour earns a sentence. `persistent` + `create` is the default
+     and saying so twice per type is two lines that never differ. #}
+  {% if type.lifecycle == "ephemeral" %}
+    <p class="small">
+      {{ ui.term('ephemeral', 'Ephemeral') }} — one is built for the test that needs it and thrown away
+      afterwards, so there is never anything here to seed.
     </p>
-  </div>
-
-  {# With nothing missing there is nothing to offer: a disabled button next to an explanation of
-     why it is disabled is two elements both saying "ignore me". #}
-  {% if type_targets %}
-    <div class="stack">
-      <h3>Provision</h3>
-      <p class="small muted">
-        Provisioning a type provisions every instance of it that is missing, and everything each one
-        depends on first.
-      </p>
-      {% call ui.action(type_label, u('/provision'), '#activity', confirm_token, mutable, env,
-                        hint=type_label ~ " in " ~ env ~ "?", disabled_reason=type_blocked) %}
-        {% for node_id in type_targets %}<input type="hidden" name="node" value="{{ node_id }}">{% endfor %}
-      {% endcall %}
-    </div>
-  {% elif type_blocked %}
+  {% endif %}
+  {% if type.mode == "reference" %}
+    <p class="small">
+      {{ ui.term('reference', 'Reference') }} — ATF looks one up but never creates it. Absent means {{ env }}
+      is not set up the way this suite assumes.
+    </p>
+  {% endif %}
+  {% if type_blocked and not type_targets %}
     <p class="small muted">{{ type_blocked }}</p>
   {% endif %}
 
-  {# The settings, said in words rather than annotated one by one: five tooltips in a six-row list is
-     five things to hover before the list can be read at all. #}
-  <dl class="kv small">
-    <dt>lifecycle</dt>
-    <dd>
-      {{ type.lifecycle }}
-      <span class="muted">
-        {%- if type.lifecycle == "ephemeral" %} — built for the test that needs it and thrown away after
-        {%- else %} — created once and left in {{ env }} for the next run{% endif -%}
-      </span>
-    </dd>
-    <dt>mode</dt>
-    <dd>
-      {%- if type.mode == "reference" -%}
-        reference <span class="muted">— looked up, never created</span>
-      {%- else -%}create <span class="muted">— found if it exists, created if it does not</span>{%- endif -%}
-    </dd>
-    <dt>id field</dt>
-    <dd><code>{{ type.id_field }}</code> <span class="muted">— the field a created one's identity comes back in</span></dd>
-    {% for key, value in type.config.items() %}
-      <dt>{{ key.replace("_", " ") }}</dt>
-      <dd>
-        <code>{{ value if value is string else value | tojson }}</code>
-        {%- if key == "natural_key" %} <span class="muted">— what an existing one is recognised by</span>{% endif -%}
-      </dd>
-    {% endfor %}
-  </dl>
-</div>
+  {% if records %}{% include "partials/type_environment.html" %}{% endif %}
 
-<div class="card stack">
-  <header>
-    <h2>Instances</h2>
-    <span class="muted small">{{ type.total }} declared</span>
-    <div class="actions">
-      <button class="primary" type="button" hx-get="{{ u('/authoring/new', type=type.name) }}"
-              hx-target="#sheet" hx-swap="innerHTML"><span class="glyph">＋</span>New {{ type.name }}</button>
+  {% if rows %}
+    <div class="scroll-x">
+      <table class="records instances">
+        <thead>
+          <tr><th>instance</th><th>status</th><th>what it is</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            {% if not row.declared and (loop.first or loop.previtem.declared) %}
+              <tr class="divider">
+                <td colspan="4">
+                  in {{ env }}, not declared in the catalog — adding one writes the entry that would have
+                  produced it, so it can be created again in an empty environment
+                </td>
+              </tr>
+            {% endif %}
+            <tr class="{{ 'known' if row.declared }}">
+              <td>
+                {% if row.declared %}
+                  {{ ui.ref('resource', u('/catalog/node/' ~ row.node.id), row.label) }}
+                {% else %}
+                  <span class="mono">{{ row.label }}</span>
+                {% endif %}
+              </td>
+              <td class="state"><span class="flag {{ tone(row.status) }}"></span>{{ row.status }}</td>
+              <td class="small">{{ row.detail }}</td>
+              <td class="num">
+                {% if not row.declared %}
+                  <button type="button"
+                          hx-get="{{ u('/authoring/new', type=type.name, identity=row.identity,
+                                       scope=(records.scope.id if records and records.scope else '')) }}"
+                          hx-target="#sheet" hx-swap="innerHTML"><span class="glyph">＋</span>Add to catalog</button>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-  </header>
+  {% else %}
+    {{ ui.empty("No " ~ type.name ~ " is declared yet, and " ~ env ~ " has none either. Each instance is a "
+            "top-level entry in a catalog/*.yaml file — the file name becomes the first half of its id.") }}
+  {% endif %}
 
-  {% if records %}{% include "partials/environment_records.html" %}{% endif %}
-
-  <div class="stack">
-    <h3>Declared in the catalog</h3>
-    {% if type.nodes %}
-      <div class="list">
-        {% for item in type.nodes %}
-          <a href="{{ u('/catalog/node/' ~ item.id) }}"
-             hx-get="{{ u('/catalog/node/' ~ item.id) }}" hx-target="#focus" hx-swap="innerHTML" hx-push-url="true">
-            <span class="name">{{ item.name }}</span>
-            <span class="sub">
-              <span class="flag {{ tone(status.get(item.id, {}).get('status', '')) }}"></span>
-              {{ status.get(item.id, {}).get("status", "unknown") }}
-              {%- if item.represents %} · {{ item.represents }}{% endif %}
-            </span>
-          </a>
-        {% endfor %}
-      </div>
-    {% else %}
-      {{ ui.empty("No " ~ type.name ~ " is declared yet. Each instance is a top-level entry in a "
-              "catalog/*.yaml file — the file name becomes the first half of its id. New "
-              ~ type.name ~ " writes one for you.") }}
-    {% endif %}
-  </div>
+  <p class="small muted">
+    {{ ui.term('natural_key', 'natural key') }} <code>{{ keys | join(', ') or 'none' }}</code> ·
+    {{ ui.term('id_field', 'identity') }} <code>{{ type.id_field }}</code>
+    {%- for key, value in type.config.items() %}{% if key != 'natural_key' %} ·
+      {{ key.replace("_", " ") }} <code>{{ value if value is string else value | tojson }}</code>
+    {%- endif %}{% endfor %}
+  </p>
 
   <div class="stack">
     <h3>Exercised by</h3>

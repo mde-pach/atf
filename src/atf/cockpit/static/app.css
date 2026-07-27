@@ -115,6 +115,7 @@ pre { margin: 0; }
 .small { font-size: 12.5px; }
 .scroll-x { overflow-x: auto; max-width: 100%; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.row .grow { flex: 1 1 auto; }
 .stack { display: flex; flex-direction: column; gap: 12px; }
 .actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
@@ -709,9 +710,22 @@ th.num, td.num { text-align: right; }
 .diff .meta { color: var(--text-dim); }
 .diff .file { color: var(--text-dim); font-weight: 600; }
 
-/* Records the environment already has, beside what the catalog declares. */
-.records td.known { color: var(--text-dim); }
-.records tr.known td { opacity: 0.62; }
+/* The one instances table: what the catalog declares, then what only the environment has. The
+   declared rows are the subject of the page, so nothing dims them — the divider carries the split. */
+.instances tr.divider td {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 400;
+}
+.instances tr:not(.known) td:first-child { color: var(--text-dim); }
+.instances td.num { white-space: nowrap; width: 1%; }
+
+/* A verdict in a table cell: one dot and one word. `.flag` is a flex child everywhere else, so
+   here it has to be told to hold its own shape in a line of text. */
+td.state { white-space: nowrap; }
+td.state .flag { display: inline-block; margin-right: 7px; }
 
 /* The guided scenario builder: one row per Gherkin step. */
 .builder { display: flex; flex-direction: column; gap: 6px; }

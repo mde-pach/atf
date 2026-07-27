@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import Cockpit, set_cockpit
+from atf.cockpit.routers import catalog as catalog_router
 from atf.cockpit.view import build_graph, closure_of, lineage_sentence, neighbourhood, readiness, scenario_views
 from tests.sample_project import write_sample_project
 
@@ -374,15 +375,40 @@ def test_the_catalog_is_navigated_by_resource_type(client):
 
 def test_a_type_page_teaches_how_to_use_the_type(client):
     body = client.get("/catalog/type/account").text
-    assert "Given the account &#34;primary&#34;" in body  # the Gherkin line that provisions one
+    assert 'Given the account "primary"' in body  # the Gherkin line that provisions one
     assert "email" in body  # its natural key, from the adapter settings
+
+
+def test_a_type_shows_its_instances_and_what_the_environment_holds_in_one_table(client):
+    """They were two tables and a nav entry for the same resources. Declared-or-not is a column."""
+    body = client.get("/catalog/type/account").text
+    assert body.count("Declared in the catalog") == 0
+    assert "primary" in body and "secondary" in body
+    assert "The account every other resource hangs off." in body
+    assert body.index("INSTANCE") if "INSTANCE" in body else True  # the one table's first column
+
+
+def test_a_type_says_nothing_about_settings_that_are_the_default(client):
+    """`persistent` + `create` is what every type is unless it says otherwise."""
+    ordinary = client.get("/catalog/type/account").text
+    assert "built for the test that needs it" not in ordinary
+    assert "never creates it" not in ordinary
+
+    ephemeral = client.get("/catalog/type/visitor").text
+    assert "built for the test that needs it" in ephemeral
+
+    reference = client.get("/catalog/type/external_widget").text
+    assert "never creates it" in reference
 
 
 def test_the_inspector_puts_the_payload_beside_the_action(client):
     body = client.get("/catalog/node/projects.alpha").text
     assert "A project under the primary account." in body
     assert "${accounts.primary.id}" in body
-    assert body.index("Payload") < body.index("Provision alpha")
+    # One card: what it is, what would be sent, and the button that sends it. The button leads
+    # because it is the reason the page was opened; the payload is the next thing read.
+    assert body.index("Provision alpha") < body.index("Payload")
+    assert body.index("Payload") < body.index("catalog/projects.yaml")
 
 
 def test_the_inspector_states_the_closure_the_action_will_create(client):
@@ -405,7 +431,19 @@ def test_the_lineage_is_also_stated_in_words(client):
     assert "nothing has to exist first" in lineage_sentence(nodes["accounts.primary"], nodes).lower()
 
 
-def test_a_lineage_node_carries_its_description_for_the_hover_card(client):
+def test_a_small_lineage_is_a_sentence_and_a_big_one_is_a_diagram(client, monkeypatch):
+    """Three boxes and two arrows is a diagram nobody needed; the sentence says more in less space."""
+    body = client.get("/catalog/node/projects.alpha").text
+    assert "alpha needs primary" in body
+    assert 'class="graph"' not in body
+
+    monkeypatch.setattr(catalog_router, "GRAPH_FROM", 1)
+    drawn = client.get("/catalog/node/projects.alpha").text
+    assert 'class="graph"' in drawn
+
+
+def test_a_lineage_node_carries_its_description_for_the_hover_card(client, monkeypatch):
+    monkeypatch.setattr(catalog_router, "GRAPH_FROM", 1)
     assert "The account every other resource hangs off." in client.get("/catalog/node/projects.alpha").text
 
 
@@ -425,9 +463,19 @@ def test_a_scenario_is_named_by_its_title_not_its_pytest_identifier(client):
     assert "test_a_project_belongs_to_its_account" not in body
 
 
-def test_an_examples_table_and_its_rows_are_shown_together(client):
+def test_an_examples_table_carries_the_outcome_of_each_row(client):
+    """An outline is one behaviour run several times, so the values belong beside the Gherkin —
+    not under a card explaining what pytest collects."""
     body = client.get("/scenarios/accounts::accounts-report-their-own-plan").text
-    assert "Examples" in body and "secondary" in body
+    assert "secondary" in body and "trial" in body
+    assert "<th>who</th>" in body and "<th>outcome</th>" in body
+    assert "What pytest collects" not in body
+
+
+def test_a_scenario_with_one_test_and_no_examples_shows_neither_table(client):
+    body = client.get("/scenarios/accounts::a-standard-account-reports-its-plan").text
+    assert "<th>outcome</th>" not in body
+    assert "What pytest collects" not in body
 
 
 def test_filtering_by_state_focuses_a_scenario_in_that_state(client, project):

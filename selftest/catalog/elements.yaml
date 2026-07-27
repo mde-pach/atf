@@ -39,13 +39,35 @@ declared_heading:
 
 lineage_graph:
   resource: element
-  represents: The lineage diagram, drawn only when a closure is too big to say in a sentence.
+  represents: The lineage diagram, drawn for a resource that depends on something.
   depends_on:
     - cockpits.chained
     - pages.groceries_node
   body:
     cockpit: ${cockpits.chained.id}
     page: ${pages.groceries_node.id}
+    selector: div.graph
+
+lineage_boxes:
+  resource: element
+  represents: One box per resource in the closure. groceries hangs off primary, so there are two.
+  depends_on:
+    - cockpits.chained
+    - pages.groceries_node
+  body:
+    cockpit: ${cockpits.chained.id}
+    page: ${pages.groceries_node.id}
+    selector: div.graph a.gnode
+
+standalone_lineage_graph:
+  resource: element
+  represents: The diagram a resource with no dependencies would get. There is nothing to draw.
+  depends_on:
+    - cockpits.chained
+    - pages.primary_node
+  body:
+    cockpit: ${cockpits.chained.id}
+    page: ${pages.primary_node.id}
     selector: div.graph
 
 node_payload:

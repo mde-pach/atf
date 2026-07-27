@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import Cockpit, set_cockpit
-from atf.cockpit.routers import catalog as catalog_router
 from atf.cockpit.view import build_graph, closure_of, lineage_sentence, neighbourhood, readiness, scenario_views
 from tests.sample_project import write_sample_project
 
@@ -431,19 +430,19 @@ def test_the_lineage_is_also_stated_in_words(client):
     assert "nothing has to exist first" in lineage_sentence(nodes["accounts.primary"], nodes).lower()
 
 
-def test_a_small_lineage_is_a_sentence_and_a_big_one_is_a_diagram(client, monkeypatch):
-    """Three boxes and two arrows is a diagram nobody needed; the sentence says more in less space."""
-    body = client.get("/catalog/node/projects.alpha").text
-    assert "alpha needs primary" in body
-    assert 'class="graph"' not in body
+def test_a_resource_that_depends_on_something_gets_a_diagram(client):
+    """The graph is the only place the shape of the catalog is visible. Hiding it behind a size
+    threshold meant nobody found out it existed."""
+    depends = client.get("/catalog/node/projects.alpha").text
+    assert 'class="graph"' in depends
+    assert "alpha needs primary" in depends, "the sentence stays: it is what a reader actually reads"
 
-    monkeypatch.setattr(catalog_router, "GRAPH_FROM", 1)
-    drawn = client.get("/catalog/node/projects.alpha").text
-    assert 'class="graph"' in drawn
+    standalone = client.get("/catalog/node/accounts.primary").text
+    assert 'class="graph"' not in standalone, "nothing to draw when nothing has to exist first"
+    assert "Nothing has to exist first" in standalone
 
 
-def test_a_lineage_node_carries_its_description_for_the_hover_card(client, monkeypatch):
-    monkeypatch.setattr(catalog_router, "GRAPH_FROM", 1)
+def test_a_lineage_node_carries_its_description_for_the_hover_card(client):
     assert "The account every other resource hangs off." in client.get("/catalog/node/projects.alpha").text
 
 

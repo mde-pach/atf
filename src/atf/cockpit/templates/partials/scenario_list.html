@@ -1,13 +1,26 @@
-{# The left rail of the Scenarios page: every scenario, grouped by feature, filterable in place. #}
+{# The left rail of the Scenarios page: every scenario, grouped by feature, filterable in place.
+
+   The state filters live behind one control rather than a permanent row of five: on most days
+   nothing is failing and the row is five buttons saying zero. #}
 <div class="card tight">
   <header class="filters" id="scenario-filters">
     <input type="search" placeholder="Filter scenarios…" aria-label="Filter scenarios" autocomplete="off">
-    <button class="filter" type="button" data-filter="all"
-            aria-pressed="{{ 'false' if preset else 'true' }}">All ({{ views | length }})</button>
-    {% for state in ["failing", "blocked", "never run", "passing"] %}
-      <button class="filter" type="button" data-filter="{{ state }}"
-              {% if preset == state %}aria-pressed="true"{% endif %}>{{ state | capitalize }} ({{ tally[state] }})</button>
-    {% endfor %}
+    <details class="picker">
+      <summary aria-label="Filter by state">
+        <span class="glyph" aria-hidden="true">⌄</span>
+        <span data-filter-label>{{ preset | capitalize if preset else "All" }}</span>
+      </summary>
+      <div class="picker-body">
+        <button class="filter" type="button" data-filter="all"
+                aria-pressed="{{ 'false' if preset else 'true' }}">All ({{ views | length }})</button>
+        {% for state in ["failing", "blocked", "never run", "passing"] %}
+          <button class="filter" type="button" data-filter="{{ state }}"
+                  {% if preset == state %}aria-pressed="true"{% endif %}>
+            {{ state | capitalize }} ({{ tally[state] }})
+          </button>
+        {% endfor %}
+      </div>
+    </details>
   </header>
 
   <div class="list" id="scenario-list">
@@ -18,12 +31,13 @@
         <a href="{{ link }}"
            hx-get="{{ link }}" hx-target="#scenario-detail" hx-swap="innerHTML" hx-push-url="true"
            data-state="{{ item.state }}"
-           data-find="{{ [item.spec.scenario, item.spec.feature, item.spec.tags | join(' ')] | join(' ') | lower }}"
+           data-find="{{ [item.spec.scenario, item.spec.feature, item.spec.narrative,
+                          item.spec.tags | join(' ')] | join(' ') | lower }}"
            {% if item.id == focus %}aria-current="true"{% endif %}>
           <span class="name">{{ item.spec.scenario }}</span>
           <span class="sub">
             {{ ui.pill(item.state) }}
-            {% if item.tests | length > 1 %}<span>{{ item.tests | length }} tests</span>{% endif %}
+            {% if item.tests | length > 1 %}<span>{{ item.tests | length }} rows</span>{% endif %}
             {% if item.flaky %}<span>flaky</span>{% endif %}
           </span>
         </a>

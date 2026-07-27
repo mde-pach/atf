@@ -17,10 +17,15 @@ Feature: The cockpit
     Given the page "owner_type"
     Then the element "declared_heading" is gone
 
-  Scenario: A small lineage is a sentence, not a diagram
+  Scenario: A resource that depends on something is drawn as well as described
     Given the page "groceries_node"
-    Then the element "lineage_graph" is gone
+    Then the element "lineage_graph" exists
+    And the element "lineage_boxes" field "count" is "2"
     And the element "node_payload" exists
+
+  Scenario: A resource that depends on nothing has no lineage to draw
+    Given the page "primary_node"
+    Then the element "standalone_lineage_graph" is gone
 
   Scenario: A payload shows the placeholder that resolves at provisioning time
     Given the element "node_payload"
@@ -36,7 +41,7 @@ Feature: The cockpit
 
   Scenario: Writing a scenario is a button, never a badge
     Given the page "compose"
-    Then the element "compose_write_button" field "text" is "Write this scenario"
+    Then the element "compose_write_button" field "text" is "Save"
     And the element "compose_write_chip" is gone
 
   # Everything below needs the page to have *run*, not merely been served, so it needs a real

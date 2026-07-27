@@ -19,7 +19,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 SELFTEST = REPO / "selftest"
 
-SCENARIOS = 20
+SCENARIOS = 21
 
 # The scenarios that need the page to have *run*, not merely been served. They skip where there is
 # no browser, which is the one thing about this suite that legitimately differs between machines.
@@ -121,9 +121,9 @@ def test_the_self_hosted_suite_uses_atf_rather_than_reimplementing_it():
         ),
         pytest.param(
             "cockpit/routers/catalog.py",
-            "GRAPH_FROM = 3",
-            "GRAPH_FROM = 0",
-            "a_small_lineage_is_a_sentence_not_a_diagram",
+            "GRAPH_FROM = 1",
+            "GRAPH_FROM = 9",
+            "a_resource_that_depends_on_something_is_drawn_as_well_as_described",
             id="the interface, through the interface",
         ),
     ],

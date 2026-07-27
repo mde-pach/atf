@@ -40,10 +40,6 @@
             <label>which field</label>
             {{ ui.combo('p_' ~ row.index ~ '_field', field_options(rtype, rname), chosen_field,
                         placeholder='which field…', empty='Nothing ATF can see is called that.') }}
-            <span class="hint">
-              What the catalog declares and what {{ env }} holds. Provision it and whatever the backend
-              adds of its own appears here too.
-            </span>
           </div>
         {% endif %}
 
@@ -79,56 +75,45 @@
 <input type="hidden" name="mode" value="{{ draft.mode }}">
 
 <div class="card stack">
-  <header>
-    <h2>Where this scenario goes</h2>
-    <span class="muted small">One file per feature; one {{ ui.term('scenario') }} per behaviour.</span>
-  </header>
-
   <div class="field-row">
-    <div class="field">
-      <label for="compose-feature">Feature</label>
-      {{ ui.combo('feature', feature_options, draft.feature,
-                  placeholder='Start a new feature', empty='No feature by that name.') }}
-      <span class="hint">
-        {%- if draft.feature %}The scenario is appended to that feature's file; nothing else in it moves.
-        {%- else %}A new <code>.feature</code> file is created under <code>{{ rel(specs_dir) }}</code>.{% endif -%}
-      </span>
-    </div>
-
-    {% if draft.new_feature %}
+    {% if draft.starting %}
+      <input type="hidden" name="new" value="1">
       <div class="field{{ ' bad' if validated and draft.bad.get('feature_title') }}">
-        <label for="compose-feature-title">New feature name</label>
+        <label for="compose-feature-title">Feature</label>
         <input id="compose-feature-title" name="feature_title" value="{{ draft.feature_title }}"
-               placeholder="Accounts" autocomplete="off">
-        <span class="hint">{{ validated and draft.bad.get('feature_title') or "Written as the file's Feature: line." }}</span>
+               placeholder="Name a new feature" autocomplete="off">
+        {% if validated and draft.bad.get('feature_title') %}
+          <span class="hint">{{ draft.bad.get('feature_title') }}</span>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="field">
+        <label for="compose-feature">Feature</label>
+        <div class="drop">
+          {{ ui.combo('feature', feature_options, draft.feature, empty='No feature by that name.') }}
+          <button class="ghost" type="button" hx-post="{{ post }}" {{ swap | safe }}
+                  hx-vals='{"new": "1", "feature": ""}'><span class="glyph">＋</span>New</button>
+        </div>
       </div>
     {% endif %}
 
     {# In text mode the `Scenario:` line is the title. The field follows it rather than competing
        with it: two places to name one thing is two places to disagree. #}
     <div class="field{{ ' bad' if validated and draft.bad.get('title') }}">
-      <label for="compose-title">Scenario title</label>
+      <label for="compose-title">Scenario</label>
       <input id="compose-title" name="title" value="{{ draft.title }}"
-             placeholder="A standard account reports its plan" autocomplete="off"
+             placeholder="Name the behaviour" autocomplete="off"
              {% if draft.mode == 'text' %}readonly{% endif %}>
-      <span class="hint">
-        {%- if draft.mode == 'text' -%}
-          Taken from the <code>Scenario:</code> line you are editing below.
-        {%- else -%}
-          {{ validated and draft.bad.get('title') or "The behaviour in one sentence — this is the name every page calls it by." }}
-        {%- endif -%}
-      </span>
+      {% if validated and draft.bad.get('title') %}<span class="hint">{{ draft.bad.get('title') }}</span>{% endif %}
     </div>
-  </div>
 
-  {% if draft.new_feature %}
-    <div class="field">
-      <label for="compose-narrative">What this feature is about <span class="muted">(optional)</span></label>
-      <input id="compose-narrative" name="narrative" value="{{ draft.narrative }}"
-             placeholder="Accounts carry a plan and own projects." autocomplete="off">
-      <span class="hint">Prose under the <code>Feature:</code> line. Every page that shows the scenario shows it.</span>
-    </div>
-  {% endif %}
+    {% if draft.starting %}
+      <div class="field">
+        <label for="compose-narrative">About this feature <span class="muted">(optional)</span></label>
+        <input id="compose-narrative" name="narrative" value="{{ draft.narrative }}" autocomplete="off">
+      </div>
+    {% endif %}
+  </div>
 </div>
 
 <div class="card stack">
@@ -188,21 +173,11 @@
                   {{ ui.ref('resource', u('/catalog/node/' ~ row.node_id), row.node_id, status=state) }}
                 {% endif %}
               </div>
-              <span class="hint">
-                {%- if row.node_id -%}
-                  Writes <span class="mono">Given {{ row.text }}</span> — ATF makes it exist in {{ env }} before the
-                  scenario runs.
-                {%- elif row.resource_type -%}
-                  Pick one of the {{ row.resource_type }} instances the catalog declares.
-                {%- else -%}
-                  The kind of thing first, then which one.
-                {%- endif -%}
-              </span>
 
             {% else %}
               <div class="drop">
                 {{ ui.combo('pattern_' ~ row.index, step_options[row.keyword], row.pattern,
-                            placeholder='search the ' ~ row.keyword ~ ' steps this suite defines…',
+                            placeholder=('what the scenario does…' if row.keyword == 'when' else 'what must be true…'),
                             empty='No ' ~ row.keyword ~ ' step matches. Write one with @' ~ row.keyword
                                   ~ ' in a steps module.') }}
               </div>
@@ -248,9 +223,8 @@
           {{ keyword | capitalize }}
         </button>
       {% endfor %}
-      <span class="muted small">A second row of the same keyword is written as <code>And</code>.</span>
     </div>
   {% endif %}
 </div>
 
-{% include "partials/compose_preview.html" %}
+{% include "partials/compose_actions.html" %}

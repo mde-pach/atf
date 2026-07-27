@@ -27,7 +27,7 @@
        stands beside it rather than in front of it. #}
     <div class="actions">
       <span class="muted small">checked {{ ago(status_at) }}</span>
-      <form hx-post="{{ u('/catalog/rescan', focus=focus, type=selected, group=group) }}"
+      <form hx-post="{{ u('/catalog/rescan', focus=focus, type=selected) }}"
             hx-target="#catalog" hx-swap="outerHTML" hx-select="#catalog" hx-disabled-elt="find button">
         <button type="submit">Rescan</button>
       </form>
@@ -53,50 +53,29 @@
     <div class="card tight">
       <header>
         <h2>{{ ui.term('resource', 'Resources') }}</h2>
-        <div class="actions segmented">
-          <span class="muted">by</span>
-          {% for name in groupings %}
-            {% if name == group %}
-              <span class="on">{{ name }}</span>
-            {% else %}
-              <a href="{{ u('/catalog', focus=focus, type=selected, group=name) }}">{{ name }}</a>
-            {% endif %}
-          {% endfor %}
-        </div>
       </header>
 
       <div class="list">
-        {% if group == "type" %}
-          {% for name, view in types.items() %}
-            <a href="{{ u('/catalog/type/' ~ name) }}"
-               hx-get="{{ u('/catalog/type/' ~ name) }}" hx-target="#focus" hx-swap="innerHTML" hx-push-url="true"
-               {% if name == selected and not node %}aria-current="true"{% endif %}>
-              <span class="name">{{ name }}</span>
-              <span class="sub">
-                <span class="flag {{ view.tone }}"></span>
-                {{ view.present }}/{{ view.total }} present
-              </span>
-            </a>
-            {% if name == selected %}
-              {% for item in view.nodes %}{{ instance(item, child=True) }}{% endfor %}
-              {% if not view.nodes %}
-                <p class="empty-note">
-                  No {{ name }} declared. Add one to a file under <code>catalog/</code>.
-                </p>
-              {% endif %}
+        {% for name, view in types.items() %}
+          <a href="{{ u('/catalog/type/' ~ name) }}"
+             hx-get="{{ u('/catalog/type/' ~ name) }}" hx-target="#focus" hx-swap="innerHTML" hx-push-url="true"
+             {% if name == selected and not node %}aria-current="true"{% endif %}>
+            <span class="name">{{ name }}</span>
+            <span class="sub">
+              <span class="flag {{ view.tone }}"></span>
+              {{ view.present }}/{{ view.total }} present
+            </span>
+          </a>
+          {% if name == selected %}
+            {% for item in view.nodes %}{{ instance(item, child=True) }}{% endfor %}
+            {% if not view.nodes %}
+              <p class="empty-note">No {{ name }} declared. Add one to a file under <code>catalog/</code>.</p>
             {% endif %}
-          {% else %}
-            {{ ui.empty("No resource type is declared yet. Each one is a top-level entry in catalog/resources.yaml.",
-                        "How to add a resource", docs('how-to/add-a-resource/')) }}
-          {% endfor %}
+          {% endif %}
         {% else %}
-          {% for label, members in buckets.items() %}
-            <div class="list-group-label">{{ label }}</div>
-            {% for item in members %}{{ instance(item, with_type=True) }}{% endfor %}
-          {% else %}
-            {{ ui.empty("Nothing is declared in this catalog yet.") }}
-          {% endfor %}
-        {% endif %}
+          {{ ui.empty("No resource type is declared yet. Each one is a top-level entry in catalog/resources.yaml.",
+                      "How to add a resource", docs('how-to/add-a-resource/')) }}
+        {% endfor %}
       </div>
     </div>
 

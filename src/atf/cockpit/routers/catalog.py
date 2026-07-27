@@ -44,10 +44,6 @@ PURPOSE = (
     "and what provisioning it would actually do."
 )
 
-# Type is the point; the other two are filing accidents kept because they are sometimes how you
-# remember where a resource lives.
-GROUPINGS = ("type", "collection", "system")
-
 PLACEHOLDER = re.compile(r"\$\{[^}]*\}")
 
 # Browsing is a convenience, not a run: one page of records is enough to write a catalog from, and
@@ -60,8 +56,10 @@ CELL_CHARS = 48
 # table, not a state of a resource, so it is spelled here rather than in the materializer.
 UNDECLARED = "not declared"
 
-# Above this many nodes in a closure, the lineage is worth drawing rather than describing.
-GRAPH_FROM = 3
+# A resource that depends on nothing has no lineage to draw, and the sentence says so in a line.
+# Anything with a dependency gets the diagram: it is the only place the shape of the graph is
+# visible, and hiding it until some size threshold means nobody ever finds out it exists.
+GRAPH_FROM = 1
 
 _FOREIGN_KEY = re.compile(r"_(id|uuid)$")
 
@@ -134,9 +132,6 @@ def _context(
     focus = _param(request, "focus", focus)
     wanted = _param(request, "type", type_name)
     scope_id = request.query_params.get("scope") or ""
-    group = request.query_params.get("group") or GROUPINGS[0]
-    if group not in GROUPINGS:
-        group = GROUPINGS[0]
 
     # A node selection wins, and pins its own type open in the list; otherwise a type is selected,
     # defaulting to the first one — the catalog always has something to say.
@@ -155,9 +150,6 @@ def _context(
         "types": types,
         "type": types.get(selected),
         "selected": selected,
-        "group": group,
-        "groupings": GROUPINGS,
-        "buckets": _buckets(nodes, group),
         "focus": focus,
         "node": node,
         "scope_id": scope_id,
@@ -191,8 +183,8 @@ def _node_context(env: str, node: Node, nodes: dict[str, Node], status: dict[str
     closure = closure_of(node_id, nodes)
 
     return {
-        # A diagram of three boxes is a diagram nobody needed: below that, the sentence says more in
-        # less space. The graph earns its room once the closure is genuinely hard to hold in mind.
+        # Drawn whenever there is something to draw. A standalone resource gets the sentence, which
+        # for "nothing has to exist first" is the whole of what there is to say.
         "graph": build_graph(nodes, node_id, status) if len(closure) > GRAPH_FROM else None,
         "lineage": lineage_sentence(node, nodes),
         "needs": [nodes[dep] for dep in node["depends_on"] if dep in nodes],
@@ -547,16 +539,6 @@ def _payload(body: dict[str, Any]) -> Markup:
     """The declared body, with `${...}` placeholders marked — they are the part resolved at runtime."""
     text = html.escape(json.dumps(body, indent=2, default=str), quote=False)
     return Markup(PLACEHOLDER.sub(lambda match: f'<span class="ref">{match.group(0)}</span>', text))
-
-
-def _buckets(nodes: dict[str, Node], group: str) -> dict[str, list[Node]]:
-    """Instances grouped by collection or system — only used when the type axis is switched off."""
-    if group == "type":
-        return {}
-    grouped: dict[str, list[Node]] = {}
-    for node in nodes.values():
-        grouped.setdefault(node["collection"] if group == "collection" else node["system"], []).append(node)
-    return {name: sorted(members, key=lambda item: item["name"]) for name, members in sorted(grouped.items())}
 
 
 def _param(request: Request, name: str, given: str | None) -> str:

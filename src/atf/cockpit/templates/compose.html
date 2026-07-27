@@ -8,33 +8,8 @@
   </div>
 {% endcall %}
 
-{# The Given/When/Then split is the one thing a first-time author does not know. It is available,
-   not dumped: each row below already says what its own keyword is for, so this is the longer
-   version for whoever wants it and out of the way for whoever does not. #}
-<details class="explainer">
-  <summary>How a scenario is put together</summary>
-  <dl class="kv small">
-    <dt>Given</dt>
-    <dd>
-      Names a resource the behaviour needs. You never write these — ATF creates whatever they name,
-      dependencies first, and hands each record to your own steps.
-    </dd>
-    <dt>When</dt>
-    <dd>The action under test. Yours, defined with <code>@when</code> in a <code>steps/test_*.py</code> module.</dd>
-    <dt>Then</dt>
-    <dd>What must be true afterwards. Yours too, defined with <code>@then</code>.</dd>
-    <dt>Afterwards</dt>
-    <dd>
-      pytest collects one test per scenario, but only once a <code>steps/test_*.py</code> module binds the
-      feature with <code>scenarios(…)</code>. This page tells you if that is still missing.
-      {% if docs() %}<a class="quiet" href="{{ docs('explanation/life-of-a-run/') }}"
-        target="_blank" rel="noreferrer">Life of a run</a>{% endif %}
-    </dd>
-  </dl>
-</details>
-
 {# One form for the whole composer: every control posts the entire draft back, so the server is the
-   only place draft state lives and the preview can never drift from the inputs above it. #}
+   only place draft state lives and what is shown can never drift from the inputs above it. #}
 <form id="compose-form" hx-post="{{ u('/compose/preview') }}" hx-target="#compose-body" hx-swap="innerHTML"
       hx-trigger="change">
   <input type="hidden" name="confirm" value="{{ confirm_token }}">

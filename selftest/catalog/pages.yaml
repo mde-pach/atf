@@ -54,3 +54,12 @@ compose:
   body:
     cockpit: ${cockpits.chained.id}
     path: /compose
+
+primary_node:
+  resource: page
+  represents: A resource nothing has to exist before — the case with no lineage to draw.
+  depends_on:
+    - cockpits.chained
+  body:
+    cockpit: ${cockpits.chained.id}
+    path: /catalog/node/owners.primary

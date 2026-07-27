@@ -34,6 +34,8 @@
   (() => {
     const bar = document.getElementById("scenario-filters");
     const search = bar.querySelector("input[type=search]");
+    const picker = bar.querySelector("details.picker");
+    const label = bar.querySelector("[data-filter-label]");
     const buttons = [...bar.querySelectorAll(".filter")];
     const rows = [...document.querySelectorAll("#scenario-list a[data-state]")];
     const shown = (el) => el.style.display !== "none";
@@ -54,6 +56,8 @@
     for (const button of buttons) button.addEventListener("click", () => {
       state = button.dataset.filter;
       buttons.forEach((other) => other.setAttribute("aria-pressed", String(other === button)));
+      label.textContent = state === "all" ? "All" : state[0].toUpperCase() + state.slice(1);
+      picker.open = false;
       apply();
     });
     search.addEventListener("input", apply);

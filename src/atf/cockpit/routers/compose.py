@@ -15,7 +15,9 @@ whole suite its scenarios.
 from __future__ import annotations
 
 import difflib
+import os
 import re
+import secrets
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,19 +40,18 @@ from ...discovery import (
     parse_feature,
     slug,
 )
+from ...runner import ERROR, PASSED
+from ...runner import run as run_tests
 from ...steps import FIELD, NAME, TYPE, VALUE, generic
 from ..view import cockpit as app
-from ..view import current_env, field_choices, page, partial, plural, require_confirmation
+from ..view import current_env, field_choices, page, partial, plural, require_confirmation, require_mutable
 
 router = APIRouter()
 
 BUILD, TEXT = "build", "text"
 KEYWORDS = (GIVEN, WHEN, THEN)
 
-PURPOSE = (
-    "Name the resources a behaviour needs, then choose each When and Then from the steps this suite "
-    "already defines. ATF writes the Gherkin and proves it parses."
-)
+PURPOSE = "Name what a behaviour needs, then what it does and what must be true. Try it before you keep it."
 
 DOCS_STEPS = "reference/specs-and-fixtures/"
 
@@ -85,6 +86,20 @@ class Row:
 
 
 @dataclass
+class Trial:
+    """What happened when a draft was run without being saved."""
+
+    outcome: str = ""
+    detail: str = ""
+    step: str = ""
+    duration: float = 0.0
+
+    @property
+    def passed(self) -> bool:
+        return self.outcome == PASSED
+
+
+@dataclass
 class Draft:
     """A scenario being composed, and everything the page has to say about it."""
 
@@ -106,10 +121,9 @@ class Draft:
     written: bool = False
     next_steps: list[tuple[str, str, str]] = field(default_factory=list)
     spec_id: str = ""
-
-    @property
-    def new_feature(self) -> bool:
-        return not self.feature
+    starting: bool = False
+    trial: Trial | None = None
+    bound: str = ""
 
     @property
     def where(self) -> str:
@@ -160,8 +174,33 @@ async def apply(request: Request) -> Any:
         raise HTTPException(status_code=409, detail=f"not ready to write — {draft.problems[0]}")
 
     _write(draft)
+    draft.bound = _bind(draft)
     app().invalidate(env)
     _after_writing(env, draft)
+    return partial(request, "partials/compose_builder.html", **_context(env, draft))
+
+
+@router.post("/compose/try")
+async def try_it(request: Request) -> Any:
+    """Run the draft without saving it.
+
+    Composing a scenario and being told to go and run it somewhere else is the point at which the
+    interface stops being one. This writes the draft to a scratch feature, runs that one scenario,
+    reports what happened, and removes it again — so the answer arrives before the decision to keep
+    it does.
+
+    This one *is* gated by `mutable_envs`: unlike writing, running provisions.
+    """
+    env = current_env(request)
+    require_mutable(env)
+    fields = await _fields(request)
+    require_confirmation(fields.get("confirm"))
+
+    draft = _build(env, fields, rows=_rows(env, fields))
+    if draft.problems:
+        raise HTTPException(status_code=409, detail=f"not ready to run — {draft.problems[0]}")
+
+    draft.trial = _try(env, draft)
     return partial(request, "partials/compose_builder.html", **_context(env, draft))
 
 
@@ -231,6 +270,12 @@ def _build(env: str, fields: dict[str, str], rows: list[Row]) -> Draft:
     )
     if draft.mode not in (BUILD, TEXT):
         draft.mode = BUILD
+
+    # Naming a feature and picking one are two different intents, so they are two controls rather
+    # than an empty option in a list of real ones. Picking one always wins: the combo and the New
+    # button post together, and choosing from the combo is the more recent decision.
+    draft.starting = not draft.feature and (fields.get("new") == "1" or not _features(found))
+
     if draft.feature and draft.feature not in _features(found):
         known = ", ".join(_features(found)) or "none"
         raise HTTPException(status_code=404, detail=f"no feature named {draft.feature!r} here (this suite has {known})")
@@ -405,7 +450,7 @@ def _check(draft: Draft, nodes: dict[str, Node], types: set[str], found: Discove
     if not draft.title:
         draft.bad["title"] = "a scenario is named after the behaviour it describes"
         draft.problems.append("The scenario needs a title — it is the name the whole cockpit calls it by.")
-    if draft.new_feature and not draft.feature_title:
+    if draft.starting and not draft.feature_title:
         draft.bad["feature_title"] = "name the feature this scenario starts"
         draft.problems.append("Name the new feature, or add this scenario to one that already exists.")
 
@@ -544,6 +589,93 @@ def _write(draft: Draft) -> None:
     draft.written = True
 
 
+def _steps_dir(found: Discovery) -> Path:
+    """Where the modules that bind features to pytest live — beside the ones already there."""
+    existing = sorted({Path(test.file).parent for test in found.tests if test.file})
+    return existing[0] if existing else app().manifest.specs_dir / "steps"
+
+
+def _binds(specs_dir: Path, feature: Path) -> bool:
+    """Whether some module already hands this feature to pytest."""
+    for path in specs_dir.rglob("*.py"):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if "scenarios(" in text and feature.name in text:
+            return True
+    return False
+
+
+BINDING = '''"""Hands {name} to pytest. Written by the composer; add your own steps below."""
+
+from pytest_bdd import scenarios
+
+scenarios("{path}")
+'''
+
+
+def _bind(draft: Draft) -> str:
+    """Write the module that makes a feature collectable, unless something already does.
+
+    A scenario composed here and then not collected is a scenario that does not exist as far as
+    anything else is concerned, and being told to go and write a `.py` for it is exactly the seam
+    this page exists to remove. Nothing is written when a module already binds the feature — which
+    is the common case, because a feature only needs binding once.
+    """
+    cockpit = app()
+    if draft.path is None:
+        return ""
+    specs_dir = cockpit.manifest.specs_dir
+    if _binds(specs_dir, draft.path):
+        return ""
+
+    steps = _steps_dir(cockpit.discovery(draft.env))
+    steps.mkdir(parents=True, exist_ok=True)
+    module = _inside(steps / f"test_{slug(draft.path.stem)}.py")
+    if module.exists():
+        return ""
+
+    relative = os.path.relpath(draft.path, module.parent)
+    module.write_text(
+        BINDING.format(name=draft.path.name, path=Path(relative).as_posix()), encoding="utf-8"
+    )
+    return str(module)
+
+
+def _try(env: str, draft: Draft) -> Trial:
+    """Run this scenario from a scratch file, then take the file away again."""
+    cockpit = app()
+    specs_dir = cockpit.manifest.specs_dir
+    found = cockpit.discovery(env)
+
+    name = f"atf_trying_{secrets.token_hex(4)}"
+    feature = _inside(_features_dir(found) / f"{name}.feature")
+    module = _inside(_steps_dir(found) / f"test_{name}.py")
+    heading = draft.feature or draft.feature_title or "Trying a scenario"
+
+    try:
+        feature.parent.mkdir(parents=True, exist_ok=True)
+        module.parent.mkdir(parents=True, exist_ok=True)
+        feature.write_text(f"Feature: {heading}\n\n{draft.block}", encoding="utf-8")
+        module.write_text(
+            BINDING.format(name=feature.name, path=Path(os.path.relpath(feature, module.parent)).as_posix()),
+            encoding="utf-8",
+        )
+        summary = run_tests([str(module)], env, cockpit.manifest.root, specs_dir)
+    finally:
+        feature.unlink(missing_ok=True)
+        module.unlink(missing_ok=True)
+
+    result = next(iter(summary.results.values()), None)
+    if result is None:
+        return Trial(outcome=ERROR, detail=summary.output[-600:] or "the run produced no result")
+    failed = result.failed_step
+    return Trial(
+        outcome=result.outcome,
+        detail=(failed.error if failed else "") or result.detail,
+        step=f"{failed.keyword} {failed.text}".strip() if failed else "",
+        duration=result.duration,
+    )
+
+
 def _after_writing(env: str, draft: Draft) -> None:
     """The honest next step. A written scenario is not yet a running one.
 
@@ -680,7 +812,7 @@ def _feature_options(found: Discovery) -> list[dict[str, str]]:
     counts: dict[str, int] = {}
     for spec in found.specs:
         counts[spec.feature] = counts.get(spec.feature, 0) + 1
-    return [{"value": "", "label": "Start a new feature", "meta": "", "desc": ""}] + [
+    return [
         {
             "value": name,
             "label": name,
@@ -730,11 +862,11 @@ def _instance_options(members: list[Node], status: dict[str, Any]) -> list[dict[
 
 
 def _step_options(steps: list[StepDef]) -> list[dict[str, str]]:
-    """Every step of one keyword, the suite's own first.
+    """Every step of one keyword, the ones needing no code first.
 
-    The split is the honest one and it is the first thing an author needs: the steps ATF brings
-    need no code and work in any suite, and the steps below them are this project's own — which
-    is also where a missing wording has to be written.
+    Order is the whole point here. An author looking for "check this field" will take the first
+    plausible thing they see, and if that is a step the project had to write, they conclude that
+    assertions are something you write. They are not, for anything in the catalog.
     """
     options: list[dict[str, str]] = []
     for step in steps:
@@ -745,10 +877,11 @@ def _step_options(steps: list[StepDef]) -> list[dict[str, str]]:
                 "label": step.pattern,
                 "meta": Path(step.file).name if step.file else "",
                 "desc": step.docstring,
-                "group": "Defined by this suite" if mine else "Provided by ATF — no code needed",
+                "group": "This suite's own" if mine else "Ready to use",
+                "rank": "1" if mine else "0",
             }
         )
-    return sorted(options, key=lambda option: (option["group"], option["label"]))
+    return sorted(options, key=lambda option: (option["rank"], option["label"]))
 
 
 def _field_options(

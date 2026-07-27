@@ -272,6 +272,42 @@
     document.addEventListener("DOMContentLoaded", () => atfFitGraph());
     document.body.addEventListener("htmx:afterSwap", (e) => atfFitGraph(e.detail.target));
     addEventListener("resize", () => atfFitGraph());
+
+    // A left list is deliberately never re-rendered — swapping it would throw away the filter and
+    // the scroll position. So the selection it shows is whatever the server last drew, and the
+    // client has to keep it in step with the pane beside it.
+    document.body.addEventListener("htmx:beforeRequest", (e) => {
+      const link = e.detail.elt?.closest?.(".list > a");
+      if (!link) return;
+      for (const other of link.parentElement.querySelectorAll("[aria-current]")) {
+        other.removeAttribute("aria-current");
+      }
+      link.setAttribute("aria-current", "true");
+    });
+
+    // Hover definitions are positioned against the viewport rather than their parent, because
+    // several of the places they are used — a left list, a scrolling table — clip their overflow,
+    // and a definition cut off at the edge of a sidebar explains nothing.
+    function atfPlaceTip(host) {
+      const tip = host.querySelector(":scope > .tip");
+      if (!tip) return;
+      tip.style.position = "fixed";
+      tip.style.bottom = "auto";
+      tip.style.left = "0";
+      tip.style.top = "0";
+      const anchor = host.getBoundingClientRect();
+      const box = tip.getBoundingClientRect();
+      const left = Math.min(Math.max(8, anchor.left), innerWidth - box.width - 8);
+      const above = anchor.top - box.height - 8;
+      tip.style.left = `${left}px`;
+      tip.style.top = `${above > 8 ? above : anchor.bottom + 8}px`;
+    }
+    for (const event of ["mouseover", "focusin"]) {
+      document.addEventListener(event, (e) => {
+        const host = e.target.closest?.(".term, .has-tip");
+        if (host) atfPlaceTip(host);
+      });
+    }
   </script>
 </body>
 </html>

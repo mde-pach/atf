@@ -3,8 +3,9 @@
 {# Column 2 when one resource is selected, in the order of the decision: what it is, what would be
    sent to create it, what it hangs off, and where it is declared.
 
-   The lineage is a diagram only when there is a diagram's worth of it. Below four nodes the
-   sentence says more in a tenth of the space, and the chips under it are the same links. #}
+   The lineage is said in a sentence and, when the resource depends on something, drawn as well.
+   The two answer different questions: the sentence says what has to happen, the diagram shows the
+   shape of it. #}
 
 <div class="card stack">
   <header>
@@ -56,10 +57,13 @@
     {% endif %}
   </div>
 
+  {# The sentence always, because that is what a reader reads; the diagram beside it when there is
+     a shape to see. One line and one picture answer different questions about the same thing. #}
+  <p class="small">{{ lineage }}</p>
+
   {% if graph %}
     <div class="stack">
       <h3>Lineage</h3>
-      <p class="small muted">What has to exist before {{ node.name }} can — hover a box for what it is.</p>
       <div class="graph-wrap" style="max-height: 62vh">
         <div class="graph" style="width: {{ graph.width }}px; height: {{ graph.height + 88 }}px">
           <svg width="{{ graph.width }}" height="{{ graph.height }}" aria-hidden="true">
@@ -85,8 +89,6 @@
         </div>
       </div>
     </div>
-  {% else %}
-    <p class="small">{{ lineage }}</p>
   {% endif %}
 
   {# One line for the three ways this resource is connected. Three headed sections of chips is three

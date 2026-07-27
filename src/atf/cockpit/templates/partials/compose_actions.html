@@ -1,0 +1,87 @@
+{% import "partials/macros.html" as ui with context %}
+{# What is left to do, what happened when it ran, and the two controls. No heading: the buttons say
+   what they do and the page above them is what they act on. #}
+
+{% set post = u('/compose/preview') %}
+{% set swap = 'hx-target="#compose-body" hx-swap="innerHTML"' %}
+
+{% if draft.mode == 'text' %}
+  <div class="field">
+    <label for="compose-text">The scenario, as text</label>
+    <textarea id="compose-text" name="text" spellcheck="false">{{ draft.text }}</textarea>
+  </div>
+{% elif draft.block.strip() %}
+  {# The scenario itself, unlabelled. It is the thing being made, not a section about the thing. #}
+  <div class="preview">{{ draft.block }}</div>
+{% endif %}
+
+{% if draft.written %}
+  <div class="banner ok stack">
+    <span>
+      Written to <span class="mono">{{ rel(draft.where) }}</span>{% if draft.bound %}, and bound by
+      <span class="mono">{{ rel(draft.bound) }}</span> so pytest collects it{% endif %}.
+    </span>
+    {% if draft.next_steps %}
+      {# Never "done" while something real is still missing. #}
+      <ul class="small">
+        {% for sentence, label, path in draft.next_steps %}
+          <li>{{ sentence }}{% if label and path and docs() %} <a href="{{ docs(path) }}">{{ label }}</a>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+{% elif validated and draft.problems %}
+  <div class="banner warn stack">
+    <ul class="small">{% for problem in draft.problems %}<li>{{ problem }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+
+{% if draft.trial %}
+  {# Run before saved: the answer arrives before the decision to keep it does. #}
+  <div class="banner {{ 'ok' if draft.trial.passed else 'bad' }} stack">
+    <span>
+      <span class="flag {{ tone(draft.trial.outcome) }}"></span>
+      It {{ draft.trial.outcome }} in {{ dur(draft.trial.duration) }} against {{ env }}
+      {%- if not draft.written %} — nothing has been saved{% endif %}.
+    </span>
+    {% if draft.trial.step %}<span class="small mono">{{ draft.trial.step }}</span>{% endif %}
+    {% if draft.trial.detail %}<pre class="whence">{{ draft.trial.detail }}</pre>{% endif %}
+  </div>
+{% endif %}
+
+<div class="row">
+  {% set why = "" if mutable else env ~ " is read-only — it is not in mutable_envs" %}
+  <button type="button" hx-post="{{ u('/compose/try') }}" {{ swap | safe }} hx-disabled-elt="this"
+          {% if draft.problems or why %}disabled{% endif %}
+          {% if why %}aria-describedby="why-compose-try"{% endif %}
+          title="Run it against {{ env }} without saving it">
+    <span class="glyph" aria-hidden="true">▷</span>Try it
+  </button>
+
+  <button class="primary" type="button" hx-post="{{ u('/compose/apply') }}" {{ swap | safe }}
+          hx-disabled-elt="this"
+          {% if not draft.written %}hx-confirm="Write this scenario into {{ rel(draft.where) }}?"{% endif %}
+          {% if draft.problems or draft.written %}disabled aria-describedby="why-compose-apply"{% endif %}>
+    {{ "Saved" if draft.written else "Save" }}
+  </button>
+
+  <span class="grow"></span>
+
+  {% if draft.mode == 'text' %}
+    <button class="ghost" type="button" hx-post="{{ post }}" {{ swap | safe }} hx-vals='{"to_mode": "build"}'>
+      Back to the builder
+    </button>
+  {% else %}
+    <button class="ghost" type="button" hx-post="{{ post }}" {{ swap | safe }} hx-vals='{"to_mode": "text"}'>
+      Edit as text
+    </button>
+  {% endif %}
+
+  {% if why %}<span class="why" id="why-compose-try">{{ why }}</span>{% endif %}
+  {% if draft.written %}
+    <a class="btn" href="{{ u('/compose', feature=draft.feature or draft.feature_title) }}">
+      <span class="glyph">＋</span>Add another
+    </a>
+    {% if draft.spec_id %}<a class="btn" href="{{ u('/scenarios/' ~ draft.spec_id) }}">Open it</a>{% endif %}
+  {% endif %}
+</div>

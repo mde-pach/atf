@@ -115,6 +115,55 @@ pre { margin: 0; }
 .small { font-size: 12.5px; }
 .scroll-x { overflow-x: auto; max-width: 100%; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* A choice that is usually left alone: one control that says what it is set to, opening onto the
+   alternatives. A permanent row of five buttons is five buttons reading zero on a good day. */
+.picker { position: relative; }
+.picker > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.picker > summary::-webkit-details-marker { display: none; }
+.picker > summary:hover { background: var(--surface-2); }
+.picker[open] > summary { border-color: var(--running); }
+.picker .glyph { font-size: 10px; color: var(--text-dim); }
+.picker-body {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 170px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.picker-body .filter {
+  border-color: transparent;
+  background: transparent;
+  text-align: left;
+  padding: 6px 9px;
+  font-size: 12.5px;
+}
+.picker-body .filter:hover { background: var(--surface-2); }
+.picker-body .filter[aria-pressed="true"] { background: var(--surface-2); font-weight: 600; }
+
+/* A run is one glyph: the label said "Run this scenario" beside a scenario that was already named. */
+button.play { padding: 7px 12px; }
+button.play .glyph { font-size: 12px; opacity: 1; }
 .row .grow { flex: 1 1 auto; }
 .stack { display: flex; flex-direction: column; gap: 12px; }
 .actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
@@ -742,7 +791,8 @@ td.state .flag { display: inline-block; margin-right: 7px; }
 .builder-step .kw { font-weight: 600; color: var(--entity-spec); text-align: right; padding-top: 6px; }
 .builder-step.given .kw { color: var(--entity-resource); }
 .builder-step .body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.builder-step .drop { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* A control and whatever sits beside it — a picker and its + New, a combo and its chip. */
+.drop { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 /* A step's wording is long, so its picker gets the room a resource pair does not need. */
 .builder-step .drop > .combo:only-child { max-width: 100%; }
 .builder-add { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }

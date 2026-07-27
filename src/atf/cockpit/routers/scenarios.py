@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from ...jobs import RUN
 from ..view import BLOCKED, FAILING, NEVER_RUN, PASSING, ScenarioView, current_env, page, partial, scenario_views
 from ..view import cockpit as app
 
@@ -59,10 +60,22 @@ def _context(env: str, spec_id: str, prefer: str = "") -> dict[str, Any]:
         "focus": view.id if view else "",
         "status": app().status(env),
         "results": app().results(env),
+        # Named by the name the scenario used, so a step reads `visitor` rather than `guests.visitor`.
+        "nodes": app().state(env).materializer.nodes,
+        # What a run currently has in flight, so a verdict on screen moves with it.
+        "busy": _busy(env),
         "failed_index": _failed_index(view) if view else None,
         "tally": {state: sum(1 for item in views if item.state == state) for state in FILTERS},
         "preset": "",
     }
+
+
+def _busy(env: str) -> set[str]:
+    """The tests a run has started and not finished. Empty whenever nothing is running."""
+    job = app().active_job(env)
+    if job is None or job.kind != RUN:
+        return set()
+    return {item.id for item in job.items.values() if not item.done}
 
 
 def _failed_index(view: ScenarioView) -> int | None:

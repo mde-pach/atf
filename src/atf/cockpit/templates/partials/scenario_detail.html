@@ -5,28 +5,35 @@
   <div class="card">{{ ui.empty("Pick a scenario to see whether it can run here and how it went last time.") }}</div>
 {% else %}
 
-{% set why_not_run = "no test covers this scenario yet"
+{% set why_not_run = "nothing collects this scenario yet"
      if not view.tests else ("" if mutable else env ~ " is read-only — it is not in mutable_envs") %}
+{% set running = view.nodeids | select("in", busy) | list | length > 0 %}
 
-<div class="stack">
+{# While a run is in flight this pane re-fetches itself, so the verdict here moves with it rather
+   than only appearing in the dock. The trigger reads the dock, so it costs nothing when idle. #}
+<div class="stack" hx-get="{{ u('/scenarios/' ~ view.id) }}" hx-target="#scenario-detail" hx-swap="innerHTML"
+     hx-trigger="every 1s [document.querySelector('#activity .running')]">
   <div class="card stack">
     <header>
       <h2>{{ view.spec.scenario }}</h2>
-      <span class="muted small">in {{ view.spec.feature }}</span>
       {# A Gherkin tag is a real label on the scenario, so it is one of the few things that earns a badge. #}
       {% for tag in view.spec.tags %}<span class="tag">@{{ tag }}</span>{% endfor %}
       {# The one headline state of this page, so the one place a filled lozenge is earned. #}
-      <span class="pill loud {{ tone(view.state) }}">{{ view.state }}</span>
+      {% if running %}
+        <span class="pill loud running">running</span>
+      {% else %}
+        <span class="pill loud {{ tone(view.state) }}">{{ view.state }}</span>
+      {% endif %}
       {% if view.flaky %}<span class="pill warn">flaky</span>{% endif %}
 
       <div class="actions">
-        <form hx-post="{{ u('/run') }}" hx-target="#activity" hx-swap="innerHTML" hx-disabled-elt="find button"
-              {% if not why_not_run %}hx-confirm="Run this scenario against {{ env }}?"{% endif %}>
+        <form hx-post="{{ u('/run') }}" hx-target="#activity" hx-swap="innerHTML" hx-disabled-elt="find button">
           <input type="hidden" name="confirm" value="{{ confirm_token }}">
           {% for nodeid in view.nodeids %}<input type="hidden" name="nodeid" value="{{ nodeid }}">{% endfor %}
-          <button class="primary" type="submit"
-                  {% if why_not_run %}disabled aria-describedby="why-run-scenario"{% endif %}>
-            Run {{ "this scenario" if view.tests | length < 2 else view.tests | length ~ " tests" }}
+          <button class="primary play" type="submit" title="Run this scenario against {{ env }}"
+                  aria-label="Run this scenario against {{ env }}"
+                  {% if why_not_run or running %}disabled aria-describedby="why-run-scenario"{% endif %}>
+            <span class="glyph" aria-hidden="true">▶</span>
           </button>
           {% if why_not_run %}<span class="why" id="why-run-scenario">{{ why_not_run }}</span>{% endif %}
         </form>
@@ -52,11 +59,13 @@
       {% for step in view.spec.steps %}
         {% set ran = view.step_state(step) %}
         <div class="step{{ ' failed' if loop.index0 == failed_index else (' passed' if ran == 'passed' else '') }}">
-          <span class="kw">{{ step.keyword }}</span>
+          {# The keyword carries what it means: three words a newcomer has to be told once. #}
+          <span class="kw">{{ ui.term(step.keyword | lower, step.keyword) }}</span>
           <span class="text">
             {{ step.text }}
             {%- for node_id in step.resources %}
-              {{ ui.ref('resource', u('/catalog/node/' ~ node_id), node_id,
+              {# Named by the name the scenario used. The type is one word to the left of it. #}
+              {{ ui.ref('resource', u('/catalog/node/' ~ node_id), nodes[node_id].name if node_id in nodes else node_id,
                         status=status.get(node_id, {}).get("status"),
                         title=node_id ~ " — " ~ (status.get(node_id, {}).get("status") or "unknown") ~ " in " ~ env) }}
             {%- endfor %}
@@ -128,7 +137,7 @@
     {% elif view.tests | length > 1 %}
       <div class="scroll-x">
         <table>
-          <thead><tr><th>test</th><th>outcome</th><th class="num">duration</th></tr></thead>
+          <thead><tr><th>row</th><th>outcome</th><th class="num">duration</th></tr></thead>
           <tbody>
             {% for test in view.tests %}
               {% set result = results.get(test.nodeid) %}
@@ -147,9 +156,9 @@
     {% if not view.tests %}
       <div class="banner warn stack">
         {{ ui.empty(
-          "No test covers this scenario, so nothing here ever runs it. Bind it with scenarios(…) in a "
-          "steps/test_*.py module and pytest will collect one test per scenario.",
-          "How scenarios become tests",
+          "Nothing collects this scenario, so it never runs. Adding another scenario to this feature "
+          "through the composer writes the binding for you.",
+          "How a scenario is collected",
           docs('reference/specs-and-fixtures/')) }}
       </div>
     {% endif %}

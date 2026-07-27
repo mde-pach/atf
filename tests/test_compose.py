@@ -112,11 +112,13 @@ def test_a_parameterised_step_gets_an_input_per_capture(client):
     assert 'value="standard"' in body
 
 
-def test_the_page_explains_which_steps_are_yours_to_write(client):
+def test_the_page_says_which_steps_are_yours_to_write_by_grouping_them(client):
+    """Said by the shape of the list rather than by a paragraph above it: explaining what someone
+    is looking at is what you do when it is not clear enough on its own."""
     body = client.get("/compose").text
-    assert "You never write these" in body
-    assert "@when" in body and "@then" in body
-    assert "scenarios(…)" in body  # the second half of the work, said before it is needed
+    then_picker = body[body.index('name="pattern_2"'):]
+    assert then_picker.index("Ready to use") < then_picker.index("This suite&#39;s own")
+    assert "How a scenario is put together" not in body
 
 
 def test_a_suite_with_no_when_or_then_steps_is_told_how_to_write_one(client):
@@ -133,8 +135,8 @@ def test_a_suite_with_no_when_or_then_steps_is_told_how_to_write_one(client):
 def test_the_steps_atf_provides_are_offered_apart_from_the_suites_own(client):
     """Which is the first thing an author needs: one group needs code, the other never does."""
     body = client.get("/compose").text
-    assert "Provided by ATF — no code needed" in body
-    assert "Defined by this suite" in body
+    assert "Ready to use" in body
+    assert "This suite&#39;s own" in body
     assert esc(FIELD_IS) in body
 
 
@@ -296,10 +298,9 @@ def test_rows_can_be_added_and_removed(client):
     assert "I read its plan" not in preview_of(removed)
 
 
-def test_the_diff_is_shown_before_anything_is_written(client, project):
+def test_the_scenario_is_shown_before_anything_is_written(client, project):
     body = client.post("/compose/preview", data=draft()).text
-    assert 'class="diff"' in body
-    assert '<div class="add">+  Scenario: A brand new behaviour</div>' in body
+    assert "Scenario: A brand new behaviour" in preview_of(body)
     assert "A brand new behaviour" not in feature_file(project).read_text(encoding="utf-8")
 
 
@@ -366,7 +367,7 @@ def test_text_mode_is_validated_by_the_same_parser(client):
     fixed = typed.replace("I invent a wording", "I read its plan")
     ok = client.post("/compose/preview", data={"mode": "text", "feature": "Accounts", "text": fixed}).text
     assert "Not ready to write yet" not in ok
-    assert "Every step resolves" in ok
+    assert 'class="banner warn' not in ok, "nothing resolves badly, so nothing is said about it"
 
 
 def test_typed_text_is_re_indented_to_match_the_rest_of_the_file(client, project):
@@ -522,21 +523,29 @@ def test_writing_a_scenario_is_not_gated_on_mutable_envs(client, project):
 # ---- after writing ---------------------------------------------------------
 
 
-def test_a_scenario_in_a_bound_feature_is_reported_as_runnable(client):
+def test_a_scenario_in_a_bound_feature_needs_no_new_module(client):
     body = client.post("/compose/apply", data={**draft(), "confirm": confirm(client)}).text
-    assert "still parses" in body
-    assert "runnable now" in body
-    assert "It will not run yet" not in body
+    assert "Written to" in body
+    assert "so pytest collects it" not in body, "accounts.feature is already bound"
 
 
-def test_a_brand_new_feature_says_it_needs_a_scenarios_binding(client):
+def test_a_brand_new_feature_is_bound_without_anyone_writing_a_py_file(client, project):
+    """Composing a scenario and then being told to go and write Python is the point at which the
+    interface stops being one."""
     body = client.post(
         "/compose/apply",
         data={**draft(feature="", feature_title="Billing"), "confirm": confirm(client)},
     ).text
-    assert "It will not run yet" in body
-    assert "No test collects Billing yet" in body
-    assert "../features/billing.feature" in body
+    assert "so pytest collects it" in body
+    assert "It will not run yet" not in body
+
+    module = project / "specs" / "steps" / "test_billing.py"
+    assert module.is_file()
+    assert 'scenarios("../features/billing.feature")' in module.read_text()
+
+    found = client.cockpit.discovery("dev", refresh=True)
+    spec = next(item for item in found.specs if item.feature == "Billing")
+    assert found.tests_for_spec(spec.id), "pytest collects it now, with nothing else written"
 
 
 def test_writing_invalidates_the_cached_discovery(client):

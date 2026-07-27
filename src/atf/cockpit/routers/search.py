@@ -49,16 +49,26 @@ def _hits(env: str, query: str) -> list[Hit]:
         score = _score(query, node["name"], node_id, node["resource"], node["represents"])
         if score:
             state = status.get(node_id, {}).get("status", "")
+            # What it is beats what it is called: a hit on the description has to show the
+            # description, or the row gives no reason for having matched.
             hits.append(
-                Hit("resource", node_id, state or node["resource"], f"/catalog/node/{node_id}?env={env}", score)
+                Hit("resource", node["name"], _sub(state or node["resource"], node["represents"]),
+                    f"/catalog/node/{node_id}?env={env}", score)
             )
 
     for spec in cockpit.discovery(env).specs:
-        score = _score(query, spec.scenario, spec.feature, " ".join(spec.tags))
+        score = _score(query, spec.scenario, spec.feature, " ".join(spec.tags), spec.narrative)
         if score:
-            hits.append(Hit("scenario", spec.scenario, spec.feature, f"/scenarios/{spec.id}?env={env}", score))
+            hits.append(
+                Hit("scenario", spec.scenario, _sub(spec.feature, spec.narrative),
+                    f"/scenarios/{spec.id}?env={env}", score)
+            )
 
     return sorted(hits, key=lambda hit: (-hit.score, hit.label))[:LIMIT]
+
+
+def _sub(fact: str, described: str) -> str:
+    return f"{fact} · {described}" if described else fact
 
 
 def _score(query: str, *fields: str) -> int:

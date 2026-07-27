@@ -61,6 +61,32 @@ TERMS: dict[str, Term] = {
         "each type becomes a pytest fixture and a word your scenarios can use.",
         "resource-type",
     ),
+    # The three words a scenario is written in. Nobody is born knowing them, they appear on every
+    # scenario in the suite, and one sentence each is the whole of what has to be said.
+    "given": Term(
+        "Given",
+        "What must exist before the behaviour makes sense. You never write these — ATF creates "
+        "whatever they name, and everything those depend on, before the scenario runs.",
+        "scenario",
+    ),
+    "when": Term(
+        "When",
+        "The thing being done. One per scenario, usually: if there are three, there are probably "
+        "three scenarios.",
+        "scenario",
+    ),
+    "then": Term(
+        "Then",
+        "What must be true afterwards. Asserting on a field of a resource needs no code — ATF "
+        "reads it back through the adapter and compares it.",
+        "scenario",
+    ),
+    "and": Term(
+        "And",
+        "The same keyword as the line above it, so a run of Givens or Thens reads as prose "
+        "instead of repeating itself.",
+        "scenario",
+    ),
     "scenario": Term(
         "Scenario",
         "A behaviour written in Gherkin, in the language of the domain. It declares the resources it "

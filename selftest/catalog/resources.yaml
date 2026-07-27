@@ -26,3 +26,12 @@ element:
   mode: reference
   natural_key: [page, selector]
   id_field: selector
+
+# An element is what the server sent. A view is what is *there* — after the stylesheet applied,
+# htmx swapped and a combobox decided what to show. It costs a real browser, so it exists only for
+# the assertions no amount of HTML parsing can make.
+view:
+  system: browser
+  mode: reference
+  natural_key: [page, selector]
+  id_field: selector

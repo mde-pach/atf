@@ -224,6 +224,123 @@ def _fetch(cockpit: str, path: str) -> httpx.Response | None:
         return None
 
 
+# ---- what the page becomes once it has run ----------------------------------
+
+
+class BrowserUnavailable(Exception):
+    """Playwright or its browser is not installed here."""
+
+
+class ViewAdapter(NoopDelete):
+    """What a selector matches in a real browser, optionally after doing something first.
+
+    An `element` is what the server sent. A `view` is what is *there* — after the stylesheet has
+    applied, htmx has swapped and a combobox has decided what to show. That difference is the only
+    reason to pay for a browser, so it is the only thing this type is for: `visible` is the field
+    no amount of HTML parsing can tell you.
+
+    A node may declare `after:`, a list of things to do before looking:
+
+        after:
+          - { do: click, at: "input.combo-input" }
+          - { do: type,  at: "input.combo-input", text: "belongs" }
+
+    The key is `at` rather than the more natural `on` because YAML 1.1 reads a bare `on` as the
+    boolean true, so `{do: click, on: "..."}` arrives as `{True: "..."}` — silently, and with an
+    empty selector at the far end of it.
+
+    Which makes "the options a step picker shows once you have typed `belongs`" a resource with a
+    name, a description and a place in the catalog, like anything else.
+    """
+
+    ACTIONS = ("click", "focus", "type", "press")
+
+    def find(self, node: Node, ctx: Context) -> Record | None:
+        cockpit = str(ctx.resolve(node["body"]["cockpit"]))
+        page = str(ctx.resolve(node["body"]["page"]))
+        selector = str(node["body"]["selector"])
+        after = node["body"].get("after") or []
+
+        with _browser() as browser:
+            tab = browser.new_page()
+            try:
+                tab.goto(f"{cockpit.rstrip('/')}{page}", wait_until="load")
+                for step in after:
+                    self._do(node, tab, step)
+                return self._read(tab, page, selector)
+            finally:
+                tab.close()
+
+    def _do(self, node: Node, tab: Any, step: Any) -> None:
+        if not isinstance(step, dict) or step.get("do") not in self.ACTIONS:
+            raise ValueError(f"{node['id']}: `after` takes {{do, at, text}} with do in {self.ACTIONS}")
+        action, target, text = step["do"], str(step.get("at", "")), str(step.get("text", ""))
+        if not target:
+            raise ValueError(f"{node['id']}: `after` step {step!r} names nothing to act on")
+        if action == "click":
+            tab.click(target)
+        elif action == "focus":
+            tab.focus(target)
+        elif action == "type":
+            tab.fill(target, "")
+            tab.type(target, text)
+        else:
+            tab.press(target, text)
+        # The cockpit's own JS is synchronous; htmx is not, so give a swap a chance to land.
+        tab.wait_for_timeout(150)
+
+    def _read(self, tab: Any, page: str, selector: str) -> Record | None:
+        found = tab.query_selector_all(selector)
+        if not found:
+            return None
+        first = found[0]
+        attributes = first.evaluate("e => Object.fromEntries([...e.attributes].map(a => [a.name, a.value]))")
+        record: Record = {
+            name: value for name, value in attributes.items() if name not in RESERVED and name != "visible"
+        }
+        record.update(
+            {
+                "selector": selector,
+                "page": page,
+                "count": len(found),
+                "visible": sum(1 for handle in found if handle.is_visible()),
+                "text": " ".join((first.inner_text() or "").split()),
+            }
+        )
+        return record
+
+    def create(self, node: Node, body: Record, ctx: Context) -> Record:
+        raise ValueError(f"{node['id']}: a view is observed, never created")
+
+
+@contextlib.contextmanager
+def _browser():
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:  # pragma: no cover - depends on what is installed
+        raise BrowserUnavailable("playwright is not installed — `uv sync --group browser`") from exc
+
+    with sync_playwright() as driver:
+        try:
+            browser = driver.chromium.launch()
+        except Exception as exc:  # noqa: BLE001 - any launch failure means the same thing here
+            raise BrowserUnavailable(f"no chromium to drive — `uv run playwright install chromium` ({exc})") from exc
+        try:
+            yield browser
+        finally:
+            browser.close()
+
+
+def browser_available() -> bool:
+    """Whether the scenarios that need a real browser can run here. Never raises."""
+    try:
+        with _browser():
+            return True
+    except Exception:  # noqa: BLE001 - the answer to "can we?" is never an exception
+        return False
+
+
 register("cockpit", CockpitAdapter)
 register("page", lambda settings: PageAdapter())
 register("element", lambda settings: ElementAdapter())
+register("browser", lambda settings: ViewAdapter())

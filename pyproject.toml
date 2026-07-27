@@ -28,6 +28,10 @@ atf = "atf.cli:main"
 [dependency-groups]
 dev = ["ruff", "ty"]
 docs = ["mkdocs>=1.6", "mkdocs-material>=9.5"]
+# Only `selftest/` uses this, and only for the scenarios that need a page to have *run* rather
+# than merely been served. Absent, those scenarios skip and everything else still passes:
+#   uv sync --group browser && uv run playwright install chromium
+browser = ["playwright>=1.40"]
 
 [build-system]
 requires = ["hatchling"]

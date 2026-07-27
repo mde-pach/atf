@@ -38,3 +38,26 @@ Feature: The cockpit
     Given the page "compose"
     Then the element "compose_write_button" field "text" is "Write this scenario"
     And the element "compose_write_chip" is gone
+
+  # Everything below needs the page to have *run*, not merely been served, so it needs a real
+  # browser. Without one these skip and the rest of the suite still passes — see the README.
+  @browser
+  Scenario: A step picker keeps its options hidden until it is opened
+    Given the view "then_picker_at_rest"
+    Then the view "then_picker_at_rest" field "visible" is "0"
+
+  @browser
+  Scenario: Focusing a step picker shows what it offers
+    Given the view "then_picker_opened"
+    Then the view "then_picker_opened" field "visible" is not "0"
+
+  @browser
+  Scenario: Typing narrows a step picker to what matches
+    Given the view "then_picker_filtered"
+    Then the view "then_picker_filtered" field "visible" is "1"
+    And the view "then_picker_filtered" field "data-value" is "the list belongs to the owner"
+
+  @browser
+  Scenario: A small lineage reads as a sentence a person can follow
+    Given the view "catalog_lineage_sentence"
+    Then the view "catalog_lineage_sentence" field "text" is "A list under the primary owner."

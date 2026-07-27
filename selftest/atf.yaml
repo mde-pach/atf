@@ -19,6 +19,7 @@ environments:
       cockpit: {}
       page: {}
       element: {}
+      browser: {}
     clients:
       atf:
         backend_url_env: SELFTEST_BACKEND
@@ -30,3 +31,4 @@ display:
     cockpit: { label: Cockpit, color: "#2f6be0" }
     page: { label: Page, color: "#0f8f6f" }
     element: { label: Element, color: "#b8860b" }
+    browser: { label: Browser, color: "#c2410c" }

@@ -8,6 +8,7 @@ plugin, and the `atf` CLI — with the specs written in Gherkin like any other s
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,10 +19,18 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 SELFTEST = REPO / "selftest"
 
-SCENARIOS = 16
+SCENARIOS = 20
+
+# The scenarios that need the page to have *run*, not merely been served. They skip where there is
+# no browser, which is the one thing about this suite that legitimately differs between machines.
+BROWSER_SCENARIOS = 4
+
+NOWHERE = "/nonexistent-so-no-browser-can-be-launched"
 
 
-def run_selftest(*args: str, src: Path | None = None) -> subprocess.CompletedProcess[str]:
+def run_selftest(
+    *args: str, src: Path | None = None, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "pytest", "-q", *args],
         cwd=SELFTEST,
@@ -30,6 +39,7 @@ def run_selftest(*args: str, src: Path | None = None) -> subprocess.CompletedPro
             "PYTHONPATH": str(src or REPO / "src"),
             # the suite shells out to `atf`; point that copy at the same source
             "ATF_SELFTEST_SRC": str(src or REPO / "src"),
+            **(env or {}),
         },
         capture_output=True,
         text=True,
@@ -37,10 +47,35 @@ def run_selftest(*args: str, src: Path | None = None) -> subprocess.CompletedPro
     )
 
 
+def counts(output: str) -> tuple[int, int]:
+    def number(word: str) -> int:
+        found = re.search(rf"(\d+) {word}", output)
+        return int(found.group(1)) if found else 0
+
+    return number("passed"), number("skipped")
+
+
 def test_atf_passes_its_own_specs():
     result = run_selftest()
     assert result.returncode == 0, result.stdout + result.stderr
-    assert f"{SCENARIOS} passed" in result.stdout
+
+    passed, skipped = counts(result.stdout)
+    assert passed + skipped == SCENARIOS, result.stdout
+    assert skipped in (0, BROWSER_SCENARIOS), "only the browser-tagged scenarios may skip"
+
+
+def test_the_suite_is_still_a_meaningful_self_test_without_a_browser():
+    """Most of this suite reads pages the server rendered, and that needs nothing installed.
+
+    A checkout that never ran `uv sync --group browser` must still go green and still prove
+    something — otherwise the browser layer has quietly become mandatory.
+    """
+    result = run_selftest(env={"PLAYWRIGHT_BROWSERS_PATH": NOWHERE})
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    passed, skipped = counts(result.stdout)
+    assert skipped == BROWSER_SCENARIOS
+    assert passed == SCENARIOS - BROWSER_SCENARIOS
 
 
 def test_the_self_hosted_suite_uses_atf_rather_than_reimplementing_it():

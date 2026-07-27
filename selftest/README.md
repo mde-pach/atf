@@ -3,7 +3,7 @@
 This is an ATF suite whose system under test is ATF.
 
 ```sh
-PYTHONPATH=../src uv run pytest -q      # 16 passed
+PYTHONPATH=../src uv run pytest -q      # 20 passed, or 16 passed + 4 skipped without a browser
 ```
 
 If the vocabulary below is unfamiliar, the
@@ -45,10 +45,40 @@ scaffolds a suite, starts a server over it, fetches the page, and tears both dow
 An element that matches nothing is *absent*, which is what makes `Then the element "…" is gone` say
 what it means: it is how this suite proves a piece of interface was removed and stayed removed.
 
-The cockpit is server-rendered, so reading it needs no browser: `html_select.py` is a small
+The cockpit is server-rendered, so most of this needs no browser: `html_select.py` is a small
 CSS-subset selector over the standard library's HTML parser, and it is unit-tested in
 `tests/test_html_select.py` because the cockpit feature only exercises it as deep as its own
 assertions go.
+
+### The four scenarios that do need one
+
+An `element` is what the server *sent*. A `view` is what is *there* — after the stylesheet applied,
+htmx swapped and a combobox decided what to show. `visible` is the field no amount of HTML parsing
+can give you, and it is the only reason this suite pays for a browser.
+
+A view may declare what to do before looking, which turns "the options a step picker shows once you
+have typed `belongs`" into a resource with a name and a description:
+
+```yaml
+then_picker_filtered:
+  resource: view
+  body:
+    selector: "#compose-form .builder-step:last-of-type .combo-list li[role=option]:not([hidden])"
+    after:
+      - { do: click, at: "#compose-form .builder-step:last-of-type .combo-input" }
+      - { do: type, at: "#compose-form .builder-step:last-of-type .combo-input", text: "belongs" }
+```
+
+(`at`, not the more natural `on`: YAML 1.1 reads a bare `on` as the boolean true, so the key would
+arrive as `True` with an empty selector at the far end of it.)
+
+Those scenarios are tagged `@browser` and skipped where Playwright or its browser is missing, so a
+plain checkout still runs everything else and still goes green. To run them:
+
+```sh
+uv sync --group browser
+uv run playwright install chromium
+```
 
 ## What it covers that unit tests cannot
 

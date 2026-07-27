@@ -105,5 +105,7 @@ whether ATF may create it, `lifecycle` says whether it is reused.
 ## Where to go next
 
 - [How to add a resource](../how-to/add-a-resource.md) — where these keys go.
-- [Catalog reference](../reference/catalog.md) — `lifecycle` and `mode` in full.
-- [About the model](the-model.md) — how resources relate to specs and tests.
+- [Catalog reference](../reference/catalog.md#lifecycle) — `lifecycle` and `mode` in full.
+- [Life of a run](life-of-a-run.md#tear-down) — when teardown happens, and what it skips.
+- [Glossary](glossary.md) — `persistent`, `ephemeral` and `reference mode` in a sentence each.
+- [About the model](the-model.md) — how resources relate to scenarios and tests.

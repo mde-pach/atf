@@ -7,55 +7,52 @@ from a single sentence:
 > **test**.
 
 Getting this vocabulary straight is most of understanding ATF, because each word names something the
-framework treats as a distinct kind of thing — with its own file format, its own page in the
+framework treats as a distinct kind of thing — with its own file format, its own place in the
 cockpit, and its own reason to change.
 
-## The vocabulary
+Every one of those words is defined once, crisply, in the [glossary](glossary.md). This page is
+about why they are separate words at all.
 
-A **resource** is one entity a test needs in order to be meaningful: an account, a subscription, a
-feed. It is a node in the catalog, and it names an instance — `accounts.primary`, not "an account".
-A **resource type** is the kind — `account` — declared once, with many instances beneath it.
+## Three distinctions worth holding on to
 
-A **spec** is a behaviour, written in Gherkin, in the language of the domain rather than the
-implementation. It says what should be true, not how to check it.
+**A resource is an instance, not a kind.** `accounts.primary`, not "an account". The kind is a
+[resource type](glossary.md#resource-type), declared once, with as many instances beneath it as your
+specs need. Almost everything ATF does is per instance; almost everything you configure is per type.
 
-A **test** is what pytest collects: one per scenario, or one per row of an `Examples` table. Tests
-are not written; they are the mechanical consequence of a spec.
+**A scenario and a test are not the same thing.** A scenario is a behaviour, written in Gherkin. A
+test is what pytest collects from it — one per scenario, or one per row of an `Examples` table.
+Tests are never written; they follow. (The directory is called `specs/`, and "spec" and "scenario"
+are used interchangeably for what lives in it.)
 
-A **fixture** is what a test builds on. Some are yours — an HTTP client, a clock. Others ATF
-generates, one per resource type.
-
-An **adapter** knows how to `find`, `create` and `delete` resources in one backend. It is the only
-place that knows a backend exists.
-
-The **context** is the per-scenario scratchpad. Steps write to it and read from it; it is the only
-channel between them.
-
-The **materializer** is the engine that turns a resource declaration into a real one — it walks the
-dependency graph and calls the adapters. The **cockpit** is the web app that renders all of the
-above. Neither is something you write; both are things you use.
+**A resource is not a fixture.** A fixture is a function: the only way to learn what it does is to
+run it. A resource is data: ATF can read the whole graph, validate it, and draw it, without
+executing anything. That difference is what the rest of this page is about.
 
 ## Why the relationships matter more than the parts
 
 Most test frameworks have fixtures and tests. ATF adds resources and specs, and the value is not in
 having four things instead of two — it is that the edges between them are known to the framework.
 
-Because ATF knows which resources a spec names, it can answer questions no ordinary suite can:
+Because ATF knows which resources a scenario names, it can answer questions no ordinary suite can:
 
-- Which tests depend on this account? (If I break it, what goes red?)
-- Which resources does no spec exercise? (What am I maintaining for nothing?)
-- Which specs have no covering test? (What did I describe but never check?)
+- Which scenarios depend on this account? (If I break it, what goes red?)
+- Which resource types does no scenario exercise? (What am I maintaining for nothing?)
+- Would this scenario even get off the ground in staging? (Or is something it needs missing?)
 
 That is what the cockpit is: a rendering of those edges. It is not a test runner with a web page
 bolted on; it exists because the model has edges worth looking at.
 
-The edges are also why the catalog is not just a fixtures file with extra steps. A fixture is a
-function — you can only find out what it does by running it. A resource is data, so ATF can read the
-whole graph without executing anything, before deciding what to build.
+The edges have to be real ones. An earlier version of the cockpit also asked "which specs have no
+covering test?", which sounds like the same kind of question and is not: pytest-bdd binds a test to
+every scenario, so the answer was always "none" and the number could never move. A question whose
+answer is fixed by construction is not worth a reader's attention, however good it looks on a
+dashboard.
 
-## How a scenario becomes a run
+The same edges are why the cockpit can tell you a scenario would not get off the ground before you
+run it. It knows what the scenario names and what state each of those is in — see
+[readiness](../reference/cockpit.md#readiness).
 
-Consider:
+## Where the line between you and the framework falls
 
 ```gherkin
 Scenario: A project belongs to its account
@@ -65,17 +62,13 @@ Scenario: A project belongs to its account
   Then the project "alpha" is listed
 ```
 
-Nothing here mentions creating an account. The first two lines *declare* what must exist. When the
-test runs, ATF resolves `project` + `alpha` to the node `projects.alpha`, walks its `depends_on`
-edges to find `accounts.primary`, orders them dependency-first, and asks the adapter for each in
-turn: does this exist? If not, create it. The account's real identity is substituted into the
-project's body before the project is created.
+The `Given` lines are the framework's job, and they are identical in every suite: declare what must
+exist, and ATF resolves, orders and provisions it. The `When` and `Then` lines are yours, and they
+are the only place your domain knowledge lives.
 
-Then the last two lines run — ordinary test code, calling your system, asserting on the result.
-
-The division of labour is deliberate. The `Given` lines are the framework's job, and they are
-identical in every suite. The `When` and `Then` lines are yours, and they are the only place your
-domain knowledge lives.
+That division is the whole bargain. You give up writing setup; in exchange you write setup as data
+that something else can read. The sequence ATF runs on your behalf is walked through in
+[Life of a run](life-of-a-run.md).
 
 ## Why there is one provisioning step and not one per type
 
@@ -89,8 +82,8 @@ alike. Adding a resource type should not add framework surface, and with one gen
 not — the catalog grows, the step count stays at one.
 
 Per-type *fixtures* are a different matter, and those ATF does generate. A fixture named `account`
-is discoverable by `pytest --fixtures`, injectable into a plain test, and visible in the cockpit. It
-is a real thing a test can depend on; a step is not.
+is discoverable by `pytest --fixtures`, injectable into a plain test, and named on the type's page in
+the cockpit. It is a real thing a test can depend on; a step is not.
 
 ## What ATF deliberately does not define
 
@@ -107,6 +100,8 @@ bug in the seams, not a reason to fork the engine.
 
 ## Where to go next
 
+- [Glossary](glossary.md) — every one of these words, defined once.
+- [Life of a run](life-of-a-run.md) — the sequence the `Given` lines set in motion.
 - [About declarative catalogs](why-declarative-catalogs.md) — why resources are data.
 - [About lifecycles](lifecycles.md) — why some resources persist and others do not.
 - [Specs and fixtures reference](../reference/specs-and-fixtures.md) — the exact surface.

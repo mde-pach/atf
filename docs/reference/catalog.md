@@ -1,9 +1,10 @@
 # Catalog reference
 
-The catalog is a directory of YAML files. `resources.yaml` declares resource **types**;
-every other `*.yaml` file declares **instances**. Nothing in the catalog is executable.
+The catalog is a directory of YAML files. `resources.yaml` declares resource **types**; every other
+`*.yaml` file declares **instances**. Nothing in the catalog is executable, and loading it performs
+no network access.
 
-## Directory layout
+## Directory layout {#directory-layout}
 
 ```
 catalog/
@@ -14,17 +15,13 @@ catalog/
 
 A node's id is `<file stem>.<key>`, so the key `alpha` in `projects.yaml` is `projects.alpha`.
 
-## `resources.yaml`
+The [collection](../explanation/glossary.md#collection) decides node ids and nothing else. A type
+may have instances in several files, and one file may hold instances of several types.
 
-Each top-level key is a type name. Four keys are interpreted by ATF; every other key is passed to
-the type's adapter as `node["config"]`.
+## Resource types {#resource-types}
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `system` | string | — | **Required.** The adapter that handles this type. Must have a registered factory. |
-| `mode` | `create` \| `reference` | `create` | `reference` types are found, never created. |
-| `lifecycle` | `persistent` \| `ephemeral` | `persistent` | `ephemeral` resources are created for each run and deleted afterwards. |
-| `id_field` | string | `id` | The record field carrying the resource's identity. |
+Each top-level key of `resources.yaml` is a type name. Four keys are interpreted by ATF; **every
+other key is passed to the type's adapter** as `node["config"]`.
 
 ```yaml
 account:
@@ -39,13 +36,58 @@ job_run:
   id_field: uuid
 ```
 
-A type name must not collide with a reserved pytest fixture name: `api`, `client_config`,
-`context`, `env`, `materializer`, `request`, or a pytest built-in (`cache`, `capfd`, `capfdbinary`,
-`caplog`, `capsys`, `capsysbinary`, `doctest_namespace`, `monkeypatch`, `pytestconfig`,
-`record_property`, `record_testsuite_property`, `recwarn`, `tmp_path`, `tmp_path_factory`, `tmpdir`,
-`tmpdir_factory`).
+### `system` {#system}
 
-### `mode: reference` and `system: reference`
+**Required**, string. The [system](../explanation/glossary.md#system) this type lives in, and
+therefore which adapter handles it. It must have a registered adapter factory, or the catalog
+refuses to load and lists the systems that do.
+
+Settings for a system are per environment, under
+[`environments.<name>.adapters`](manifest.md#environments-name).
+
+### `mode` {#mode}
+
+`create` (default) or `reference`.
+
+A `reference` type is looked up and **never created**. If it is absent, that is a failure worth
+stopping for: the environment is not configured the way the suite assumes. See
+[`mode: reference` and `system: reference`](#reference-mode-vs-system) for the distinction from the
+built-in adapter of the same name.
+
+### `lifecycle` {#lifecycle}
+
+`persistent` (default) or `ephemeral`.
+
+A [persistent](../explanation/glossary.md#persistent) resource is found-or-created and left in
+place. An [ephemeral](../explanation/glossary.md#ephemeral) one is never looked up, is created
+fresh on each pass, and is deleted when the scenario that provisioned it ends.
+
+Which to choose is a design decision, not a lookup: see
+[About lifecycles](../explanation/lifecycles.md).
+
+### `id_field` {#id_field}
+
+String, default `id`. The record field carrying the resource's
+[identity](../explanation/glossary.md#id-field).
+
+It is what `${<node>.id}` resolves to, what `delete` uses to address the resource, and what a
+`create` response must carry for ATF to accept it.
+
+### Reserved type names {#reserved-names}
+
+A type name becomes a pytest fixture name, so it may not collide with one already taken. The catalog
+refuses to load and names the offender.
+
+| Source | Names |
+|---|---|
+| ATF's own fixtures | `api`, `client_config`, `context`, `env`, `materializer` |
+| pytest built-ins | `cache`, `capfd`, `capfdbinary`, `caplog`, `capsys`, `capsysbinary`, `doctest_namespace`, `monkeypatch`, `pytestconfig`, `record_property`, `record_testsuite_property`, `recwarn`, `request`, `tmp_path`, `tmp_path_factory`, `tmpdir`, `tmpdir_factory` |
+
+Separately, generated factories land in the `atf.plugin` module's namespace, so a type whose name
+matches something that module already defines raises at import time with the same advice: rename the
+type. Instance names are unconstrained.
+
+### `mode: reference` and `system: reference` {#reference-mode-vs-system}
 
 Two different mechanisms share the word.
 
@@ -67,16 +109,9 @@ label:
 Setting `system: reference` alone leaves `mode` at its default `create`, so provisioning raises
 `ValueError` from the adapter instead of reporting the resource missing.
 
-## Instance files
+## Instance files {#instance-files}
 
-Each top-level key is an instance name.
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `resource` | string | — | **Required.** The type, as named in `resources.yaml`. |
-| `represents` | string | `""` | Description of the instance. The only prose the catalog carries. |
-| `depends_on` | list of node ids | `[]` | Resources provisioned before this one. |
-| `body` | mapping | `{}` | The fields the resource is made of. Passed to the adapter after placeholder resolution. |
+Each top-level key of an instance file is an instance name.
 
 ```yaml
 alpha:
@@ -89,44 +124,172 @@ alpha:
     account_id: ${accounts.primary.id}
 ```
 
-Instance names within one type must be unique across the whole catalog; the same name may be used by
-different types.
+Instance names within one type must be unique across the whole catalog; different types may reuse a
+name.
 
-## Placeholders
+### `resource` {#resource}
+
+**Required**, string. The type, as named in `resources.yaml`. A name that is not in the registry is
+a load error.
+
+### `represents` {#represents}
+
+String, default `""`. A description of this instance, and the only prose the catalog carries. It is
+what the cockpit shows and what the next person reads.
+
+Describe what the resource is *for*, not what it contains — the body already says that.
+
+### `depends_on` {#depends_on}
+
+List of node ids, default `[]`. Resources provisioned before this one, in
+[dependency-first order](../explanation/life-of-a-run.md#topological-sort).
+
+A single id may be given as a bare string. Every entry must name a real node, and the graph must be
+acyclic; both are checked at load.
+
+A `${...}` reference to a node that is not also in `depends_on` is rejected, because it would
+otherwise be resolved before the thing it names had been provisioned.
+
+### `body` {#body}
+
+Mapping, default `{}`. The fields the resource is made of, passed to the adapter after
+[placeholder](#placeholders) resolution. ATF does not interpret its contents beyond resolving
+placeholders and reading the [`natural_key`](#natural_key) fields out of it.
+
+## Placeholders {#placeholders}
 
 Placeholders appear anywhere in `body` — in strings, lists, or nested mappings — and are resolved
-immediately before the adapter creates the resource.
+immediately before the adapter creates the resource. Two forms exist, and nothing else is accepted.
 
-| Form | Resolves to |
-|---|---|
-| `${<collection>.<name>.id}` | The identity of that node, read through *its* `id_field`. `.id` is a keyword meaning "identity", not a literal field name. |
-| `${now+<N>d HH:MM}` | An ISO-8601 UTC timestamp `N` days from now at `HH:MM`, e.g. `2026-07-27T09:00:00Z`. |
-| `${now-<N>d HH:MM}` | The same, `N` days in the past. |
+### `${<collection>.<name>.id}` {#placeholder-id}
 
-These two forms are the whole vocabulary; anything else raises `Unresolved`. Collection and
-instance names may contain only letters, digits, `_` and `-`, and the timestamp form requires
-exactly `now±<N>d HH:MM` — `${now}`, `${now+1d}` and `${now+1h}` are all rejected.
+The identity of that node, read through *its* [`id_field`](#id_field). `.id` is a keyword meaning
+"identity", not a literal field name.
+
+Collection and instance names may contain only letters, digits, `_` and `-`.
+
+```yaml
+    account_id: ${accounts.primary.id}
+```
+
+### `${now±<N>d HH:MM}` {#placeholder-now}
+
+An ISO-8601 UTC timestamp `N` days from now, at `HH:MM` — `${now+30d 09:00}` gives something like
+`2026-08-25T09:00:00Z`. A `-` moves into the past.
+
+The form is exact: `${now}`, `${now+1d}` and `${now+1h}` are all rejected. Use it rather than a
+fixed date, so the data does not rot.
+
+### Typing and interpolation {#placeholder-typing}
 
 A string consisting of exactly one placeholder takes the resolved value's type. A placeholder
 embedded in surrounding text is interpolated as a string.
 
 ```yaml
-    account_id: ${accounts.primary.id}          # the identity itself
+    account_id: ${accounts.primary.id}          # the identity itself, with its own type
     label: acct-${accounts.primary.id}-live     # a string
 ```
 
-An unresolvable reference in a natural-key field makes the resource count as absent rather than
-raising. During `create` it is reported as an `error` result that stops the pass; `ensure`
-re-raises it as `ProvisioningError`.
+### When a placeholder cannot be resolved {#unresolved}
 
-## Validation
+An unresolvable reference in a natural-key field makes the resource count as **absent** rather than
+raising — ATF cannot look for something whose key it does not know yet.
 
-`load_catalog` reports every problem found, not the first. A catalog is rejected when:
+During a create it is reported as an `error` result that stops the pass; `Materializer.ensure`
+re-raises it as `ProvisioningError`. Because references are validated at load, an `Unresolved` at
+run time almost always means the dependency itself failed to provision — look further up the output.
+
+## Type keys for the built-in adapters {#type-keys-for-the-built-in-adapters}
+
+Keys read from `node["config"]` by the `rest` and `reference` adapters. A custom adapter reads
+whatever keys it likes from the same place.
+
+### `path` {#path}
+
+**Required**, string. The collection path, appended to `base_url`. Used for listing, creating and
+deleting.
+
+### `natural_key` {#natural_key}
+
+**Required**, string or list of strings. The body field(s) identifying an existing record.
+
+This is what makes provisioning idempotent: ATF lists the collection and matches on these fields, so
+a second pass recognises what the first one created. Choose something stable, unique, and settable
+at creation time.
+
+```yaml
+natural_key: email                  # one field
+natural_key: [account_id, slug]     # composite
+```
+
+A natural-key field absent from the body, or holding an unresolvable placeholder, makes the resource
+count as absent.
+
+### `list_path` {#list_path}
+
+String, default [`path`](#path). An alternative listing path, for when listing the whole collection
+is too expensive. `{field}` placeholders are filled from the resolved body:
+
+```yaml
+list_path: /accounts/{account_id}/projects
+```
+
+A field named in the template but missing from the body is an error naming the field.
+
+### `list_filter` {#list_filter}
+
+String or list of strings. Body fields sent as query parameters when listing, for backends that
+filter server-side:
+
+```yaml
+list_filter: [account_id]
+```
+
+A field whose value cannot be resolved yet is omitted from the query rather than failing.
+
+### `ref_field` {#ref_field}
+
+String. The remote field matched against the natural key, when the backend calls it something other
+than the body does.
+
+Applies only to a type whose `natural_key` is a **single** field; it is ignored for a composite key,
+where each field is matched under its own name.
+
+### `record_key` {#record_key}
+
+String. The field of the create response holding the record, for APIs that wrap it in an envelope:
+
+```yaml
+record_key: data
+```
+
+### `delete_path` {#delete_path}
+
+String, default `<path>/<identity>`. An alternative delete path. `{field}` placeholders are filled
+from the **record**, not the body.
+
+### `deletable` {#deletable}
+
+Boolean, default `true`. When `false`, `delete` does nothing — for backends with no deletion
+endpoint. Only ephemeral resources are ever deleted, so this matters only for them.
+
+### Matching and request rules {#matching-rules}
+
+- Natural-key matching compares values as strings, falling back to comparing them as ISO-8601
+  instants when both parse as datetimes.
+- Listings are cached for the duration of one provisioning pass, and invalidated on every create.
+- A `create` response carrying no identity triggers a re-read; if that finds nothing, the error
+  suggests [`record_key`](#record_key) and [`id_field`](#id_field).
+- `DELETE` responses of 404, 405 and 501 are treated as success.
+
+## Validation {#validation}
+
+Loading the catalog reports **every** problem found, not the first. A catalog is rejected when:
 
 - `resources.yaml` is missing;
 - a type has no `system`, or an unrecognised `mode` or `lifecycle`;
 - a type's `system` has no registered adapter factory;
-- a type name collides with a reserved fixture name;
+- a type name collides with a [reserved name](#reserved-names);
 - an instance has no `resource`, or names a type absent from `resources.yaml`;
 - a `depends_on` entry names a node that does not exist;
 - a `${...}` placeholder names a node that does not exist, or one absent from `depends_on`;
@@ -134,9 +297,9 @@ re-raises it as `ProvisioningError`.
 - two instances of the same type share a name;
 - a file is not a mapping, or is invalid YAML.
 
-Loading performs no network access.
+Every command exits `2` on a rejected catalog, and that list of problems is the whole diagnosis.
 
-## Node fields
+## Node fields {#node-fields}
 
 The structure adapters receive. `system`, `mode`, `lifecycle`, `id_field` and `config` come from the
 type; `represents`, `depends_on` and `body` from the instance.
@@ -155,29 +318,12 @@ type; `represents`, `depends_on` and `body` from the instance.
 | `represents` | string | The instance description. |
 | `depends_on` | list | Node ids this resource requires. |
 | `dependents` | list | Node ids requiring this resource. Computed. |
-| `body` | mapping | The instance body, unresolved. |
+| `body` | mapping | The instance body, **unresolved**. |
 
-## Type keys for the built-in adapters
+## Where to go next
 
-Keys read from `node["config"]` by the `rest` and `reference` adapters.
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `path` | string | — | **Required.** Collection path, appended to `base_url`. Used for listing, creating and deleting. |
-| `natural_key` | string or list | — | **Required.** Body field(s) identifying an existing record. |
-| `list_path` | string | `path` | Alternative listing path. `{field}` placeholders are filled from the resolved body, e.g. `/accounts/{account_id}/projects`. |
-| `list_filter` | string or list | — | Body fields sent as query parameters when listing. |
-| `ref_field` | string | — | Remote field matched against the natural key. Applies to any type whose `natural_key` is a single field; ignored when it is a list. |
-| `record_key` | string | — | Field of the create response holding the record, for APIs that wrap it in an envelope. |
-| `delete_path` | string | `<path>/<identity>` | Alternative delete path. `{field}` placeholders are filled from the record. |
-| `deletable` | boolean | `true` | When `false`, `delete` does nothing. |
-
-Natural-key matching compares values as strings, falling back to comparing them as ISO-8601
-instants when both parse as datetimes. Listings are cached for the duration of a materialize pass
-and invalidated on every create. `DELETE` responses of 404, 405 and 501 are treated as success.
-
-## See also
-
-- [How to add a resource](../how-to/add-a-resource.md).
-- [Manifest reference](manifest.md) — where `system` settings are declared.
+- [How to add a resource](../how-to/add-a-resource.md) — these keys in the order you meet them.
+- [How to keep the catalog in step with an API change](../how-to/keep-the-catalog-in-step.md) — when
+  the backend moves underneath them.
+- [Manifest reference](manifest.md) — where a system's settings are declared.
 - [About lifecycles](../explanation/lifecycles.md) — choosing `persistent` or `ephemeral`.

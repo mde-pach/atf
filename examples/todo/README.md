@@ -9,6 +9,9 @@ uv run pytest -q          # 8 passed
 `conftest.py` starts `fake_api.py` and exports `TODO_URL` before ATF bootstraps. Point `TODO_URL`
 at something real and that block does nothing.
 
+New to ATF? Read [Your first spec](https://mde-pach.github.io/atf/tutorial/your-first-spec/) first;
+this suite is what the tutorial's toy version grows into.
+
 ## What it exercises
 
 | Seam | Where |
@@ -42,6 +45,10 @@ it yourself and point at it:
 python fake_api.py 8765
 export TODO_URL=http://127.0.0.1:8765 TODO_ACTOR=example
 ```
+
+Do that before `atf serve` — the cockpit is worth looking at against a backend that remembers what
+you provisioned. See
+[Read your suite in the cockpit](https://mde-pach.github.io/atf/tutorial/read-your-suite-in-the-cockpit/).
 
 `atf seed staging` exits 2: `staging` is not in `mutable_envs`.
 

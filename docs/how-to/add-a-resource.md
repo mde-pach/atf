@@ -137,7 +137,7 @@ atf seed dev --type subscription --name monthly
 ```
 
 This provisions the resource and everything it depends on. The environment must be listed in
-`mutable_envs`, or the command refuses.
+[`mutable_envs`](../reference/manifest.md#mutable_envs), or the command refuses and changes nothing.
 
 ## Use it in a spec
 
@@ -153,6 +153,13 @@ No registration step: the resource is immediately available to every scenario.
 The `Given` line works as soon as the YAML exists. `context.subscription` holds the record the
 adapter returned, so your `When`/`Then` steps can read fields off it.
 
-If you named the type something that collides with an existing pytest fixture — `request`,
-`context`, `api`, `env`, `materializer`, `client_config`, or a pytest built-in — the catalog will
-refuse to load and tell you. Rename the type.
+A type name becomes a pytest fixture name, so a few are taken. If yours collides, the catalog
+refuses to load and says so; rename the type and leave the instance names alone. The full list is in
+[reserved type names](../reference/catalog.md#reserved-names).
+
+## Where to go next
+
+- [How to add a scenario](add-a-scenario.md) — putting the new resource to work.
+- [Catalog reference](../reference/catalog.md) — every key, with the defaults.
+- [About lifecycles](../explanation/lifecycles.md) — persistent, ephemeral, or reference.
+- [How to add an adapter](add-an-adapter.md) — when the built-in `rest` adapter cannot reach it.

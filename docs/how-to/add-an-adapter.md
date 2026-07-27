@@ -141,5 +141,12 @@ fetch it ten times. The `ctx` argument gives you the cache:
 ATF invalidates the cache after every create, so you cannot serve a stale listing to the next
 lookup. Ignore `ctx` entirely if you do not need it.
 
-For the exact protocol — every method signature, the `Node` fields, and what `ctx` offers — see the
-[adapter SPI reference](../reference/adapter-spi.md).
+## Where to go next
+
+- [Adapter SPI reference](../reference/adapter-spi.md) — every method signature, the `Node` fields,
+  and what `ctx` offers.
+- [Manifest reference](../reference/manifest.md#env-adapters) — where the settings your factory
+  receives are declared.
+- [Life of a run](../explanation/life-of-a-run.md#find-or-create) — when the engine calls each
+  method.
+- [About lifecycles](../explanation/lifecycles.md) — why multi-step resources are usually ephemeral.

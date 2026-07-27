@@ -43,13 +43,21 @@ theme:
 nav:
   - Home: index.md
   - Tutorial:
-      - Write your first spec: tutorial/write-your-first-spec.md
+      - 1. Your first spec: tutorial/your-first-spec.md
+      - 2. Point ATF at your own API: tutorial/point-atf-at-your-api.md
+      - 3. Read your suite in the cockpit: tutorial/read-your-suite-in-the-cockpit.md
   - How-to guides:
-      - Add a resource: how-to/add-a-resource.md
-      - Add an adapter: how-to/add-an-adapter.md
-      - Diagnose a failing provision: how-to/diagnose-a-failing-provision.md
-      - Adopt ATF in an existing suite: how-to/adopt-atf-in-an-existing-suite.md
-      - Run ATF in CI: how-to/run-atf-in-ci.md
+      - Setting up:
+          - Add a resource: how-to/add-a-resource.md
+          - Add an adapter: how-to/add-an-adapter.md
+          - Adopt ATF in an existing suite: how-to/adopt-atf-in-an-existing-suite.md
+          - Run ATF in CI: how-to/run-atf-in-ci.md
+      - Day to day:
+          - Add a scenario: how-to/add-a-scenario.md
+          - Keep the catalog in step with an API change: how-to/keep-the-catalog-in-step.md
+      - When it breaks:
+          - Find out why an environment is red: how-to/find-out-why-an-environment-is-red.md
+          - Diagnose a failing provision: how-to/diagnose-a-failing-provision.md
   - Reference:
       - Manifest reference: reference/manifest.md
       - Catalog reference: reference/catalog.md
@@ -58,6 +66,8 @@ nav:
       - Cockpit reference: reference/cockpit.md
       - Adapter SPI reference: reference/adapter-spi.md
   - Explanation:
+      - Glossary: explanation/glossary.md
+      - Life of a run: explanation/life-of-a-run.md
       - About the model: explanation/the-model.md
       - About declarative catalogs: explanation/why-declarative-catalogs.md
       - About lifecycles: explanation/lifecycles.md
@@ -73,7 +83,12 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  - pymdownx.superfences
+  # `mermaid` fences are handed to Material's bundled renderer instead of being highlighted.
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
 
 plugins:
   - search
@@ -83,6 +98,8 @@ validation:
   links:
     absolute_links: relative_to_docs
     unrecognized_links: warn
+    # Anchors are a published surface — the cockpit deep-links into the glossary.
+    anchors: warn
   nav:
     omitted_files: warn
 

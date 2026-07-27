@@ -26,7 +26,8 @@ before doing anything: every resource that exists, what each depends on, which a
 and which specs name it. That is what makes the rest possible — validation that reports *every*
 problem at load rather than failing at the first bad call, a dependency graph the cockpit can draw,
 a `status` command that answers "what exists in staging?" without provisioning anything, and the
-coverage questions in [About the model](the-model.md).
+ability to say a scenario could not run here *before* running it. See
+[About the model](the-model.md).
 
 None of those features are clever. They are all just consequences of the setup being inspectable.
 
@@ -94,4 +95,5 @@ rather than failing or duplicating.
 
 - [About the model](the-model.md) — what the catalog's nodes relate to.
 - [About lifecycles](lifecycles.md) — the one axis on which resources genuinely differ.
+- [Life of a run](life-of-a-run.md) — the reconciliation loop, step by step.
 - [How to add a resource](../how-to/add-a-resource.md) — the practical steps.

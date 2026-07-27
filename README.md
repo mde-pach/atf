@@ -23,16 +23,24 @@ and fixtures follow automatically.
   delegating the *how* to a pluggable adapter per backend.
 - **Specs** — pytest-bdd scenarios. Each resource type becomes a generated pytest fixture; one
   generic step provisions any resource named in a scenario.
-- **Cockpit** — a FastAPI + htmx web app that discovers the catalog, specs, tests and fixtures,
-  shows how they link, runs tests with live progress, and answers *"can I ship?"*
+- **Cockpit** — a FastAPI + htmx web app that renders the catalog, the scenarios and the run
+  history, provisions what is missing, runs tests with live progress, and answers *"can I ship?"*
 
 The engine, spec plumbing, discovery and cockpit are generic. A project supplies only content
 (catalog + specs), adapters (how to talk to its systems), and a manifest.
 
 ## Documentation
 
-A tutorial, how-to guides, reference and explanation live in [`docs/`](docs/index.md). New to ATF?
-Start with [Write your first spec](docs/tutorial/write-your-first-spec.md).
+The full documentation — a three-lesson tutorial, how-to guides, reference and explanation — lives
+in [`docs/`](docs/index.md) and is published at <https://mde-pach.github.io/atf/>.
+
+| If you want to… | Read |
+|---|---|
+| Get something running in ten minutes | [Your first spec](docs/tutorial/your-first-spec.md) |
+| Know what the words mean | [Glossary](docs/explanation/glossary.md) |
+| Understand what actually happens | [Life of a run](docs/explanation/life-of-a-run.md) |
+| Look up a key or a flag | [Reference](docs/index.md#reference) |
+| Work out why something is red | [Find out why an environment is red](docs/how-to/find-out-why-an-environment-is-red.md) |
 
 To read them as a site, with navigation and search:
 
@@ -53,25 +61,11 @@ uv add git+https://github.com/mde-pach/atf     # or: pip install git+https://git
 ```sh
 atf init my-suite
 cd my-suite
+atf run
 ```
 
-That writes a manifest, a starter catalog, an adapter stub, and a working spec:
-
-```
-my-suite/
-  atf.yaml                    # config: environments, adapters, mutable_envs
-  catalog/
-    resources.yaml            # resource types
-    accounts.yaml             # instances
-  adapters.py                 # custom adapters (optional)
-  specs/
-    features/*.feature        # scenarios
-    steps/test_*.py           # scenarios() binding + your When/Then vocabulary
-    api.py                    # the system-under-test client
-  conftest.py                 # pytest_plugins = ["atf.plugin"]
-```
-
-## Commands
+`atf init` writes a manifest, a starter catalog, an adapter stub, a working spec, and a stand-in for
+the system under test — so the suite runs before you have a service to point it at.
 
 ```sh
 atf status dev      # what exists in the environment, per resource
@@ -80,83 +74,27 @@ atf run             # run the specs; nonzero exit on failure (use as a CI guard)
 atf serve           # the cockpit on http://127.0.0.1:8000
 ```
 
-## How a spec gets what it needs
-
-```yaml
-# catalog/resources.yaml — the type
-todo_list:
-  system: rest
-  path: /lists
-  natural_key: [owner_id, slug]
-
-# catalog/lists.yaml — an instance
-groceries:
-  resource: todo_list
-  represents: The primary owner's shopping list.
-  depends_on: [owners.primary]
-  body:
-    slug: groceries
-    owner_id: ${owners.primary.id}      # resolved at provision time
-```
-
-`Given the todo_list "groceries"` walks the dependency graph, get-or-creates the owner, resolves
-`${owners.primary.id}` to the real identity, get-or-creates the list, and stashes the record on
-`context.todo_list`. The only code you write is the vocabulary:
-
-```python
-@when("I list the owner's lists")
-def _(context, api):
-    context.result = api.lists_of(context.owner)
-```
-
-## Adapters
-
-An adapter is how ATF talks to one backend. Two ship built in:
-
-- **`rest`** — configurable get-or-create over a JSON API: natural keys (single, composite or
-  scoped), pagination, `none`/`header`/`bearer`/`session` auth, retries, custom identity fields.
-- **`reference`** — find-only, for resources that must already exist.
-
-Anything else is one class and one registered factory:
-
-```python
-class GuestAdapter:
-    def find(self, node, ctx): ...      # the live record, or None
-    def create(self, node, body, ctx):  # may run any multi-step chain
-        ...
-    def delete(self, node, record, ctx): ...   # best-effort teardown
-
-register("guest", GuestAdapter)
-```
-
-A new backend is one adapter plus manifest config. The engine never changes.
-
-## Lifecycles
-
-- **persistent** (default) — find-or-created, reported present/absent, left in place.
-- **ephemeral** — built fresh every run, returned from `ensure`, and torn down best-effort when
-  the scenario ends.
+Every command and flag is in the [CLI reference](docs/reference/cli.md).
 
 ## Security
 
 The cockpit performs mutating actions against real environments and has **no built-in
 authentication**. It binds `127.0.0.1` by default, gates every mutation behind the manifest's
-`mutable_envs` allow-list (other environments render read-only and their routes return 409), and
-requires a confirmation token for destructive actions. For shared access, put it behind an
-authenticating reverse proxy.
+`mutable_envs` allow-list, and requires a confirmation token. For shared access, put it behind an
+authenticating reverse proxy. See the [cockpit reference](docs/reference/cockpit.md#security).
 
 ## Limits
 
-v1 is **single-worker**. The session materializer, its listing cache and get-or-create are not
-safe under parallel workers, and the cockpit serializes runs with one active job per environment.
-Do not enable `pytest-xdist`.
+v1 is **single-worker**: the session materializer, its listing cache and get-or-create are not safe
+under parallel workers, and the cockpit serializes runs with one active job per environment. Do not
+enable `pytest-xdist`. See [concurrency](docs/reference/specs-and-fixtures.md#concurrency).
 
 ## The example
 
-`examples/todo/` is a complete suite exercising every seam — REST resources with composite,
-scoped and datetime natural keys; a reference resource; a custom ephemeral adapter with teardown;
-two feature files; a read-only environment — against a tiny in-process fake API, so it runs with
-no backend:
+`examples/todo/` is a complete suite exercising every seam — REST resources with composite, scoped
+and datetime natural keys; a reference resource; a custom ephemeral adapter with teardown; two
+feature files; a read-only environment — against a tiny in-process fake API, so it runs with no
+backend:
 
 ```sh
 cd examples/todo
@@ -180,3 +118,10 @@ ATF is tested at two layers:
 - **`selftest/`** — ATF tested *with* ATF: an ATF suite whose resources are real consuming suites
   on disk and whose system under test is the `atf` CLI. See `selftest/README.md`; the suite is
   itself mutation-tested, so a regression in ATF turns it red.
+
+The documentation is MkDocs Material, organised by [Diátaxis](https://diataxis.fr), and built with
+`--strict` in CI:
+
+```sh
+uv run --group docs mkdocs build --strict
+```

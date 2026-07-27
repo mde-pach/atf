@@ -3,6 +3,10 @@
 A resource will not go green: `atf status` says `absent` when you expect `present`, a spec fails
 before its first `When`, or the cockpit shows a red banner. Work from the message.
 
+If you do not yet know that provisioning is the broken half, start with
+[How to find out why an environment is red](find-out-why-an-environment-is-red.md) and come back
+here.
+
 ## Start with status, not the test
 
 ```sh
@@ -117,4 +121,15 @@ resource another scenario asserts on. Give the mutating scenario its own instanc
 
 Every command exits `2` and prints every problem found, not just the first. That list is the whole
 diagnosis — dangling dependencies, cycles, unknown types, duplicate names, placeholder typos and
-reserved-name collisions all surface there before anything touches the network.
+reserved-name collisions all surface there before anything touches the network. The rules are listed
+under [validation](../reference/catalog.md#validation).
+
+## Where to go next
+
+- [How to keep the catalog in step with an API change](keep-the-catalog-in-step.md) — when the
+  answer is that the backend moved.
+- [Life of a run](../explanation/life-of-a-run.md#find-or-create) — the step of the sequence these
+  errors come from.
+- [Catalog reference](../reference/catalog.md#type-keys-for-the-built-in-adapters) — the keys the
+  messages above name.
+- [Adapter SPI reference](../reference/adapter-spi.md) — when the failing adapter is your own.

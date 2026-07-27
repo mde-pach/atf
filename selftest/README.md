@@ -3,8 +3,11 @@
 This is an ATF suite whose system under test is ATF.
 
 ```sh
-PYTHONPATH=../src uv run pytest -q      # 8 scenarios
+PYTHONPATH=../src uv run pytest -q      # 8 passed
 ```
+
+If the vocabulary below is unfamiliar, the
+[glossary](https://mde-pach.github.io/atf/explanation/glossary/) defines every word in a sentence.
 
 ## How it works
 

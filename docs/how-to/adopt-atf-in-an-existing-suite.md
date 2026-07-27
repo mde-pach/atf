@@ -132,9 +132,10 @@ The catalog now describes what exists; your helper still knows how to make it. S
 
 ## Check the names you already use
 
-Catalog validation rejects a resource type that collides with a fixture name ATF or pytest reserves
-(`context`, `api`, `env`, `materializer`, `client_config`, `request`, and pytest's built-ins). If
-your domain word collides, rename the type — the instance names are free.
+Catalog validation rejects a resource type whose name collides with a fixture name ATF or pytest
+reserves. In an existing suite this is worth checking before you commit to a vocabulary: see
+[reserved type names](../reference/catalog.md#reserved-names). If a domain word collides, rename the
+type — the instance names are free.
 
 ## Verify
 
@@ -146,3 +147,11 @@ atf status dev         # what the catalog says exists
 
 If collection now fails and it did not before, the cause is almost always the import-time bootstrap:
 run `atf status dev` on its own to see the manifest or catalog error in isolation.
+
+## Where to go next
+
+- [How to add a resource](add-a-resource.md) — the second resource, and the tenth.
+- [How to add a scenario](add-a-scenario.md) — converting a test into a spec.
+- [How to run ATF in CI](run-atf-in-ci.md) — making the new suite a gate.
+- [Specs and fixtures reference](../reference/specs-and-fixtures.md) — what the plugin adds to a
+  suite that already has fixtures.

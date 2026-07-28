@@ -1,6 +1,6 @@
 """What the pytest plugin wires up, where a scenario cannot watch it happen.
 
-Most of what this module used to hold is now `selftest/specs/features/` — provisioning a chain, an
+Most of what this module used to hold is now `tests/specs/features/` — provisioning a chain, an
 ephemeral resource torn down after a run, a reference that must already be there, a misspelled type
 in a spec, every row of an outline getting its own resources. Those are things a person can watch a
 command do, and a scenario says them better.

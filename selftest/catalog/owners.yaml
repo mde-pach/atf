@@ -1,8 +1,0 @@
-# The owner the `chained` and `ephemeral` suites seed. This suite never creates it — it watches for
-# it, which is why the type is `mode: reference`.
-
-primary:
-  resource: owner
-  represents: The owner a suite-under-test seeds first, because its list hangs off one.
-  body:
-    email: primary@selftest.example

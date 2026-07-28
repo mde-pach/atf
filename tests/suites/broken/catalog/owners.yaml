@@ -1,0 +1,7 @@
+primary:
+  resource: owner
+  represents: Depends on something that does not exist.
+  depends_on:
+    - owners.nowhere
+  body:
+    email: primary@atf.test

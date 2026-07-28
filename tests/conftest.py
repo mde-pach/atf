@@ -1,15 +1,51 @@
+"""ATF's own test suite — an ATF suite, plus the Python tests that could not be one.
+
+`tests/` *is* a consuming project: `atf.yaml`, a catalog, `specs/`, and suite templates under
+`suites/`. Running `pytest` from the repository root runs ATF's scenarios against a stub backend
+and a real cockpit, through the same plugin any other suite uses. If that is awkward, the framework
+is awkward.
+
+This file does two jobs. It starts the stub environment *before* `atf.plugin` bootstraps — the
+plugin builds its adapters at import, so the backend has to be answering by then — and it holds the
+fixtures the remaining Python tests share.
+
+`suites/` is excluded from collection. Those are complete suites-under-test, copied into a temp
+directory per scenario; collecting them here would run them in this process, against this manifest.
+"""
+
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 import pytest
 
-from atf.adapters import unregister
-from atf.materializer import Materializer
-from tests.fake_adapter import register_fake
-from tests.sample_project import write_sample_project
+HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE))
 
-pytest_plugins = ["pytester"]
+# Where the suites under test provision into. Started here rather than in a fixture because the
+# plugin resolves `${env:...}` settings when it imports, which is before any fixture runs.
+if not os.environ.get("ATF_TESTS_BACKEND"):
+    from stub_backend import StubBackend
+
+    os.environ.setdefault("ATF_TESTS_ACTOR", "atf-tests")
+    _backend = StubBackend(actor=os.environ["ATF_TESTS_ACTOR"])
+    os.environ["ATF_TESTS_BACKEND"] = _backend.start()
+
+# Which manifest this suite is. Set here because pytest runs from the repository root, and ATF
+# would otherwise walk up from there and find no suite at all.
+os.environ.setdefault("ATF_MANIFEST", str(HERE / "atf.yaml"))
+
+pytest_plugins = ["atf.plugin", "pytester"]
+
+# Complete suites on disk, for the `workspace` adapter to copy. Not this suite's tests.
+collect_ignore_glob = ["suites/*"]
+
+from atf.adapters import unregister  # noqa: E402 - after the environment above is in place
+from atf.materializer import Materializer  # noqa: E402
+from tests.fake_adapter import register_fake  # noqa: E402
+from tests.sample_project import write_sample_project  # noqa: E402
 
 
 @pytest.fixture
@@ -122,5 +158,5 @@ def good_catalog(write_catalog):
 
 
 @pytest.fixture
-def materializer(good_catalog, fake):
+def engine(good_catalog, fake):
     return Materializer(good_catalog, "test", {"fake": fake})

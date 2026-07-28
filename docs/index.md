@@ -96,5 +96,5 @@ and there is no deprecation policy before 1.0. Pin a commit if you need reproduc
 
 - [`examples/todo/`](https://github.com/mde-pach/atf/tree/main/examples/todo) — a complete suite
   exercising every seam against an in-process fake API.
-- [`selftest/`](https://github.com/mde-pach/atf/tree/main/selftest) — ATF tested with ATF: a suite
+- [`tests/`](https://github.com/mde-pach/atf/tree/main/tests) — ATF tested with ATF: a suite
   whose system under test is the `atf` CLI.

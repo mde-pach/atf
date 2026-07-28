@@ -1,0 +1,5 @@
+primary:
+  resource: owner
+  represents: The owner the list hangs off.
+  body:
+    email: primary@atf.test

@@ -45,15 +45,17 @@ jobs:
       - name: Docs build with no broken links
         run: uv run mkdocs build --strict
 
-      - name: Framework tests
+      # `tests/` is an ATF suite describing ATF, so this is one run: the scenarios, and the
+      # handful of Python tests for the parts no scenario can watch.
+      - name: Tests
         run: uv run pytest -q
 
-      # Both suites are already driven by tests/, but running them the way a user would
-      # catches anything the test harness papers over.
+      - name: No technical vocabulary in the specs
+        run: uv run python -m atf.cli lint
+        env:
+          ATF_MANIFEST: tests/atf.yaml
+
+      # Run the way a user would, which catches anything the harness papers over.
       - name: The example must build to green
         working-directory: examples/todo
-        run: uv run --project "${{ github.workspace }}" python -m pytest -q
-
-      - name: ATF must pass its own specs
-        working-directory: selftest
         run: uv run --project "${{ github.workspace }}" python -m pytest -q

@@ -1,20 +1,14 @@
-"""The selector engine behind `selftest/`'s element adapter.
+"""The selector engine behind this suite's `element` adapter.
 
-It lives in the self-hosted suite rather than in `src/atf/`, because a client for one system is
-exactly what the framework must not contain. It is tested here because the cockpit feature only
-exercises it as deep as its own assertions go, and the matching is fiddly enough to pin down.
+It lives here rather than in `src/atf/`, because a client for one system is exactly what the
+framework must not contain. It is tested directly because the cockpit scenarios only exercise it as
+deep as their own claims go, and the matching is fiddly enough to be worth pinning down.
 """
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
+import html_select
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "selftest"))
-
-import html_select  # noqa: E402  — only importable once selftest is on the path
 
 MARKUP = """
 <!doctype html>

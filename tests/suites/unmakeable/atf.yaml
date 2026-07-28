@@ -1,0 +1,21 @@
+# The suite with nothing in it, so a scenario can put exactly one thing wrong.
+#
+# `chained` is a working suite and every refusal raised against it arrives with its two real nodes
+# for company; this one declares no resources at all, so `Given the workspace "bare" but:` writes
+# the malformed manifest or catalog a scenario is about and nothing else is in the output.
+#
+# The environment is the same shape as every other template's, so a catalog written by a variation
+# can name the `rest` system and be believed.
+
+catalog: ./catalog
+specs: ./specs
+default_env: local
+mutable_envs: [local]
+
+environments:
+  local:
+    adapters:
+      rest:
+        base_url_env: ATF_TESTS_BACKEND
+        auth: { header: X-Actor, value_env: ATF_TESTS_ACTOR }
+        pagination: { results_key: results, count_key: count }

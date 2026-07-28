@@ -115,8 +115,8 @@ ATF is tested at two layers:
 - **`tests/`** — unit and integration tests for each part (catalog validation, placeholder
   resolution, the materializer against a fake adapter, the REST adapter against a loopback stub,
   discovery, jobs, the cockpit). No network.
-- **`selftest/`** — ATF tested *with* ATF: an ATF suite whose resources are real consuming suites
-  on disk and whose system under test is the `atf` CLI. See `selftest/README.md`; the suite is
+- **`tests/`** — ATF tested *with* ATF: an ATF suite whose resources are real consuming suites
+  on disk and whose system under test is the `atf` CLI. See `tests/README.md`; the suite is
   itself mutation-tested, so a regression in ATF turns it red.
 
 The documentation is MkDocs Material, organised by [Diátaxis](https://diataxis.fr), and built with

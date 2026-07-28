@@ -1,0 +1,5 @@
+primary:
+  resource: owner
+  represents: The one resource here that can be made, so a failure elsewhere is visibly independent.
+  body:
+    email: primary@atf.test

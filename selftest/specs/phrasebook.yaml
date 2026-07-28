@@ -172,3 +172,34 @@
 'the badge it hung off survives':
   - the environment has 0 guest
   - the environment has 1 todo_list
+
+# ---- what the cockpit sends -------------------------------------------------
+#
+# These read the HTML a page *sent*, which costs no browser — so most of this suite still runs on a
+# checkout that never installed one. What they stand for names a field and a status code, which is
+# exactly the vocabulary this file exists to keep out of a feature.
+
+'the page "{name}" was served':
+  - the page "{name}" field "status" is "200"
+
+'the page "{name}" is titled "{title}"':
+  - the page "{name}" field "title" is "{title}"
+
+'the table lists 1 instance':
+  - the element "instance_rows" field "count" is "1"
+
+'the lineage is drawn as well as described':
+  - the element "lineage_graph" exists
+  - the element "lineage_boxes" field "count" is "2"
+
+'the payload is shown once':
+  - the element "node_payload" field "count" is "1"
+
+'all three of its steps are shown as Gherkin':
+  - the element "scenario_gherkin_steps" field "count" is "3"
+
+'writing it is offered as a button':
+  - the element "compose_write_button" field "text" is "Save"
+
+'writing it is not offered as a badge':
+  - the element "compose_write_chip" is gone

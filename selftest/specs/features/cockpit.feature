@@ -1,22 +1,22 @@
-# atf-lint: ignore field-claim, status-code
-# The flagship "no step code at all" feature, and the clearest evidence that generic vocabulary is
-# not the same as readable vocabulary: zero step code was bought by pushing `field "status" is "200"`
-# up into the layer a product person reads. These lines go once the UI half lands — a page's status
-# becomes something said about the page, and an element's `count` becomes what is on it.
 Feature: The cockpit
   ATF's own interface, read as resources: a page is a resource, an element on it is a resource,
   and the server showing them is a resource that gets started and torn down. Not one line of step
   code below — every assertion is one ATF gives every suite.
 
+  This feature used to carry a lint waiver for twelve field claims and a status code, and it was
+  the target document's own evidence that generic vocabulary is not the same as readable
+  vocabulary. The waiver is gone: what those lines said now lives in `specs/phrasebook.yaml`, and
+  the sentences below say what a person would say about a page.
+
   Scenario: A cockpit comes up over a real suite
     Given the page "overview"
-    Then the page "overview" field "status" is "200"
-    And the page "overview" field "title" is "Overview · ATF"
+    Then the page "overview" was served
+    And the page "overview" is titled "Overview · ATF"
 
   Scenario: A type page lists its instances and the environment's records in one table
     Given the element "instances_table"
     Then the element "instances_table" exists
-    And the element "instance_rows" field "count" is "1"
+    And the table lists 1 instance
 
   Scenario: The list that duplicated the nav and the table is gone
     Given the page "owner_type"
@@ -24,8 +24,7 @@ Feature: The cockpit
 
   Scenario: A resource that depends on something is drawn as well as described
     Given the page "groceries_node"
-    Then the element "lineage_graph" exists
-    And the element "lineage_boxes" field "count" is "2"
+    Then the lineage is drawn as well as described
     And the element "node_payload" exists
 
   Scenario: A resource that depends on nothing has no lineage to draw
@@ -34,11 +33,11 @@ Feature: The cockpit
 
   Scenario: A payload shows the placeholder that resolves at provisioning time
     Given the element "node_payload"
-    Then the element "node_payload" field "count" is "1"
+    Then the payload is shown once
 
   Scenario: A scenario is rendered as the Gherkin it was written in
     Given the page "scenarios"
-    Then the element "scenario_gherkin_steps" field "count" is "3"
+    Then all three of its steps are shown as Gherkin
 
   Scenario: The composer offers the steps ATF provides as well as the suite's own
     Given the page "compose"
@@ -46,8 +45,8 @@ Feature: The cockpit
 
   Scenario: Writing a scenario is a button, never a badge
     Given the page "compose"
-    Then the element "compose_write_button" field "text" is "Save"
-    And the element "compose_write_chip" is gone
+    Then writing it is offered as a button
+    And writing it is not offered as a badge
 
   # Everything below needs the page to have *run*, not merely been served, so it needs a real
   # browser. Without one these skip and the rest of the suite still passes — see the README.

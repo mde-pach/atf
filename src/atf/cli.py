@@ -1,4 +1,4 @@
-"""The `atf` command: init, serve, seed, status, run, import-run."""
+"""The `atf` command: init, serve, seed, status, run, lint, import-run."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from typing import Any
 from .bootstrap import bootstrap
 from .catalog import CatalogError
 from .config import ConfigError, load_manifest, resolve_manifest
+from .lint import check as lint_specs
+from .lint import report as lint_report
 from .materializer import BLOCKED, CREATED, EPHEMERAL, PRESENT, REFERENCE
 from .runner import ERROR, FAILED
 from .runner import run as run_tests
@@ -70,6 +72,9 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("paths", nargs="*")
     run.add_argument("--env")
     run.set_defaults(handler=cmd_run)
+
+    lint = sub.add_parser("lint", help="check that no spec line says something only the layer below should know")
+    lint.set_defaults(handler=cmd_lint)
 
     imported = sub.add_parser("import-run", help="record a pytest --json-report file from CI as a run")
     imported.add_argument("env")
@@ -207,6 +212,18 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not summary.results and summary.returncode != 0:
         print(summary.output, file=sys.stderr)
     return 0 if summary.returncode == 0 else 1
+
+
+def cmd_lint(args: argparse.Namespace) -> int:
+    """A spec line may not name a field, a selector, a status code, a path or a CLI flag.
+
+    Reads the feature files and nothing else: no environment, no adapters, no collection. It is a
+    check on what a reader reads, so it must run in a checkout with no backend anywhere near it.
+    """
+    manifest = load_manifest(resolve_manifest())
+    findings = lint_specs(manifest.specs_dir)
+    print(lint_report(findings, manifest.specs_dir), file=sys.stderr if findings else sys.stdout)
+    return 1 if findings else 0
 
 
 def cmd_import_run(args: argparse.Namespace) -> int:

@@ -1,7 +1,7 @@
 # CLI reference
 
 ```
-atf [-h] {init,serve,seed,status,run,import-run} ...
+atf [-h] {init,serve,seed,status,run,lint,import-run} ...
 ```
 
 Every command except `init` locates the manifest as described in the
@@ -170,6 +170,48 @@ atf run 'specs/steps/test_checkout.py::test_a_basket_is_priced'
 
 The environment to run against. Defaults to [`ATF_ENV`](#atf_env), else the manifest's
 `default_env`.
+
+## `atf lint` {#atf-lint}
+
+```
+atf lint
+```
+
+Checks that no spec line says something only the layer below should have to know. Reads the
+`.feature` files under [`specs`](manifest.md) and nothing else — no environment, no adapters, no
+collection — so it runs in a checkout with no backend anywhere near it.
+
+Exits `1` when there is anything to report, and prints the report on stderr, so CI can gate on it.
+
+### The rules {#lint-rules}
+
+| Rule | Catches | Say instead |
+|---|---|---|
+| `field-claim` | `field "<f>"` — a struct field access spelled in English | a [phrase](phrasebook.md): `the list "groceries" belongs to "primary"` |
+| `status-code` | a quoted 3-digit code, `100`–`599` | what the code means here: `it is refused` |
+| `path` | a quoted value starting `/`, or holding `://` | the thing at the end of it, named as the catalog names it |
+| `cli-flag` | a quoted value holding a `--flag` | a phrase for what the flag makes the command do |
+| `selector` | a quoted CSS-ish selector — `#id`, `.class`, `[role=…]`, `::`, `>` | the control's role and accessible name |
+
+Only **step lines** are checked. The narrative and comments are where an author explains, and
+explaining is allowed to be specific.
+
+### Waiving a rule {#lint-waivers}
+
+A suite mid-migration has lines it already knows about, and a check that lands permanently red is a
+check somebody turns off. A comment waives a rule for the line below it:
+
+```gherkin
+# atf-lint: ignore field-claim
+Then the result field "exit_code" is "0"
+```
+
+The same comment **before `Feature:`** waives that rule for the whole file. Several rules can be
+named at once, separated by commas. A waiver applies to the line directly beneath it and no
+further, so it can never quietly cover something added later.
+
+A waiver is a decision someone wrote down, which is the point: the rule is still there, and so is
+the reason.
 
 ## `atf import-run` {#atf-import-run}
 

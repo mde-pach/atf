@@ -69,6 +69,33 @@ class QueueAdapter:
         self.connection.close()
 ```
 
+### `act(node, record, action, ctx)` {#act}
+
+Optional. Does to a resource what its type says that action means, and returns the record as it is
+afterwards — or `None` when the system says nothing useful.
+
+ATF could always create and delete, because those are what a catalog is for. Everything else a
+system can do — complete a task, close an account, retry a job — was a step some project had to
+write, including the ones that are one call the adapter already knew how to make.
+
+```python
+class QueueAdapter:
+    def act(self, node, record, action, ctx):
+        declared = node["config"]["actions"][action]
+        return self.client.send(record["id"], **ctx.resolve(declared))
+```
+
+The declaration is yours to interpret: it reaches you under `node["config"]["actions"][action]`, and
+ATF has only checked that it is a mapping. An adapter without `act` says so when a scenario reaches
+for a declared action, rather than failing obscurely.
+
+`delete` never arrives here — it is in the required SPI, so ATF calls it directly.
+
+### `browse(node, ctx, limit)` {#browse}
+
+Optional. Every record of this type the environment holds. Reachable from a scenario as
+`When I list every <type>`, and from the cockpit when writing a catalog from an environment.
+
 ### `unavailable()` {#unavailable}
 
 Optional. Returns why this adapter cannot work here, or `""` when it can.

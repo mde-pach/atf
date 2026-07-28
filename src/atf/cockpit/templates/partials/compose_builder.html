@@ -34,6 +34,16 @@
           </div>
         {% endif %}
 
+      {% elif kind == 'action' %}
+        {% if rtype %}
+          <div class="field">
+            <label>what to do to it</label>
+            {{ ui.combo('p_' ~ row.index ~ '_action', action_options(rtype), row.values.get('action', ''),
+                        placeholder='what to do…',
+                        empty='This type declares no actions. Add them under `actions:` on the type.') }}
+          </div>
+        {% endif %}
+
       {% elif kind == 'field' %}
         {% if rtype and rname %}
           <div class="field">

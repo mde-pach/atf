@@ -21,6 +21,11 @@ UNIVERSAL_TYPE_KEYS = frozenset({"system", "mode", "lifecycle", "id_field"})
 # `data` is neither: it is an observation, something to look at and make claims about, and an
 # absent one means only that it is not there yet. Conflating the last two would make every page a
 # scenario reads into a precondition the environment has to satisfy first.
+# Verbs ATF has of its own, which a type may not redefine. `delete` is in the required SPI, so
+# every adapter has one and `When I delete the …` needs no declaration; declaring one under that
+# name could only mean two different things by the same word.
+BUILT_IN_ACTIONS = frozenset({"delete"})
+
 CREATE, REFERENCE, DATA = "create", "reference", "data"
 MODES = frozenset({CREATE, REFERENCE, DATA})
 LIFECYCLES = frozenset({"persistent", "ephemeral"})
@@ -146,8 +151,37 @@ def _load_types(root: Path, reserved: frozenset[str], problems: list[str]) -> di
             problems.append(
                 f"{TYPES_FILE}: type {name!r} has lifecycle {lifecycle!r}, expected one of {sorted(LIFECYCLES)}"
             )
+        _check_actions(name, entry.get("actions"), problems)
         types[name] = entry
     return types
+
+
+def _check_actions(name: str, actions: Any, problems: list[str]) -> None:
+    """`actions:` names what can be *done* to a resource, in terms its adapter understands.
+
+    ATF validates the shape and nothing else: an action's body is adapter configuration, exactly as
+    `path` and `natural_key` are, and reading anything into it here would be the framework deciding
+    what a system can do.
+    """
+    if actions is None:
+        return
+    if not isinstance(actions, dict):
+        problems.append(f"{TYPES_FILE}: type {name!r} has `actions` that is not a mapping of name to what it does")
+        return
+    for action, body in actions.items():
+        if not isinstance(action, str) or not action:
+            problems.append(f"{TYPES_FILE}: type {name!r} has an action whose name is not text")
+            continue
+        if action in BUILT_IN_ACTIONS:
+            problems.append(
+                f"{TYPES_FILE}: type {name!r} declares an action called {action!r}, which is one ATF "
+                "already performs — pick another name, or drop the declaration and use ATF's"
+            )
+        if not isinstance(body, dict):
+            problems.append(
+                f"{TYPES_FILE}: type {name!r} action {action!r} must be a mapping of what its adapter "
+                "should do"
+            )
 
 
 def _load_nodes(root: Path, types: dict[str, dict[str, Any]], problems: list[str]) -> dict[str, Node]:

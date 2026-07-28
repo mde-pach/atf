@@ -25,6 +25,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
+from ...adapters import actions_of
 from ...catalog import Node, find_node
 from ...context import RESULT
 from ...discovery import (
@@ -44,6 +45,7 @@ from ...discovery import (
 from ...runner import ERROR, PASSED
 from ...runner import run as run_tests
 from ...steps import (
+    ACTION,
     FIELD,
     NAME,
     RESOURCE,
@@ -1061,11 +1063,15 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         # whose parameters ATF chose, so the only ones whose meaning it can know. A project's
         # step keeps a text box, because `{expected}` could be anything at all.
         "generic": generic,
+        # What can be *done* to a resource of this type. Data in the catalog, so it is enumerable —
+        # which is the same property that made assertions composable, and the reason `actions:` is
+        # declared rather than written as a step.
+        "action_options": lambda resource_type: _action_options(engine, resource_type),
         "field_options": lambda resource_type, name: _field_options(engine, status, resource_type, name),
         "current_value": lambda resource_type, name, field: _current_value(
             engine, status, resource_type, name, field
         ),
-        "capture_kinds": (TYPE, NAME, FIELD, VALUE),
+        "capture_kinds": (TYPE, NAME, FIELD, VALUE, ACTION),
     }
 
 
@@ -1269,6 +1275,24 @@ def _rank(step: StepDef) -> str:
     if step.phrase:
         return "1"
     return "0" if generic(step.pattern) is not None else "2"
+
+
+def _action_options(engine: Any, resource_type: str) -> list[dict[str, str]]:
+    """Everything this type says can be done to one of its resources, and what ATF can always do."""
+    declared = set(actions_of(engine.types.get(resource_type) or {}))
+    return [
+        {
+            "value": action,
+            "label": action,
+            "meta": "" if action in declared else "always",
+            "desc": (
+                f"declared on the {resource_type} type"
+                if action in declared
+                else "ATF's own — every adapter can remove a resource"
+            ),
+        }
+        for action in engine.actions(resource_type)
+    ]
 
 
 def _field_options(

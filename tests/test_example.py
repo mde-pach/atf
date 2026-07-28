@@ -63,21 +63,21 @@ def test_the_example_seeds_and_runs_green(example_api):
 
     run = cli(example_api, "run")
     assert run.returncode == 0, run.stdout + run.stderr
-    assert "9 passed, 0 failed" in run.stdout
+    assert "12 passed, 0 failed" in run.stdout
 
 
 def test_the_example_runs_green_without_seeding_first(example_api):
     """Specs provision what they need — a fresh environment needs no seed step."""
     run = cli(example_api, "run")
     assert run.returncode == 0, run.stdout + run.stderr
-    assert "9 passed, 0 failed" in run.stdout
+    assert "12 passed, 0 failed" in run.stdout
 
 
 def test_the_example_is_idempotent(example_api):
     assert cli(example_api, "run").returncode == 0
     second = cli(example_api, "run")
     assert second.returncode == 0, second.stdout + second.stderr
-    assert "9 passed, 0 failed" in second.stdout
+    assert "12 passed, 0 failed" in second.stdout
 
 
 def test_the_example_exercises_rest_reference_and_a_custom_ephemeral_adapter(example_api):

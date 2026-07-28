@@ -12,8 +12,18 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
-from .adapters import Adapter, Browsable, Record, can_browse, close_adapter, registered_systems
-from .catalog import DATA, UNIVERSAL_TYPE_KEYS, Node, find_node, load_catalog
+from .adapters import (
+    Actionable,
+    Adapter,
+    Browsable,
+    Record,
+    actions_of,
+    can_act,
+    can_browse,
+    close_adapter,
+    registered_systems,
+)
+from .catalog import BUILT_IN_ACTIONS, DATA, UNIVERSAL_TYPE_KEYS, Node, find_node, load_catalog
 from .catalog import REFERENCE as REFERENCE_MODE
 from .placeholders import Unresolved
 from .placeholders import resolve as resolve_placeholders
@@ -384,6 +394,40 @@ class Materializer:
         record = adapter.create(node, body, self)
         self.invalidate_cache()
         return record, CREATED
+
+    # ---- acting on one ----------------------------------------------------
+
+    def actions(self, resource_type: str) -> list[str]:
+        """What this type says can be done to one of its resources, plus what ATF can always do."""
+        entry = self.types.get(resource_type) or {}
+        return sorted({*actions_of(entry), *BUILT_IN_ACTIONS})
+
+    def act(self, node: Node, record: Record, action: str) -> Record | None:
+        """Do something to a resource that is already there.
+
+        `delete` is ATF's own, because every adapter has one — a backend without deletion no-ops it
+        through `NoopDelete`, and the scenario after it reads the resource back and finds out.
+        Every other action is one the catalog declared and the adapter interprets.
+        """
+        adapter = self.adapters.get(node["system"])
+        if adapter is None:
+            raise ProvisioningError(node["id"], f"no adapter for system {node['system']!r} in env {self.env}")
+
+        if action in BUILT_IN_ACTIONS:
+            adapter.delete(node, record, self)
+            self.invalidate_cache()
+            return None
+
+        if not can_act(adapter):
+            raise ProvisioningError(
+                node["id"],
+                f"the {node['system']!r} adapter can make a resource and remove one, and nothing "
+                "else — give it an `act` to reach the actions this type declares",
+            )
+        result = cast("Actionable", adapter).act(node, record, action, self)
+        # Whatever it did, the listing behind the cache was read before it happened.
+        self.invalidate_cache()
+        return result
 
     def create_closure(
         self, nid: str, keep_going: bool = False, overrides: Mapping[str, Record] | None = None

@@ -78,6 +78,44 @@ todo_list:
 Reach for `reference` when the suite cannot run without it, and `data` when the suite is there to
 find out.
 
+### `actions` {#actions}
+
+Mapping, default `{}`. What can be **done** to a resource of this type, beyond making and removing
+one. Each key is a name a spec will say; each value is what its adapter should do.
+
+```yaml
+task:
+  system: rest
+  path: /tasks
+  actions:
+    complete: { patch: { done: true } }
+    archive:  { post: {}, at: "{uuid}/archive" }
+```
+
+```gherkin
+When I complete the task "laundry"
+```
+
+ATF validates the shape — a mapping of name to mapping — and nothing else: the body is adapter
+configuration, and reading anything into it here would be the framework deciding what a system can
+do.
+
+A type may not declare an action called **`delete`**: that one is in the required SPI, so every
+adapter has it and `When I delete the …` needs no declaration.
+
+Because `actions` is data it is **enumerable**, which is what lets the cockpit's composer offer it
+in a dropdown — the same property that makes assertions composable.
+
+#### What the `rest` adapter understands {#rest-actions}
+
+| Key | Meaning |
+|---|---|
+| `patch:` / `post:` / `put:` / `delete:` | the verb to send, and the body to send with it. Exactly one per action. |
+| `at:` | where to send it, `{...}` filled from the record. Defaults to the resource's path with its identity appended. |
+
+`${...}` in the body resolves as it does anywhere else. Whatever the response carries comes back as
+the record; a `204` carries nothing, and the claims after it read the resource back for themselves.
+
 ### `lifecycle` {#lifecycle}
 
 `persistent` (default) or `ephemeral`.

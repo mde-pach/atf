@@ -73,6 +73,8 @@ badge:
   system: store
   collection: badges
   natural_key: slug
+  actions:
+    award: { grant: true }
 visitor:
   system: ephemeral
   lifecycle: ephemeral
@@ -182,6 +184,22 @@ class StoreAdapter(Store):
         bucket.append(record)
         self.write(data)
         return record
+
+    def act(self, node, record, action, ctx):
+        """Optional SPI: do to a resource what its type says the action means.
+
+        This backend is a JSON file, so an action is a patch: whatever the declaration holds is
+        written onto the record. A real adapter would send it somewhere.
+        """
+        declared = (node["config"].get("actions") or {}).get(action) or {}
+        data = self.read()
+        key = node["id_field"]
+        for item in data.get(self.collection(node), []):
+            if item.get(key) == record.get(key):
+                item.update(ctx.resolve(declared))
+                self.write(data)
+                return item
+        return None
 
     def delete(self, node, record, ctx):
         data = self.read()

@@ -95,6 +95,48 @@ A feature needing a `@when` of its own therefore still wants its module — or t
 `conftest.py`, where every feature can see it. A feature some module already binds is left alone;
 collecting it twice would run every scenario twice.
 
+## Acting on a system {#acting}
+
+```gherkin
+When I <action> the <type> "<name>"
+When I list every <type>
+```
+
+An adapter offers *mechanical* verbs; the catalog names a *domain* action in terms of them; the
+spec says the domain action. Nothing in between needs code.
+
+```yaml
+task:
+  system: rest
+  path: /tasks
+  actions:
+    complete: { patch: { done: true } }
+    reopen:   { patch: { done: false } }
+```
+
+```gherkin
+Given the task "laundry"
+When I complete the task "laundry"
+Then the task "laundry" is done
+```
+
+The action's body is adapter configuration, exactly as `path` is: ATF validates its shape and reads
+nothing into it. See [`actions:`](catalog.md#actions) for what the built-in `rest` adapter
+understands, and [`act`](adapter-spi.md#act) for writing your own.
+
+**`delete` is ATF's own** and needs no declaration — every adapter has one, and a backend without
+deletion no-ops it through `NoopDelete`, so the claim after it reads the resource back and finds
+out. A type may not declare an action by that name.
+
+**`I list every <type>`** reads back everything of a type the environment holds, onto
+[`result`](#slots) — which is [`browse`](adapter-spi.md#browse), the optional half of the SPI. A
+type whose listing is scoped to a parent says so rather than guessing at one, and an adapter that
+cannot list says that.
+
+An action puts what it produced on `result`, so a scenario can claim something about the response
+as well as about the resource. A system that says nothing useful leaves the record the action was
+performed on, so there is always something there.
+
 ## Read-and-compare steps {#read-and-compare-steps}
 
 A family of steps, registered by the plugin, available in every suite without writing anything. They

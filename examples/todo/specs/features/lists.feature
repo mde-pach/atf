@@ -18,9 +18,17 @@ Feature: Lists
     Then the tasks that came back are all open
 
   Scenario: Completing a task marks it done
+    # No step code on either line. `complete` is declared on the `task` type in the catalog, so
+    # the action is data and the claim after it reads the task back from the API.
     Given the task "laundry"
-    When I complete the task
+    When I complete the task "laundry"
     Then the task "laundry" is done
+
+  Scenario: Reopening one that was completed puts it back
+    Given the task "laundry"
+    When I complete the task "laundry"
+    And I reopen the task "laundry"
+    Then the task "laundry" is not done
 
   Scenario: An overdue task is still an ordinary task
     # One catalog node, varied where the variation matters. The alternative is a second `task`
@@ -33,6 +41,21 @@ Feature: Lists
       | done   | false     |
       | uuid   | #notnull  |
       | due_at | #notnull  |
+
+  Scenario: A task that is deleted is gone
+    # `delete` is ATF's own: every adapter has one, so this needs no declaration and no step code.
+    Given the task "milk"
+    When I delete the task "milk"
+    Then the task "milk" is gone
+
+  Scenario: Every owner this environment holds can be read back at once
+    # Browsing is the other half of the SPI no scenario could reach. A `todo_list` cannot be listed
+    # this way and says so: its listing is scoped to an owner, and neither of these steps names one.
+    Given the owner "primary"
+    And the owner "secondary"
+    When I list every owner
+    Then the result contains the owner "primary"
+    And the result contains the owner "secondary"
 
   Scenario Outline: Owners report their own plan
     Given the owner "<who>"

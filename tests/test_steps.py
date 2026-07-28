@@ -12,6 +12,7 @@ import pytest
 from _pytest.outcomes import Failed
 
 from atf.steps import (
+    ACT,
     COUNT,
     EXISTS,
     FIELD_CONTAINS,
@@ -22,6 +23,7 @@ from atf.steps import (
     FIELD_NOT_EMPTY,
     GENERIC_STEPS,
     GONE,
+    LIST_EVERY,
     SHAPE_IS,
     SLOT_CONTAINS,
     SLOT_FIELD_CONTAINS,
@@ -86,6 +88,8 @@ PASSING = {
     SLOT_FIELD_EMPTY: 'the result field "notes" is empty',
     SLOT_FIELD_NOT_EMPTY: 'the result field "plan" is not empty',
     COUNT: "the environment has 0 visitor",
+    ACT: 'I delete the account "secondary"',
+    LIST_EVERY: "I list every visitor",
     # A table step carries its table with it, indented under the line the test writes.
     SHAPE_IS: 'the account "primary" is:\n      | plan  | standard |\n      | id    | #notnull |',
     SLOT_SHAPE_IS: "the result is:\n      | plan  | standard |\n      | notes | #string  |",
@@ -93,7 +97,8 @@ PASSING = {
 
 
 def test_the_table_lists_exactly_the_thens_that_are_proved():
-    assert {step.pattern for step in GENERIC_STEPS if step.keyword == "then"} == set(PASSING)
+    proved = {step.pattern for step in GENERIC_STEPS if step.keyword in {"then", "when"}}
+    assert proved == set(PASSING)
 
 
 def test_every_then_in_the_table_resolves_to_a_registered_definition(project):
@@ -741,3 +746,92 @@ def _(context):
 '''
     result = run_feature(project, "slot_shape", feature, steps)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# ---- acting on a system -----------------------------------------------------
+#
+# The framework could read a system and never act on one: `find` and `create` were reachable from
+# Gherkin, `delete` and `browse` from nothing at all, and every action a project needed was written
+# by hand — including the ones its adapter already knew how to perform.
+
+
+def test_a_declared_action_is_performed_with_no_step_code(project):
+    feature = """Feature: Acting
+  Scenario: An action the catalog declares
+    Given the badge "welcome"
+    When I award the badge "welcome"
+    Then the badge "welcome" field "grant" is "true"
+"""
+    result = run_feature(project, "acting", feature)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_an_action_leaves_what_it_produced_for_the_next_claim(project):
+    feature = """Feature: Acting
+  Scenario: What the action gave back
+    Given the badge "welcome"
+    When I award the badge "welcome"
+    Then the result field "grant" is "true"
+"""
+    result = run_feature(project, "acting_result", feature)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_delete_is_atfs_own_and_needs_no_declaration(project):
+    """Every adapter has one — a backend without deletion no-ops it, and the claim after finds out."""
+    feature = """Feature: Acting
+  Scenario: A resource that is deleted is gone
+    Given the account "primary"
+    When I delete the account "primary"
+    Then the account "primary" is gone
+"""
+    result = run_feature(project, "deleting", feature)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_an_action_nothing_declares_lists_the_ones_that_are(project):
+    feature = """Feature: Acting
+  Scenario: A verb this type never offered
+    Given the account "primary"
+    When I incinerate the account "primary"
+"""
+    result = run_feature(project, "no_such_action", feature)
+    assert result.returncode != 0
+    assert "account declares no action 'incinerate'" in result.stdout
+    assert "it offers: delete" in result.stdout
+
+
+def test_acting_on_something_that_is_not_there_says_so(project):
+    feature = """Feature: Acting
+  Scenario: Nothing to act on
+    Given the account "primary"
+    When I delete the account "secondary"
+"""
+    result = run_feature(project, "acting_absent", feature)
+    assert result.returncode != 0
+    assert "There is nothing to delete" in result.stdout
+
+
+def test_browsing_is_reachable_from_a_scenario(project):
+    """The other half of the SPI no scenario could reach."""
+    feature = """Feature: Acting
+  Scenario: Everything of a type, read back at once
+    Given the visitor "walkin"
+    When I list every visitor
+    Then the result contains the visitor "walkin"
+"""
+    result = run_feature(project, "browsing", feature)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_browsing_a_type_whose_adapter_cannot_list_says_so(project):
+    """`browse` is optional SPI, so the step degrades with the reason rather than an AttributeError."""
+    feature = """Feature: Acting
+  Scenario: A type nothing can enumerate
+    Given the account "primary"
+    When I list every account
+"""
+    result = run_feature(project, "unbrowsable", feature)
+    assert result.returncode != 0
+    assert "cannot list what an environment holds, so ATF cannot list account" in result.stdout
+    assert "`browse`" in result.stdout

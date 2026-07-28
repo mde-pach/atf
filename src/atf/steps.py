@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
-from pytest_bdd import parsers, then
+from pytest_bdd import parsers, then, when
 
 from .adapters import Record, can_browse
 from .catalog import Node, find_node, key_criteria, natural_keys
@@ -44,8 +44,8 @@ from .compare import (
     written_contains,
     written_matches,
 )
-from .context import Slot, ephemeral_record
-from .materializer import EPHEMERAL, Materializer, ScopeRequired
+from .context import RESULT, Slot, ephemeral_record
+from .materializer import EPHEMERAL, Materializer, ProvisioningError, ScopeRequired
 from .placeholders import Unresolved
 from .records import as_records
 
@@ -78,6 +78,18 @@ COUNT = "the environment has {count:d} {resource_type}"
 SHAPE_IS = 'the {resource_type} "{name}" is:'
 SLOT_SHAPE_IS = "the {slot:w} is:"
 
+# The generic `When`. Until this existed the framework could *read* a system and never act on one:
+# `find` and `create` were reachable from Gherkin, `delete` and `browse` from nothing at all, and
+# every action a project needed was hand-written — including the ones the adapter already knew how
+# to perform. An adapter offers mechanical verbs, the catalog names a domain action in terms of
+# them, and this says the domain action.
+#
+# `{action:w}` is one word, because an action is a name the catalog chose. That is also what keeps
+# this from swallowing a project's own `When`: `I list the projects of the account` names no
+# instance in quotes, and `I run "atf seed local"` has no ` the ` in it.
+ACT = 'I {action:w} the {resource_type} "{name}"'
+LIST_EVERY = "I list every {resource_type}"
+
 # The four claims about what a step produced name the slot they are about, rather than assuming the
 # one called `result`. `Context` has always described every slot it holds; until these patterns
 # named one, a scenario with two actions could compare neither of them with the other.
@@ -98,6 +110,7 @@ SLOT_FIELD_NOT_EMPTY = 'the {slot:w} field "{field}" is not empty'
 # well have a parameter called `field` that means something else entirely, which is why only the
 # patterns in this table are read this way.
 TYPE, NAME, FIELD, VALUE, SLOT, COUNT_OF = "resource_type", "name", "field", "value", "slot", "count"
+ACTION = "action"
 
 # How many records a count claim will read before it gives up. A listing that hits the cap is
 # reported rather than counted: a number that might be the cap is not an answer.
@@ -115,6 +128,10 @@ class GenericStep:
     # What the step reads from the context. Declared rather than read out of the source below,
     # because these reach it through `getattr` and an attribute is what source analysis can see.
     needs: tuple[str, ...] = ()
+    # What it writes to the context. Declared for the same reason `needs` is: these are ATF's own
+    # steps, and their decorators name a constant rather than a literal, so nothing reading the
+    # source can pair a wording with what it does.
+    produces: tuple[str, ...] = ()
     # Whether the step reads the slot it names, rather than a slot fixed in advance. Nothing can be
     # listed in `needs` for these — which slot they need is a choice the author has not made yet —
     # so what an interface checks is that the slot they *did* name is one the scenario holds.
@@ -137,6 +154,20 @@ GENERIC_STEPS: tuple[GenericStep, ...] = (
         "The same, with some of its body written differently for this scenario only.",
         (TYPE, NAME),
         takes_table=True,
+    ),
+    GenericStep(
+        "when",
+        ACT,
+        "Do to this resource what its type says that action means.",
+        (ACTION, TYPE, NAME),
+        produces=(RESULT,),
+    ),
+    GenericStep(
+        "when",
+        LIST_EVERY,
+        "Read back every resource of this type the environment holds.",
+        (TYPE,),
+        produces=(RESULT,),
     ),
     GenericStep(
         "then",
@@ -346,6 +377,38 @@ def comparisons_for(subject: str, on_field: bool) -> list[Comparison]:
 # ---- the steps -------------------------------------------------------------
 
 
+@when(parsers.parse(ACT))
+def _(request: pytest.FixtureRequest, context: Any, action: str, resource_type: str, name: str) -> None:
+    """Do to this resource what its type says that action means."""
+    engine, node = _node(request, resource_type, name)
+    known = engine.actions(resource_type)
+    if action not in known:
+        pytest.fail(
+            f"{resource_type} declares no action {action!r} (it offers: {', '.join(known)}). "
+            "Declare it under `actions:` on the type, or write a step of your own for it."
+        )
+
+    record = read(engine, node, context)
+    if record is None:
+        pytest.fail(f"{_absent(engine, node)} There is nothing to {action}.")
+
+    try:
+        produced = engine.act(node, record, action)
+    except ProvisioningError as exc:
+        pytest.fail(str(exc))
+    # What an action gave back, for a scenario that wants to claim something about it. A system
+    # that says nothing useful leaves the record the action was performed on, so there is always
+    # something to talk about — and the claims after it read the resource back anyway.
+    context.result = produced if produced is not None else record
+
+
+@when(parsers.parse(LIST_EVERY))
+def _(request: pytest.FixtureRequest, context: Any, resource_type: str) -> None:
+    """Read back every resource of this type the environment holds."""
+    engine: Materializer = request.getfixturevalue("materializer")
+    context.result = _listing(engine, resource_type, doing="list")
+
+
 @then(parsers.parse(EXISTS))
 def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: str) -> None:
     """Read this resource back from the environment and require it to be there."""
@@ -512,7 +575,7 @@ def _(request: pytest.FixtureRequest, count: int, resource_type: str) -> None:
         )
 
 
-def _listing(engine: Materializer, resource_type: str) -> list[Record]:
+def _listing(engine: Materializer, resource_type: str, doing: str = "count") -> list[Record]:
     """Every record of a type this environment holds, or a refusal saying why there is no answer.
 
     The cache goes first for the same reason a read does: the listing behind it was taken before
@@ -528,8 +591,8 @@ def _listing(engine: Materializer, resource_type: str) -> list[Record]:
         pytest.fail(f"no adapter for system {system!r} in {engine.env}, so there is nothing to count.")
     if not can_browse(adapter):
         pytest.fail(
-            f"the {system!r} adapter cannot list what an environment holds, so ATF cannot count "
-            f"{resource_type}. Assert on the resources you named instead, or give the adapter a "
+            f"the {system!r} adapter cannot list what an environment holds, so ATF cannot {doing} "
+            f"{resource_type}. Name the resources you mean instead, or give the adapter a "
             "`browse` — see the adapter SPI."
         )
 
@@ -538,13 +601,13 @@ def _listing(engine: Materializer, resource_type: str) -> list[Record]:
         records = engine.browse(resource_type, limit=LISTING_LIMIT)
     except ScopeRequired as exc:
         pytest.fail(
-            f"counting {resource_type} needs {', '.join(exc.fields)} to say which parent's listing "
-            "is meant, and a count names no parent."
+            f"to {doing} {resource_type} ATF needs {', '.join(exc.fields)}, because this type is "
+            "listed under a parent and neither of these steps names one."
         )
     if len(records) >= LISTING_LIMIT:
         pytest.fail(
             f"the {resource_type} listing reached {LISTING_LIMIT} records, which is where ATF stops "
-            "reading. A number that might be the limit is not a count."
+            "reading. A listing that might be the limit is not an answer."
         )
     return records
 

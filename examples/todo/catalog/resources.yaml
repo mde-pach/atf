@@ -18,6 +18,11 @@ task:
   natural_key: [list_id, title]
   list_filter: [list_id]
   id_field: uuid                            # this endpoint returns identity under `uuid`
+  # What can be *done* to a task, in the terms the `rest` adapter understands. A spec then says the
+  # domain action — `When I complete the task "laundry"` — and no step code exists for either.
+  actions:
+    complete: { patch: { done: true } }
+    reopen:   { patch: { done: false } }
 
 label:
   system: reference                         # find-only: must already exist in the environment

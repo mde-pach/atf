@@ -339,6 +339,7 @@ def _attach_context_use(steps: list[StepDef]) -> None:
         generic = _generic(step.pattern)
         if generic is not None:
             step.needs = list(generic.needs)
+            step.produces = list(generic.produces)
             step.needs_slot = generic.needs_slot
             step.takes_table = generic.takes_table
 

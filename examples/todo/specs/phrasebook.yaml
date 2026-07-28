@@ -17,3 +17,6 @@
 
 'the task "{name}" is done':
   - the task "{name}" field "done" is "true"
+
+'the task "{name}" is not done':
+  - the task "{name}" field "done" is "false"

@@ -20,3 +20,19 @@ groceries_node:
     - cockpits.chained
   body:
     at: ${cockpits.chained.id}/catalog/node/lists.groceries
+
+scenarios:
+  resource: screen
+  represents: Every behaviour the suite describes, and the button that runs one.
+  depends_on:
+    - cockpits.chained
+  body:
+    at: ${cockpits.chained.id}/scenarios
+
+locked_scenarios:
+  resource: screen
+  represents: The same page pointed at an environment nobody opened for writing.
+  depends_on:
+    - cockpits.chained
+  body:
+    at: ${cockpits.chained.id}/scenarios?env=locked

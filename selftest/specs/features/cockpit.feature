@@ -78,3 +78,22 @@ Feature: The cockpit
   Scenario: A small lineage reads as a sentence a person can follow
     Given the screen "groceries_node"
     Then the words "A list under the primary owner." are showing
+
+  # Running a scenario from the interface is a *mutation*, and the `page` and `element` types
+  # cannot express one: they only ever GET, deliberately — nothing that reads the cockpit can
+  # change it. So the one place a scenario can press a button is here, through a real browser,
+  # which is what the browser adapter is for.
+
+  @browser
+  Scenario: A scenario can be run from the interface that describes it
+    Given the screen "scenarios"
+    When I click the link "A list belongs to its owner"
+    And I click the button "Run this scenario against local"
+    Then the words "passed" are showing
+
+  @browser
+  Scenario: An environment nobody opened for writing will not run anything
+    Given the screen "locked_scenarios"
+    When I click the link "A list belongs to its owner"
+    Then the words "locked is read-only" are showing
+    And the button "Run this scenario against locked" is disabled

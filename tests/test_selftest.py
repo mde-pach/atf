@@ -19,11 +19,11 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 SELFTEST = REPO / "selftest"
 
-SCENARIOS = 73
+SCENARIOS = 75
 
 # The scenarios that need the page to have *run*, not merely been served. They skip where there is
 # no browser, which is the one thing about this suite that legitimately differs between machines.
-BROWSER_SCENARIOS = 4
+BROWSER_SCENARIOS = 6
 
 NOWHERE = "/nonexistent-so-no-browser-can-be-launched"
 

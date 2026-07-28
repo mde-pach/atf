@@ -322,11 +322,6 @@ def test_a_read_only_environment_refuses_mutations(client, path):
     assert "read-only" in response.text
 
 
-def test_a_read_only_environment_says_so_and_disables_its_controls(client):
-    body = client.get("/catalog?env=locked").text
-    assert "read-only" in body and "disabled" in body
-
-
 def test_rescanning_is_a_read_and_needs_no_permission(client):
     """Rescan re-reads the environment and changes nothing, so neither gate applies to it."""
     assert client.post("/catalog/rescan?env=locked").status_code == 200

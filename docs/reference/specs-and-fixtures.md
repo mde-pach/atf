@@ -167,6 +167,8 @@ And the option "every owner" is not showing
 | `Then the <role> "<name>" is showing` | it is there and visible |
 | `Then the <role> "<name>" is not showing` | it is not — *hidden* counts, which is what a person means |
 | `Then the <role> "<name>" reads "<text>"` | compares what it says |
+| `Then the <role> "<name>" is disabled` | it is there and refuses to be used |
+| `Then the <role> "<name>" is enabled` | it is there and usable |
 | `Then the words "<text>" are showing` | prose, which has no accessible name |
 | `Then the words "<text>" are not showing` | it does not |
 
@@ -179,6 +181,13 @@ class, and would put the shape of a template into the file that describes the do
 **Prose is the exception.** ARIA computes an accessible name for things you can *do* something to,
 and a paragraph is not one — so what a page *says* is claimed with `the words "…"`, which is still
 what a reader reads and still not a selector.
+
+**Disabled is not the same as absent**, and the difference is worth a claim of its own: an
+interface that hides what you may not do teaches nothing, and one that offers it and then refuses
+is worse. Disabled, with the reason beside it, is the third option.
+
+**A claim waits.** `is showing` and `the words …` wait for what they name to arrive, because an
+interface that swaps a fragment in after a request has settled is asynchronous, not broken.
 
 **A failure says what is there.** Naming a control that is not on the page lists the ones that are,
 with that role, so a wrong name is one line to fix rather than a hunt.

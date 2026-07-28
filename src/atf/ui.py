@@ -44,6 +44,9 @@ READS = 'the {role:w} "{name}" reads "{text}"'
 # Prose has no accessible name — ARIA computes one for things you can *do* something to, and a
 # paragraph is not one. So the claim about what a page *says* is about the words themselves, which
 # is still what a person reads and still not a selector.
+DISABLED = 'the {role:w} "{name}" is disabled'
+ENABLED = 'the {role:w} "{name}" is enabled'
+
 WORDS = 'the words "{text}" are showing'
 NO_WORDS = 'the words "{text}" are not showing'
 
@@ -74,10 +77,17 @@ def _(request: pytest.FixtureRequest, role: str, name: str) -> None:
 
 @then(parsers.parse(SHOWING))
 def _(request: pytest.FixtureRequest, role: str, name: str) -> None:
-    """Require a control with this role and name to be there and visible."""
-    control = _control(request, role, name)
-    if not control.is_visible():
-        pytest.fail(f'the {role} "{name}" is on the page but not visible.{_instead(request, role)}')
+    """Require a control with this role and name to become visible.
+
+    Waits, rather than looking once. An interface that swaps a fragment in after a request has
+    settled is not broken, it is asynchronous — and a claim that only ever looks at the first
+    instant is a claim that fails for a reason the scenario is not about.
+    """
+    found = _page(request).get_by_role(role, name=name)
+    try:
+        found.first.wait_for(state="visible")
+    except Exception:  # noqa: BLE001 - not arriving is the outcome, and the message says what is there
+        pytest.fail(f'no visible {role} called "{name}" arrived on this page.{_instead(request, role)}')
 
 
 @then(parsers.parse(NOT_SHOWING))
@@ -104,12 +114,32 @@ def _(request: pytest.FixtureRequest, role: str, name: str, text: str) -> None:
         pytest.fail(f'the {role} "{name}" reads "{actual}", not "{text}"')
 
 
+@then(parsers.parse(DISABLED))
+def _(request: pytest.FixtureRequest, role: str, name: str) -> None:
+    """Require a control to be there and refuse to be used.
+
+    Distinct from not being there at all, and the difference is the point: an interface that hides
+    what you may not do teaches nothing, and one that offers it and then refuses is worse. Disabled
+    with a reason beside it is the third option, and this is how a scenario says so.
+    """
+    if not _control(request, role, name).is_disabled():
+        pytest.fail(f'the {role} "{name}" can be used, and this scenario says it should not be.')
+
+
+@then(parsers.parse(ENABLED))
+def _(request: pytest.FixtureRequest, role: str, name: str) -> None:
+    """Require a control to be there and usable."""
+    if _control(request, role, name).is_disabled():
+        pytest.fail(f'the {role} "{name}" is disabled, and this scenario says it should not be.')
+
+
 @then(parsers.parse(WORDS))
 def _(request: pytest.FixtureRequest, text: str) -> None:
-    """Require these words to be readable somewhere on the page."""
-    found = _page(request).get_by_text(text)
-    if found.count() == 0 or not found.first.is_visible():
-        pytest.fail(f'the words "{text}" are nowhere a reader can see on this page.')
+    """Require these words to become readable somewhere on the page. Waits, for the same reason."""
+    try:
+        _page(request).get_by_text(text).first.wait_for(state="visible")
+    except Exception:  # noqa: BLE001 - not arriving is the outcome this step reports
+        pytest.fail(f'the words "{text}" never appeared anywhere a reader can see on this page.')
 
 
 @then(parsers.parse(NO_WORDS))

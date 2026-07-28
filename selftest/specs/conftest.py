@@ -42,6 +42,16 @@ def _(context, atf, command, slot):
     setattr(context, slot, atf.run(context.workspace, *command.split()))
 
 
+@when(parsers.parse('I run "atf {command}" with {name} exported as "{value}"'))
+def _(context, atf, command, name, value):
+    """Run it with something in its environment, for the promises that are about what was exported.
+
+    The variable's name is a parameter rather than four near-identical steps, and it stays out of
+    the feature file by living in a phrase — `ATF_ENV` is the framework's word, not the reader's.
+    """
+    context.result = atf.run_with(context.workspace, {name: value}, *command.split())
+
+
 @when(parsers.parse('I run "atf {command}", letting it find the suite itself'))
 def _(context, atf, command):
     """Run from a directory inside the suite, with nothing pointing at the manifest.

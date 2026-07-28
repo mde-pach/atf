@@ -90,4 +90,10 @@ Feature: The manifest
       Given the workspace "chained"
       When I run "atf run"
       Then the command succeeds
-      And the run names the environment it used
+      And the run used the environment "local"
+
+    Scenario: An environment the developer exported wins over the suite's default
+      Given the workspace "chained"
+      When the developer runs the specs against the environment they exported, "locked"
+      Then the command succeeds
+      And the run used the environment "locked"

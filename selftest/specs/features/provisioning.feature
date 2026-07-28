@@ -31,6 +31,16 @@ Feature: Provisioning
       And the environment has 1 owner
       And the environment has 1 todo_list
 
+  Rule: A developer can seed part of a catalog rather than all of it
+
+    Scenario: Seeding one resource brings along what it depends on, and nothing else
+      Given the workspace "chained"
+      When the developer seeds only the todo_list "groceries"
+      Then the command succeeds
+      And the owner "primary" exists
+      And the environment has 1 owner
+      And the environment has 1 todo_list
+
   Rule: Making something exist twice makes it once
 
     Scenario: Seeding twice creates nothing the second time

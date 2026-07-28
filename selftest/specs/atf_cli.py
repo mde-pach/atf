@@ -43,6 +43,17 @@ class AtfUnderTest:
         root = Path(workspace["id"])
         return self._invoke(root, root, root / "atf.yaml", *args)
 
+    def run_with(self, workspace: dict[str, Any], exported: dict[str, str], *args: str) -> Outcome:
+        """The same, with something exported into the command's environment first.
+
+        A few of ATF's promises are about what a person exported rather than what they typed —
+        `ATF_ENV` choosing the environment over the manifest's default is the one that matters.
+        There is no way to say that through arguments, so it is said here, and the variable's *name*
+        stays out of the feature file by living in a phrase.
+        """
+        root = Path(workspace["id"])
+        return self._invoke(root, root, root / "atf.yaml", *args, exported=exported)
+
     def run_and_find(self, workspace: dict[str, Any], *args: str) -> Outcome:
         """The same, from a directory inside the suite and with nothing pointing at the manifest.
 
@@ -61,12 +72,20 @@ class AtfUnderTest:
         finally:
             shutil.rmtree(empty, ignore_errors=True)
 
-    def _invoke(self, cwd: Path, suite: Path | None, manifest: Path | None, *args: str) -> Outcome:
+    def _invoke(
+        self,
+        cwd: Path,
+        suite: Path | None,
+        manifest: Path | None,
+        *args: str,
+        exported: dict[str, str] | None = None,
+    ) -> Outcome:
         env = {
             **os.environ,
             "PYTHONPATH": os.pathsep.join([str(ATF_SRC), *([str(suite)] if suite else [])]),
             "SELFTEST_BACKEND": self.backend_url,
             "SELFTEST_ACTOR": self.actor,
+            **(exported or {}),
         }
         if manifest is None:
             env.pop("ATF_MANIFEST", None)

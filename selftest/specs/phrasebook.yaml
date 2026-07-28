@@ -29,8 +29,10 @@
   - the result field "output" contains "owners.primary"
   - the result field "output" contains "lists.groceries"
 
-'the run names the environment it used':
-  - the result field "output" contains "in local"
+# Which environment a run reports having used. Parameterised, because the whole point of one
+# scenario below is that it is *not* the one the manifest calls its default.
+'the run used the environment "{env}"':
+  - the result field "output" contains "in {env}"
 
 'the run fails':
   - the result field "exit_code" is "1"
@@ -48,3 +50,20 @@
 
 'seeding the open environment worked':
   - the open_env field "exit_code" is "0"
+
+# ---- saying what a flag does, without writing one ---------------------------
+#
+# `atf lint` reads feature files and not this one, which is exactly the seam that makes these legal:
+# a flag is how the command is spelled, and what it *means* is what a scenario should say. Rename a
+# flag and this is the only file that changes.
+
+'the developer seeds only the {type} "{name}"':
+  - I run "atf seed local --type {type} --name {name}"
+
+'the developer seeds everything it can rather than stopping at the first failure':
+  - I run "atf seed local --keep-going"
+
+# What a person exported, rather than what they typed. The variable's name is ATF's word, not a
+# reader's, so it lives here.
+'the developer runs the specs against the environment they exported, "{env}"':
+  - I run "atf run" with ATF_ENV exported as "{env}"

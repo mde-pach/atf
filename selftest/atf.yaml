@@ -14,8 +14,12 @@ mutable_envs: [local]
 # A `@browser` scenario cannot run where the `browser` system is unavailable, and the adapter is
 # what knows whether it is. Without this the suite would be red on any checkout that never ran
 # `uv sync --group browser`, and a suite that is red for a reason nobody can act on stops being read.
+#
+# Written with the `@` an author would type on the scenario. It is how a tag is said, not part of
+# its name, so the manifest accepts it either way and drops it — and writing it here is what keeps
+# that true, now that no unit test asserts it.
 requires:
-  browser: browser
+  "@browser": browser
 
 environments:
   local:

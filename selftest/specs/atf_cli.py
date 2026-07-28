@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import httpx
-import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 TIMEOUT = 300
@@ -39,16 +40,43 @@ class AtfUnderTest:
 
     def run(self, workspace: dict[str, Any], *args: str) -> Outcome:
         """Run `atf …` inside the workspace, exactly as a consumer would."""
+        root = Path(workspace["id"])
+        return self._invoke(root, root, root / "atf.yaml", *args)
+
+    def run_and_find(self, workspace: dict[str, Any], *args: str) -> Outcome:
+        """The same, from a directory inside the suite and with nothing pointing at the manifest.
+
+        `ATF_MANIFEST` is how every other call keeps a scenario independent of where it ran from.
+        Taking it away is the only way to exercise the promise that the command walks up and finds
+        its own suite — and the only way to reach a manifest that is not called `atf.yaml`.
+        """
+        root = Path(workspace["id"])
+        return self._invoke(root / "specs", root, None, *args)
+
+    def run_nowhere(self, *args: str) -> Outcome:
+        """Run in a fresh empty directory with no suite above it, the way a newcomer would."""
+        empty = Path(tempfile.mkdtemp(prefix="atf-selftest-nowhere-"))
+        try:
+            return self._invoke(empty, None, None, *args)
+        finally:
+            shutil.rmtree(empty, ignore_errors=True)
+
+    def _invoke(self, cwd: Path, suite: Path | None, manifest: Path | None, *args: str) -> Outcome:
+        env = {
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join([str(ATF_SRC), *([str(suite)] if suite else [])]),
+            "SELFTEST_BACKEND": self.backend_url,
+            "SELFTEST_ACTOR": self.actor,
+        }
+        if manifest is None:
+            env.pop("ATF_MANIFEST", None)
+        else:
+            env["ATF_MANIFEST"] = str(manifest)
+
         completed = subprocess.run(
             [sys.executable, "-m", "atf.cli", *args],
-            cwd=workspace["id"],
-            env={
-                **os.environ,
-                "PYTHONPATH": os.pathsep.join([str(ATF_SRC), workspace["id"]]),
-                "ATF_MANIFEST": str(Path(workspace["id"]) / "atf.yaml"),
-                "SELFTEST_BACKEND": self.backend_url,
-                "SELFTEST_ACTOR": self.actor,
-            },
+            cwd=cwd,
+            env=env,
             capture_output=True,
             text=True,
             timeout=TIMEOUT,
@@ -62,14 +90,3 @@ class AtfUnderTest:
 
     def reset(self) -> None:
         httpx.post(f"{self.backend_url}/_reset", timeout=10).raise_for_status()
-
-
-@pytest.fixture
-def atf(client_config):
-    return AtfUnderTest(**client_config["atf"])
-
-
-@pytest.fixture(autouse=True)
-def _clean_backend(atf):
-    """Each scenario starts against an empty environment."""
-    atf.reset()

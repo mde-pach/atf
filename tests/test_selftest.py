@@ -19,7 +19,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 SELFTEST = REPO / "selftest"
 
-SCENARIOS = 22
+SCENARIOS = 53
 
 # The scenarios that need the page to have *run*, not merely been served. They skip where there is
 # no browser, which is the one thing about this suite that legitimately differs between machines.
@@ -89,10 +89,16 @@ def test_the_self_hosted_suite_uses_atf_rather_than_reimplementing_it():
     for feature in features:
         assert "Scenario:" in feature.read_text()
 
-    steps = (SELFTEST / "specs" / "steps" / "test_provisioning.py").read_text()
-    assert "scenarios(" in steps
-    # The provisioning step is ATF's, not something the suite defines for itself.
-    assert "@given" not in steps
+    # Provisioning and every assertion are ATF's own steps, not something the suite writes for
+    # itself. All it defines is running a command, which is the one thing a framework cannot do
+    # generically — so a `@given` or a `@then` anywhere under `specs/` means the dogfood has been
+    # quietly spat out.
+    # A decorator at the start of a line, not the word anywhere: these files explain themselves,
+    # and a docstring saying "there is no `@then` here" would otherwise be the thing that fails.
+    hand_written = re.compile(r"^@(given|then)\b", re.MULTILINE)
+    for module in (SELFTEST / "specs").rglob("*.py"):
+        found = hand_written.search(module.read_text(encoding="utf-8"))
+        assert found is None, f"{module.name} writes its own {found.group(0)}; ATF's own steps do that"
 
 
 @pytest.mark.parametrize(

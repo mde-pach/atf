@@ -1,3 +1,9 @@
+bare:
+  resource: workspace
+  represents: A suite with nothing declared, so a scenario can vary in exactly one malformation.
+  body:
+    suite: bare
+
 chained:
   resource: workspace
   represents: A suite whose catalog declares a two-level dependency chain with a placeholder.

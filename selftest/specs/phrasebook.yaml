@@ -14,6 +14,24 @@
   - the result field "exit_code" is "2"
   - the result field "output" contains "{reason}"
 
+# A refusal usually has more than one thing to say — every problem in a catalog at once, or the
+# variable that is missing *and* the setting that wanted it. The first is the reason; the rest are
+# said with this, so a scenario never has to write `it is refused because` twice about one refusal.
+'the refusal also mentions "{detail}"':
+  - the result field "output" contains "{detail}"
+
+# The full manifest path of the setting whose value was missing. Spelling it in the feature would
+# put a nested config key into a sentence, which is the vocabulary this file exists to absorb.
+'the refusal names the setting that wanted it':
+  - the result field "output" contains "environments.local.adapters.rest.base_url_env"
+
+'it lists the owner and the list that depends on it':
+  - the result field "output" contains "owners.primary"
+  - the result field "output" contains "lists.groceries"
+
+'the run names the environment it used':
+  - the result field "output" contains "in local"
+
 'the run fails':
   - the result field "exit_code" is "1"
   - the result field "output" contains "failed"

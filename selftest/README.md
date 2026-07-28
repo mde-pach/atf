@@ -3,7 +3,7 @@
 This is an ATF suite whose system under test is ATF.
 
 ```sh
-PYTHONPATH=../src uv run pytest -q      # 20 passed, or 16 passed + 4 skipped without a browser
+PYTHONPATH=../src uv run pytest -q      # 53 passed, or 49 passed + 4 skipped without a browser
 ```
 
 If the vocabulary below is unfamiliar, the
@@ -22,7 +22,36 @@ If the vocabulary below is unfamiliar, the
 
 So `Given the workspace "chained"` builds a genuine consuming project, and
 `When I run "atf seed local"` runs the real CLI against it. The provisioning step is ATF's own —
-this suite defines no `@given`.
+this suite defines no `@given` and no `@then` anywhere. Its entire vocabulary is four `@when`s in
+`specs/conftest.py`, all of them "run the command", because running a command is the one thing a
+framework has no generic way to do. They live in a `conftest.py` rather than beside a feature
+because every `.feature` here is collected by ATF with no binding module of its own, and a step
+declared in a module is visible only inside it.
+
+## One template, many variations
+
+Most of what this suite has to say about ATF is *"here is a manifest with one thing wrong with it,
+and here is what the command says about it"*. A suite template per malformation would be forty
+directories differing by three lines each — a global set of named fixtures where every variation
+needs a new one, which is the Object Mother pattern. So a scenario writes the difference where the
+difference matters:
+
+```gherkin
+  Scenario: A type naming a system nothing knows how to talk to is refused
+    Given the workspace "bare" but:
+      | catalog/resources.yaml | {account: {system: quantum}} |
+    When I run "atf status local"
+    Then it is refused because "no registered adapter"
+```
+
+`but:` is ATF's own varied-provision step; the table reaches `WorkspaceAdapter` as an override of
+the node's body, and a body key that is not `suite` is a path inside the copied workspace holding
+that file's whole text. Flow-style YAML fits on one line because a broken catalog is small by
+nature. `#absent` removes a file; `@{…}` is written where the file must *contain* an unresolved
+`${…}`, since the materializer resolves a body before the adapter sees it.
+
+`suites/bare` exists for this: a valid manifest and an empty catalog, so a scenario's refusal
+arrives without the two real nodes of `chained` for company. **Five templates, not forty-five.**
 
 ## Testing the front end the same way
 
@@ -87,19 +116,27 @@ adapter-factory registration, catalog validation surfacing as an exit code, depe
 provisioning against a live HTTP backend, the pytest plugin's generated fixtures, and ephemeral
 teardown.
 
-## What it deliberately does not cover
+## What it used to say it could not cover
 
-Unit-level rules — each catalog validation error, placeholder forms, topological ordering, retry
-and auth behaviour, discovery parsing — stay in `tests/`. Two reasons:
+This section used to argue that unit-level rules — each catalog validation error, each manifest
+one — belonged in `tests/`, because *"a cycle is rejected, listing every problem at once"* is an
+assertion about a function's return value rather than a behaviour with resources to provision.
 
-1. **Diagnosis.** If a bootstrap bug lands, this whole suite fails to collect and tells you
-   nothing. The unit tests still point at the broken function.
-2. **Expressiveness.** "A cycle is rejected, listing every problem at once" is an assertion about
-   a function's return value, not a behaviour with resources to provision. Forcing it through
-   Gherkin would make it less clear, not more.
+`specs/features/catalog.feature` is now that scenario, and it is not worse for it: a cycle is
+rejected means **the command refuses and names the ring**, which is what a person meets. What
+made the argument true was the missing variation mechanism, not the subject matter — writing forty
+suite templates would indeed have been worse than forty unit tests. `Given … but:` removed the
+reason.
 
-The two layers answer different questions: `tests/` asks *is each part correct?*, this suite asks
-*does the whole thing work when a real user drives it?*
+What is left in `tests/` is what genuinely has no observable surface: rules about what the
+framework may not *do* (`test_acceptance.py` — no product URLs in the source, no per-system
+branching in the materializer, no socket opened while a catalog loads), and the parts not yet
+ported. The migration is tracked in `ATF-PLAN.md`.
+
+**The one real cost is diagnosis, and it is a deliberate trade.** If a bootstrap bug lands, this
+whole suite fails to collect and tells you nothing, where a unit test still points at the broken
+function. The mutation guard below is the partial recovery, and the failure messages in `steps.py`
+— which name what was compared — are the rest of it.
 
 ## Guarding the guard
 

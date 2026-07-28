@@ -184,3 +184,24 @@ def test_core_modules_are_import_safe(name):
         env={**os.environ, "PYTHONPATH": str(SRC.parent)},
     )
     assert completed.returncode == 0, f"{name} is not import-safe:\n{completed.stderr}"
+
+
+def test_loading_a_catalog_touches_nothing_but_the_filesystem(good_catalog, monkeypatch):
+    """Importing `catalog.py` is guarded above; *calling* its loader is guarded here.
+
+    The loader's promise is that a catalog can be read, and every problem in it reported, in a
+    checkout with no environment anywhere near it — which is what lets `atf lint` and the cockpit's
+    catalog page work offline, and what stops a validation error being a connection error wearing
+    a disguise. It moved here from `tests/test_catalog.py` when that module became scenarios: a
+    rule about what the framework may not do has no observable surface to write a scenario against.
+    """
+    import socket
+
+    from atf.catalog import load_catalog
+
+    def explode(*args, **kwargs):
+        raise AssertionError("catalog loader must not touch the network")
+
+    monkeypatch.setattr(socket, "socket", explode)
+    monkeypatch.setattr(socket, "create_connection", explode)
+    load_catalog(good_catalog, {"fake"})

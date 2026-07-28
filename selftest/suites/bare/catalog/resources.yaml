@@ -1,0 +1,3 @@
+# No resource types. A scenario that needs one writes this file over again with the types its
+# malformation needs — see `WorkspaceAdapter` in `selftest_adapters.py`.
+{}

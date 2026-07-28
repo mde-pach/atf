@@ -290,3 +290,17 @@
 
 'it lists every field that disagrees':
   - the result field "output" contains "is not the shape this scenario says"
+
+# ---- what a CI report brings back -------------------------------------------
+
+'it reports what CI saw':
+  - the result field "output" contains "Imported 2 results into local"
+  - the result field "output" contains "1 passed, 1 failed"
+
+'it keeps the run where the cockpit will find it':
+  - the result field "output" contains "Stored as run"
+  - the result field "output" contains ".atf/runs"
+
+'it refuses what is not a report':
+  - the result field "exit_code" is "2"
+  - the result field "output" contains "no test results"

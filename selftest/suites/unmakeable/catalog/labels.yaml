@@ -1,0 +1,8 @@
+hero:
+  resource: label
+  represents: Something that depends on what cannot be made, so it is never attempted at all.
+  depends_on:
+    - badges.missing
+  body:
+    slug: hero
+    owner_id: ${badges.missing.id}

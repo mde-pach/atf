@@ -37,3 +37,12 @@ failing:
   represents: A suite whose spec fails, to prove `atf run` is usable as a deployment guard.
   body:
     suite: failing
+
+# A suite whose seeding fails at *provision* time rather than at load: `broken` is refused before
+# anything is touched, and this one gets partway. That difference is what `--keep-going` and the
+# blocked-dependent report are about, and nothing else in the templates reaches it.
+unmakeable:
+  resource: workspace
+  represents: A suite holding one resource ATF can never make, and one that depends on it.
+  body:
+    suite: unmakeable

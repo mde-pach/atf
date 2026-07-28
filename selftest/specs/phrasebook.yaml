@@ -101,3 +101,45 @@
 # is exactly the vocabulary a feature file should not be carrying.
 'the refusal names the client that wanted it':
   - the result field "output" contains "environments.local.clients.api.auth.value_env"
+
+# ---- seeding, and what it says when part of a catalog cannot be made --------
+
+'the developer seeds an instance without saying its type':
+  - I run "atf seed local --name primary"
+
+# The refusal quotes the two flags back, which is right for a command-line message and wrong for a
+# feature file — so the sentence says what went wrong and this says how the command spells it.
+'it is refused for not saying what kind of thing that is':
+  - the result field "exit_code" is "2"
+  - the result field "output" contains "--name needs --type"
+
+'it stopped at the first failure':
+  - the result field "output" contains "Stopped at the first failure"
+
+'it did not stop at the first failure':
+  - the result field "output" does not contain "Stopped at the first failure"
+
+# The flag that shows every independent failure instead of the first. Named here and not in a
+# feature file, which is the whole point of this file.
+'it says how to attempt the rest':
+  - the result field "output" contains "--keep-going"
+
+'the borrowed badge could not be found':
+  - the result field "output" contains "FAIL"
+  - the result field "output" contains "badges.missing"
+
+'the label was skipped because of the badge':
+  - the result field "output" contains "skip"
+  - the result field "output" contains "depends on badges.missing"
+
+# ---- what `atf status` lists ------------------------------------------------
+
+'it says nothing is there yet':
+  - the result field "output" contains "absent"
+
+'it says the guest is built for each run rather than found':
+  - the result field "output" contains "ephemeral"
+  - the result field "output" contains "built per run"
+
+'it tallies how many of them are there':
+  - the result field "output" contains "0/2 present in local (1 built per run)"

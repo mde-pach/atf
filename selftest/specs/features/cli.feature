@@ -35,6 +35,18 @@ Feature: The command
       Then the command succeeds
       And the scaffolded suite passes
 
+  Rule: Status is a reading of the whole catalog, resource by resource
+
+    Scenario: Every resource is listed, with what this environment has to say about it
+      # Three states, and none of them is a failure: two resources nothing has made yet, and one
+      # that is never looked for at all because it is built per run.
+      Given the workspace "ephemeral"
+      When I run "atf status local"
+      Then the command succeeds
+      And it says nothing is there yet
+      And it says the guest is built for each run rather than found
+      And it tallies how many of them are there
+
   Rule: Which environment a command uses is a question with one answer
 
     Scenario: An environment named on the command line beats one the developer exported

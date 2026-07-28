@@ -6,3 +6,12 @@ hero:
   body:
     slug: hero
     owner_id: ${badges.missing.id}
+
+top:
+  resource: label
+  represents: Two steps from what cannot be made, so blocking has to carry past its direct cause.
+  depends_on:
+    - labels.hero
+  body:
+    slug: top
+    owner_id: ${labels.hero.id}

@@ -150,6 +150,22 @@ def cmd_seed(args: argparse.Namespace) -> int:
     return 1 if any(not result["ok"] for result in outcome["results"]) else 0
 
 
+def _reason(detail: str) -> str:
+    """The line of a failure worth showing: what it said, not where it stopped.
+
+    A pytest report ends with `file.py:164: Failed` — the location, which is the least useful line
+    in it and the one the nodeid above has already covered. What the failure *said* is on the lines
+    pytest marks with `E`, and the first of those is what a person reads. Printing the last line
+    instead meant a run could say a scenario failed and never say why, which is most of what a dev
+    loop is for.
+    """
+    lines = [line for line in detail.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    said = [line for line in lines if line.lstrip().startswith("E ")]
+    return (said[0] if said else lines[-1]).strip()
+
+
 def _tally(results: list[dict[str, Any]]) -> str:
     """A failure counts as failed whatever it was attempting."""
     counts = {"created": 0, "already present": 0, "found": 0, "failed": 0, "blocked": 0}
@@ -202,7 +218,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         if step is not None:
             print(f"           at: {step.keyword} {step.text}".rstrip())
         if result.detail:
-            print(f"           {result.detail.splitlines()[-1]}")
+            print(f"           {_reason(result.detail)}")
 
     counts = summary.counts
     print(

@@ -143,3 +143,32 @@
 
 'it tallies how many of them are there':
   - the result field "output" contains "0/2 present in local (1 built per run)"
+
+'nothing that depended on the label was attempted either':
+  - the result field "output" contains "depends on labels.hero"
+
+'the owner was still made':
+  - the result field "output" contains "owners.primary"
+  - the owner "primary" exists
+
+# What a run leaves behind: the resources the catalog calls persistent, and none of the ones it
+# calls ephemeral.
+'the guest it built is gone and the owner it needed is not':
+  - the environment has 0 guest
+  - the owner "primary" exists
+  - the todo_list "groceries" exists
+
+# ---- what a spec written wrongly says ---------------------------------------
+
+'the run says the catalog declares no such type':
+  - the result field "output" contains "no resource type 'acount'"
+
+'the run names the resource nobody has provided':
+  - the result field "output" contains "badges.imported"
+
+'both rows ran':
+  - the result field "output" contains "2 passed"
+
+'the badge it hung off survives':
+  - the environment has 0 guest
+  - the environment has 1 todo_list

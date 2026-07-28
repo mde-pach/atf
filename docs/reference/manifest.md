@@ -158,6 +158,77 @@ anything is touched.
 
 ## Built-in adapter settings {#built-in-adapter-settings}
 
+| System | What it is |
+|---|---|
+| [`rest`](#base_url) | a JSON API |
+| `reference` | the same, find-only: `create` raises |
+| [`command`](#command-settings) | a command-line program |
+| [`browser`](#browser-settings) | pages in a real browser |
+
+### `command` {#command-settings}
+
+A command-line program. Every suite testing a CLI was writing the same hundred lines — build an
+argv, put the right things in the environment, pick a working directory, run it, keep the exit code
+and both streams, decide what "it failed" means. That is the shape of a *class of system*, the same
+way a status code and a body are the shape of a JSON API.
+
+```yaml
+environments:
+  dev:
+    adapters:
+      command:
+        program: [atf]              # what `args` follows
+        cwd: ./                     # where to run, unless the node says otherwise
+        env: { ATF_ACTOR_env: TOKEN }
+        timeout: 300
+        inherit_env: true           # start from this process's environment
+```
+
+A **command resource is one invocation**, so it is `lifecycle: ephemeral`: a command is never
+already run, `find` answers nothing, and `create` runs it.
+
+```yaml
+atf:
+  system: command
+  lifecycle: ephemeral
+  natural_key: args
+```
+
+```gherkin
+Given the command "atf" but:
+  | args | seed local |
+Then the command field "ok" is "true"
+```
+
+One node and a `but:` table, rather than a catalog entry per command line.
+
+| Node body | Meaning |
+|---|---|
+| `argv` | the whole command line — a list, or a string split the way a shell would |
+| `args` | appended to the `program` the environment configured |
+| `cwd` | where to run it |
+| `env` | added to the environment for this invocation |
+
+The record carries `argv`, `exit_code`, `stdout`, `stderr`, `output` (both streams) and **`ok`**.
+`ok` is the point: *"how do you know it failed?"* is a question about commands, not about any one
+project, so it is answered once here instead of in every suite's
+[phrasebook](phrasebook.md).
+
+### `browser` {#browser-settings}
+
+Pages in a real browser. See [acting on an interface](specs-and-fixtures.md#ui).
+
+| Setting | Meaning |
+|---|---|
+| `base_url` | joined to a page's `at` when that is a path |
+| `headless` | default `true` |
+| `timeout` | milliseconds to wait for a control, default `10000` |
+
+Playwright is an optional dependency (`uv sync --group browser`). Without it the adapter reports
+itself [unavailable](adapter-spi.md#unavailable).
+
+## REST adapter settings {#rest-adapter-settings}
+
 Settings for the systems `rest` and `reference`, given under
 [`environments.<name>.adapters`](#env-adapters). `reference` accepts the same keys as `rest`.
 

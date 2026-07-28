@@ -37,6 +37,10 @@ if not os.environ.get("ATF_TESTS_BACKEND"):
 # would otherwise walk up from there and find no suite at all.
 os.environ.setdefault("ATF_MANIFEST", str(HERE / "atf.yaml"))
 
+# Which copy of ATF the command under test runs. The mutation guard overrides it to aim a scenario
+# at a deliberately broken one; left alone it is the working tree.
+os.environ.setdefault("ATF_TESTS_SRC", str(HERE.parent / "src"))
+
 pytest_plugins = ["atf.plugin", "pytester"]
 
 # Complete suites on disk, for the `workspace` adapter to copy. Not this suite's tests.

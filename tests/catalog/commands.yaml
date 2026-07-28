@@ -1,0 +1,8 @@
+# The `atf` command, run inside whatever workspace the scenario provisioned. Every scenario
+# overrides `args` and `cwd`; this node exists so there is something to override.
+
+atf:
+  resource: command
+  represents: The command under test, run for real inside a suite on disk.
+  body:
+    args: --help

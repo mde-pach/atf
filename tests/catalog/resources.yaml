@@ -66,3 +66,13 @@ screen:
   mode: data
   natural_key: at
   id_field: at
+
+# One invocation of the command under test. Ephemeral because a command is never already run, and
+# `natural_key: args` because what distinguishes one invocation from another is what it was asked.
+#
+# One node, and every scenario that runs something varies it with `but:` — the alternative being a
+# catalog entry per command line, which is the fixture sprawl this project is built to be rid of.
+command:
+  system: command
+  lifecycle: ephemeral
+  natural_key: args

@@ -30,6 +30,10 @@ environments:
       page: {}
       element: {}
       browser: {}
+      # The command under test, run by ATF's own adapter. Which copy of ATF it runs, and which
+      # manifest it sees, are decided per invocation in `specs/conftest.py` — they are the two
+      # things a suite testing a test framework has opinions about.
+      command: {}
       # The same backend the suites-under-test provision into, read back through the same generic
       # adapter they use. It is what turns `the backend has 1 owners` — a hand-written assertion
       # about a collection — into `the owner "primary" exists`, which is a claim ATF already makes.

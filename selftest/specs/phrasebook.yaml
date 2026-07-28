@@ -67,3 +67,37 @@
 # reader's, so it lives here.
 'the developer runs the specs against the environment they exported, "{env}"':
   - I run "atf run" with ATF_ENV exported as "{env}"
+
+# ---- what `atf init` says ---------------------------------------------------
+
+'the output says a suite was scaffolded':
+  - the result field "output" contains "Scaffolded"
+
+'the output says the directory already holds one':
+  - the result field "output" contains "already contains a suite"
+
+# What a scaffolded suite needs before it will run: an actor to send, and nothing else — with no
+# backend URL exported it starts the stand-in one it ships with. Exported here rather than left to
+# whatever the machine happens to have, because a scenario that passes only on some machines is
+# not a claim about ATF.
+'the developer runs the scaffolded suite':
+  - I run "atf run" with ATF_ACTOR exported as "scaffold"
+
+'the scaffolded suite passes':
+  - the result field "output" contains "2 passed"
+
+# ---- what `atf status` says --------------------------------------------------
+
+# Status names the environment it looked in, which is the only way a scenario can tell *which* of
+# two environments a command chose.
+'it says it looked in "{env}"':
+  - the result field "output" contains "present in {env}"
+
+'it says the resource is one this environment cannot reach':
+  - the result field "output" contains "unsupported"
+  - the result field "output" contains "no adapter for system"
+
+# The full manifest path of the client setting whose value was missing — a nested config key, which
+# is exactly the vocabulary a feature file should not be carrying.
+'the refusal names the client that wanted it':
+  - the result field "output" contains "environments.local.clients.api.auth.value_env"

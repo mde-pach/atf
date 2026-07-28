@@ -4,6 +4,16 @@ bare:
   body:
     suite: bare
 
+# `bare` is the smallest *suite*; this is the smallest *directory*. `atf init` is the one command
+# with no suite to stand in, so the only honest fixture for it is a directory holding nothing —
+# `suites/empty` is one file, `.keep`, because git cannot carry an empty directory. Everything a
+# scenario about `init` then observes was written by the command itself.
+empty:
+  resource: workspace
+  represents: A directory with no suite in it — where someone types `atf init` for the first time.
+  body:
+    suite: empty
+
 chained:
   resource: workspace
   represents: A suite whose catalog declares a two-level dependency chain with a placeholder.

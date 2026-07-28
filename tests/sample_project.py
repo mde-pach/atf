@@ -83,6 +83,7 @@ primary:
   body:
     email: primary@example.test
     plan: standard
+    notes: ""                      # present and empty — what `is empty` is a claim about
 secondary:
   resource: account
   represents: A second account used to prove isolation.
@@ -185,7 +186,15 @@ class StoreAdapter(Store):
 
 
 class EphemeralAdapter(StoreAdapter):
-    """Multi-step provisioning: create, then mark ready. Never reused across runs."""
+    """Multi-step provisioning: create, then mark ready. Never reused across runs.
+
+    This one browses and `StoreAdapter` does not, which is the shape a real pair often has: `find`
+    answers "is this one there?" and is meaningless here, while "what is there at all?" is exactly
+    how you check that teardown left nothing behind.
+    """
+
+    def browse(self, node, ctx, limit=200):
+        return list(self.read().get(self.collection(node), []))[:limit]
 
     def find(self, node, ctx):
         return None

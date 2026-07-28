@@ -100,6 +100,16 @@ class StepDef:
     docstring: str = ""
     needs: list[str] = field(default_factory=list)
     produces: list[str] = field(default_factory=list)
+    # Whether the step reads the slot its own wording names. Nothing can be listed in `needs` for
+    # one of these: which slot it needs is a choice whoever composes it has not made yet.
+    needs_slot: bool = False
+    # For a [phrase](phrasebook.py), the steps it stands for. Empty for an ordinary step. A phrase
+    # needs and produces whatever they do, so this is where those are read from.
+    expands_to: list[str] = field(default_factory=list)
+
+    @property
+    def phrase(self) -> bool:
+        return bool(self.expands_to)
 
 
 @dataclass
@@ -196,18 +206,31 @@ def matching_step(text: str, steps: list[StepDef]) -> StepDef | None:
     collection subprocess: what survives is the raw expression. An exact hit wins, then the
     expression read as a `{capture}` template, then the expression read as a regular expression —
     which is what a step declared with `parsers.re` needs.
+
+    More than one pattern can fit one line, because a capture matches anything: `the {type} "{name}"`
+    fits `the result field "plan" is "standard"` by reading the whole middle as a name. The one with
+    the most *literal* text wins, which is the one whose wording the author actually followed —
+    without that, the loosest pattern in the suite would claim every line it happened to fit.
     """
     for step in steps:
         if step.pattern == text:
             return step
     for as_regex in (pattern_regex, str):
+        fitting = []
         for step in steps:
             try:
                 if re.fullmatch(as_regex(step.pattern), text):
-                    return step
+                    fitting.append(step)
             except re.error:
                 continue
+        if fitting:
+            return max(fitting, key=lambda step: _literal_length(step.pattern))
     return None
+
+
+def _literal_length(pattern: str) -> int:
+    """How much of a pattern is wording rather than a hole for a value."""
+    return len(CAPTURE_RE.sub("", pattern))
 
 
 # ---- what a step touches on the context ------------------------------------
@@ -310,6 +333,31 @@ def _attach_context_use(steps: list[StepDef]) -> None:
         generic = _generic(step.pattern)
         if generic is not None:
             step.needs = list(generic.needs)
+            step.needs_slot = generic.needs_slot
+
+    _attach_phrase_use(steps)
+
+
+def _attach_phrase_use(steps: list[StepDef]) -> None:
+    """A phrase needs and produces whatever the steps it stands for do.
+
+    Nothing can be read from a phrase's own source: it has none — it is a line of YAML that ATF
+    turned into a step. So each of the steps it stands for is resolved against the same vocabulary
+    the scenario would resolve it against, and the answers are unioned. Without this, a composer
+    would offer a phrase standing for `the result field …` before anything had produced a result.
+    """
+    ordinary = [step for step in steps if not step.phrase]
+    for phrase in (step for step in steps if step.phrase):
+        needs: list[str] = []
+        produces: list[str] = []
+        for text in phrase.expands_to:
+            stood_for = matching_step(text, ordinary)
+            if stood_for is None:
+                continue
+            needs.extend(name for name in stood_for.needs if name not in needs)
+            produces.extend(name for name in stood_for.produces if name not in produces)
+            phrase.needs_slot = phrase.needs_slot or stood_for.needs_slot
+        phrase.needs, phrase.produces = needs, produces
 
 
 def _step_defs(observed: dict[str, Any]) -> list[StepDef]:
@@ -332,6 +380,7 @@ def _step_defs(observed: dict[str, Any]) -> list[StepDef]:
                 params=[str(name) for name in entry.get("params") or []],
                 file=str(entry.get("file", "")),
                 docstring=str(entry.get("docstring", "")),
+                expands_to=[str(text) for text in entry.get("expands_to") or []],
             ),
         )
     return [seen[key] for key in sorted(seen)]
@@ -573,13 +622,20 @@ def _step_definitions(session):
                 if str(getattr(function, "__module__", "")).split(".")[0] == "pytest_bdd":
                     continue
                 expression = _expression(context.parser)
+                # A phrase is a step ATF built from a line of YAML, so its source is that file
+                # rather than the module the function happens to live in, and what it stands for
+                # travels with it — that is where its needs come from.
+                phrase = getattr(function, "__atf_phrase__", None) or {}
                 found.append(
                     {
                         "keyword": context.type or "*",
                         "pattern": expression,
                         "params": _capture_names(context.parser, expression),
-                        "file": getattr(getattr(function, "__code__", None), "co_filename", "") or "",
+                        "file": phrase.get("file")
+                        or getattr(getattr(function, "__code__", None), "co_filename", "")
+                        or "",
                         "docstring": " ".join((getattr(function, "__doc__", "") or "").split()),
+                        "expands_to": list(phrase.get("expands_to") or []),
                     }
                 )
             except Exception:

@@ -14,7 +14,9 @@ from typing import Any
 
 import pytest
 from pytest_bdd import given, parsers
+from pytest_bdd import step as register_step
 
+from . import phrasebook
 from .adapters import Record
 from .bootstrap import Boot, bootstrap
 from .catalog import natural_keys
@@ -52,8 +54,9 @@ def client_config(env: str) -> dict[str, dict[str, Any]]:
 @pytest.fixture
 def context(materializer: Materializer) -> Context:
     """The per-scenario scratchpad: steps write what they create and read what they need."""
-    # A new context is a new scenario, which is the lifetime a generated value is held for.
-    materializer.forget_generated()
+    # A new context is a new scenario, which is the lifetime a generated value — and a looked-up
+    # identity — is held for.
+    materializer.forget_scenario()
     return Context(recognise=recogniser(materializer))
 
 
@@ -130,6 +133,21 @@ def _provision(context: Context, request: pytest.FixtureRequest, resource_type: 
     return record
 
 
+# ---- the phrasebook --------------------------------------------------------
+#
+# Registered here, at module level and in a loop, for the same reason the factories above are:
+# pytest-bdd injects a step's fixture into the *calling module's* namespace, so registering from
+# inside a function would put it where pytest never looks.
+
+# `parsers.parse`, never the bare string pytest-bdd would otherwise assume: a bare string is an
+# exact match, and `it is refused because "{reason}"` would then only ever match a scenario that
+# wrote those braces out literally.
+PHRASEBOOK = phrasebook.path_for(_BOOT.manifest.specs_dir)
+
+for _phrase in phrasebook.load(PHRASEBOOK):
+    register_step(parsers.parse(_phrase.pattern), type_=None)(phrasebook.make_step(_phrase, PHRASEBOOK))
+
+
 def pytest_bdd_before_step_call(request, feature, scenario, step, step_func, step_func_args) -> None:
     """Resolve `${...}` in every value a step was handed, whoever wrote the step.
 
@@ -141,7 +159,12 @@ def pytest_bdd_before_step_call(request, feature, scenario, step, step_func, ste
     pytest-bdd passes this the same dict it is about to call the step with, so resolving in place
     is all there is to it. One evaluation per scenario means the `Then` that checks the rename
     writes the same expression and sees the same answer.
+
+    It is also where the keyword is recorded, for a step that turns out to be a phrase: what it
+    stands for runs as the same kind of step it was said as, and pytest-bdd gives a step function
+    no way to ask which that was.
     """
+    phrasebook.remember_keyword(request, str(step.type or ""))
     engine: Materializer = request.getfixturevalue("materializer")
     for name, value in list(step_func_args.items()):
         if not isinstance(value, str) or PLACEHOLDER_RE.search(value) is None:

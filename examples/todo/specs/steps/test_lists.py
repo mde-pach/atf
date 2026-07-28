@@ -4,9 +4,10 @@ Three `When`s, because each performs an action against the API — that is real 
 One `Then`, because "all of them" is a claim about a response, not about a resource ATF can read
 back for itself.
 
-Everything else these features assert is a field of a catalog resource, and ATF reads those:
-`Then the task "laundry" field "done" is "true"` needs nothing here, even though the `When` above
-it changed the task through the API. The assertion goes back to the backend and looks.
+Everything else these features claim is about a catalog resource, and ATF reads those:
+`Then the task "laundry" is done` needs nothing here, even though the `When` above it changed the
+task through the API. The assertion goes back to the backend and looks. The sentence itself is in
+`specs/phrasebook.yaml`, which is data — so the wording is the suite's and the reading is ATF's.
 """
 
 from pytest_bdd import scenarios, then, when

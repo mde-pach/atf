@@ -1,0 +1,12 @@
+# The list a suite-under-test seeds under its owner. The `${owners.primary.id}` in the body is the
+# lineage: it is how this suite recognises the list *as the primary owner's*, and it is the same
+# expression the suite-under-test writes to build it.
+
+groceries:
+  resource: todo_list
+  represents: The list a suite-under-test seeds under the primary owner.
+  depends_on:
+    - owners.primary
+  body:
+    owner_id: ${owners.primary.id}
+    slug: groceries

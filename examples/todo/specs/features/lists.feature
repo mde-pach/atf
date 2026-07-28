@@ -3,7 +3,7 @@ Feature: Lists
 
   Scenario: An owner reports their plan
     Given the owner "primary"
-    Then the owner "primary" field "plan" is "standard"
+    Then the owner "primary" is on the "standard" plan
 
   Scenario: A list belongs to its owner
     Given the owner "primary"
@@ -20,11 +20,11 @@ Feature: Lists
   Scenario: Completing a task marks it done
     Given the task "laundry"
     When I complete the task
-    Then the task "laundry" field "done" is "true"
+    Then the task "laundry" is done
 
   Scenario Outline: Owners report their own plan
     Given the owner "<who>"
-    Then the owner "<who>" field "plan" is "<plan>"
+    Then the owner "<who>" is on the "<plan>" plan
 
     Examples:
       | who       | plan     |

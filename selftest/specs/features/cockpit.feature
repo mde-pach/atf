@@ -1,3 +1,8 @@
+# atf-lint: ignore field-claim, status-code
+# The flagship "no step code at all" feature, and the clearest evidence that generic vocabulary is
+# not the same as readable vocabulary: zero step code was bought by pushing `field "status" is "200"`
+# up into the layer a product person reads. These lines go once the UI half lands — a page's status
+# becomes something said about the page, and an element's `count` becomes what is on it.
 Feature: The cockpit
   ATF's own interface, read as resources: a page is a resource, an element on it is a resource,
   and the server showing them is a resource that gets started and torn down. Not one line of step

@@ -23,6 +23,7 @@ from typing import Any
 from typing_extensions import override
 
 from .adapters import Record
+from .records import as_record, as_records
 
 # The attribute the provisioning step records ephemeral resources on, read by teardown. Steps that
 # assert on an ephemeral resource read it too: an ephemeral resource is never looked up — that is
@@ -165,27 +166,34 @@ class Context:
 
 
 def describe(name: str, value: Any, recognise: Recogniser | None = None) -> Slot:
-    """What a value is, in the terms an assertion can be built on."""
-    if isinstance(value, dict):
-        looks_like = _guess(recognise, value)
+    """What a value is, in the terms an assertion can be built on.
+
+    What counts as a record is [one decision](records.py), made once, so that the cockpit never
+    describes a slot the assertions cannot read — nor refuses to describe one they can.
+    """
+    single = as_record(value)
+    if single is not None:
+        looks_like = _guess(recognise, single)
         return Slot(
             name=name,
             kind=RECORD,
-            fields=sorted(str(key) for key in value),
+            fields=sorted(single),
             count=1,
             resource_type=looks_like,
             guessed=bool(looks_like),
         )
-    if isinstance(value, list) and value and all(isinstance(item, dict) for item in value):
-        looks_like = _guess(recognise, value[0])
-        return Slot(
-            name=name,
-            kind=RECORDS,
-            fields=_shared_fields(value),
-            count=len(value),
-            resource_type=looks_like,
-            guessed=bool(looks_like),
-        )
+    if isinstance(value, list | tuple):
+        many = as_records(value)
+        if many is not None:
+            looks_like = _guess(recognise, many[0]) if many else ""
+            return Slot(
+                name=name,
+                kind=RECORDS,
+                fields=_shared_fields(many),
+                count=len(many),
+                resource_type=looks_like,
+                guessed=bool(looks_like),
+            )
     if value is None:
         return Slot(name=name, kind=NOTHING)
     if isinstance(value, bool):

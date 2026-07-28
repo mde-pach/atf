@@ -75,10 +75,15 @@ def pytest_collection_modifyitems(items):
 
 ## Read-and-compare steps {#read-and-compare-steps}
 
-Six more steps, registered by the plugin, available in every suite without writing anything. They
+A family of steps, registered by the plugin, available in every suite without writing anything. They
 exist because every project was writing the same family for itself: `the plan is "standard"` is not
 domain knowledge, it is a record read through an adapter ATF already has and compared with a value
 you already wrote.
+
+Each one is about **a resource** the catalog declares, **a slot** a step put on the context, or
+**a whole type** of resource.
+
+About a resource:
 
 | Step | Passes when |
 |---|---|
@@ -86,14 +91,54 @@ you already wrote.
 | `Then the <type> "<name>" is gone` | Reading it back finds nothing. |
 | `Then the <type> "<name>" field "<f>" is "<v>"` | The record's `<f>` compares equal to `<v>`. |
 | `Then the <type> "<name>" field "<f>" is not "<v>"` | It does not. |
-| `Then the result contains the <type> "<name>"` | One of the records in `context.result` is that resource. |
-| `Then the result does not contain the <type> "<name>"` | None of them is. |
-| `Then the result field "<f>" is "<v>"` | The single record in `context.result` has that `<f>`. |
-| `Then the result field "<f>" is not "<v>"` | It does not. |
+| `Then the <type> "<name>" field "<f>" contains "<v>"` | The record's `<f>` [holds](#containment) `<v>`. |
+| `Then the <type> "<name>" field "<f>" does not contain "<v>"` | It does not. |
+| `Then the <type> "<name>" field "<f>" is empty` | The record's `<f>` is absent, or is text, a list or a record with nothing in it. |
+| `Then the <type> "<name>" field "<f>" is not empty` | It holds something. |
+
+About [a slot](#slots) — `<s>` is the name a step wrote it under, usually `result`:
+
+| Step | Passes when |
+|---|---|
+| `Then the <s> contains the <type> "<name>"` | One of the records in `context.<s>` is that resource. |
+| `Then the <s> does not contain the <type> "<name>"` | None of them is. |
+| `Then the <s> field "<f>" is "<v>"` | The single record in `context.<s>` has that `<f>`. |
+| `Then the <s> field "<f>" is not "<v>"` | It does not. |
+| `Then the <s> field "<f>" contains "<v>"` | It [holds](#containment) `<v>`. |
+| `Then the <s> field "<f>" does not contain "<v>"` | It does not. |
+| `Then the <s> field "<f>" is empty` | It is absent or holds nothing. |
+| `Then the <s> field "<f>" is not empty` | It holds something. |
+
+About a whole type:
+
+| Step | Passes when |
+|---|---|
+| `Then the environment has <n> <type>` | The environment holds exactly `<n>` records of that type. |
 
 They name a field; they never require one. ATF reads the field you named and compares it with the
 value you wrote, and knows nothing else about it — see
 [where the line on record shape falls](../explanation/the-model.md#record-shape).
+
+Counting needs the adapter to be able to *list* what a type holds, which is the optional
+[`browse`](adapter-spi.md) half of the SPI. An adapter without one makes the claim say so and name
+what is missing, rather than failing obscurely.
+
+### What `contains` means {#containment}
+
+Containment means one thing per kind of value, and only the kinds where it means something
+decidable are answered:
+
+| Field holds | `contains "<v>"` passes when |
+|---|---|
+| text | `<v>` is a substring of it |
+| a list | one of its items [matches](#comparing) `<v>`, so `contains "3"` finds the number `3` |
+| a number or a boolean | its text holds `<v>` |
+| nothing (`null`) | never |
+| a record | **refused** — a record holds keys and values both, so name the field inside it instead |
+
+`is empty` is true of `null`, `""`, `[]` and `{}`. A number is never empty and neither is `false`:
+`0` and `false` are values a backend returned, and reading them as absence is the mistake the
+[comparison rules](#comparing) are ordered to avoid.
 
 ### They read the resource back, not the context {#reading-back}
 
@@ -148,12 +193,10 @@ task 'milk' field 'done' is true (a true/false value), not "false"
 A resource that could not be read names what was looked for; an unknown field lists what the record
 actually carries; an unknown type or instance lists the ones the catalog declares.
 
-### `the result` {#the-result}
+### Slots: `the result`, and anything else a step names {#slots}
 
-`result` is the one attribute of the context ATF itself names: what a step produced. The two
-`contains` steps read it, accepting a single record or a list of them, and recognise a resource the
-same two ways the cockpit does — by the identity it has in this environment, or by its
-[natural key](../explanation/glossary.md#natural-key).
+A **slot** is any attribute a step wrote on [`context`](#context). `result` is the name ATF suggests
+for what a `When` produced, and a suite with one action per scenario will only ever need that one.
 
 ```python
 @when("I list the owner's lists")
@@ -165,8 +208,29 @@ def _(context, api):
 Then the result contains the todo_list "groceries"
 ```
 
-A field assertion on the result needs *one* record — a listing of five has no one `title`, so it is
-refused rather than guessed at, and the message points at `contains`.
+Naming the slot is what lets a scenario with **two** actions say which of them it means — with one
+slot, only the second survives:
+
+```python
+@when(parsers.parse('I list the lists of "{who}", holding them as {slot:w}'))
+def _(context, api, who, slot):
+    setattr(context, slot, api.lists_of(who))
+```
+
+```gherkin
+Then mine contains the todo_list "groceries"
+And theirs does not contain the todo_list "groceries"
+```
+
+A field assertion on a slot needs *one* record — a listing of five has no one `title`, so it is
+refused rather than guessed at, and the message points at `contains`. A slot that was never set
+names the ones the scenario is actually holding, so a mistyped name is one line to fix.
+
+**What counts as a record** is one decision, made in `atf.records`: a mapping, a dataclass, a
+`NamedTuple`, or an object offering `to_dict()` / `model_dump()`. A dataclass's public properties
+are fields too — `Outcome` keeping `stdout` and `stderr` and joining them in an `output` property is
+exactly the case, and `the result field "output" contains "…"` is what a suite would otherwise have
+hand-written a `@then` for. Anything else is not a record, and the failure says so.
 
 Together with a [provider](providers.md), that closes the loop on an action that takes a value in
 and hands one back:
@@ -220,9 +284,9 @@ carries a token as readily as a title.
 
 Two attribute names mean something to ATF:
 
-- **`result`** — what a step produced. Named so that
-  [`the result contains …`](#the-result) is possible at all; without an agreed word there is nothing
-  for a generic step to say "the result" about.
+- **`result`** — what a step produced. Only a suggested name: [any slot can be asserted on](#slots)
+  by the name a step gave it. `result` is what a suite with one action per scenario will use, and
+  what the cockpit's composer offers first.
 - **`_ephemeral`** — the ephemeral resources this scenario built, read by teardown and by an
   assertion on one of them. Attributes starting with `_` are ATF's own and are not described.
 

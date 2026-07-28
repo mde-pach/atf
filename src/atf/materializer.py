@@ -96,13 +96,22 @@ class Materializer:
     def resolve(self, value: Any) -> Any:
         return resolve_placeholders(value, self.identity_of, self._generated)
 
-    def forget_generated(self) -> None:
-        """Start a fresh scenario: whatever was generated for the last one is not this one's.
+    def forget_scenario(self) -> None:
+        """Start a fresh scenario: nothing the last one learned is this one's to assume.
 
-        Called once per scenario by the plugin. Within a scenario the values stand still; across
-        scenarios they must not, or an ephemeral resource meant to be new every time is not.
+        Two things are dropped. **Generated values**, because within a scenario they must stand
+        still — a `${fake:email}` written in a body and again in the assertion checking it has to be
+        the same email — and across scenarios they must not, or an ephemeral resource meant to be
+        new every time is not. **Known identities**, because a resource that was absent when the
+        last scenario looked may exist now, and one that existed may be gone; `_ids` caches `None`
+        as readily as an id, and a stale `None` makes `${owners.primary.id}` unresolvable for the
+        rest of the session.
+
+        Called once per scenario by the plugin. A provisioning pass clears `_ids` too, so this only
+        adds the case of a scenario that asserts without provisioning first.
         """
         self._generated.clear()
+        self._ids.clear()
 
     def cached(self, key: str, loader: Callable[[], Any]) -> Any:
         if key not in self._cache:

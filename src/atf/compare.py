@@ -72,6 +72,50 @@ def written_matches(actual: Any, written: str) -> bool:
     return matches(actual, text)
 
 
+def written_contains(actual: Any, written: str) -> bool:
+    """Whether a record's value holds the text a scenario wrote between quotes.
+
+    Containment means one thing per kind of value, and only the kinds where it means something
+    decidable are answered. Text holds a substring. A list holds an item, matched the same way a
+    field is — so `contains "3"` finds the number 3. A record holds neither: `contains` over a
+    record would have to guess between a key and a value, so it is refused and the reader is told
+    to name the field inside it instead.
+    """
+    if actual is None:
+        return False
+    if isinstance(actual, str):
+        return written in actual
+    if isinstance(actual, list | tuple):
+        return any(written_matches(item, written) for item in actual)
+    if isinstance(actual, dict):
+        raise Uncontainable(actual)
+    return written in str(actual)
+
+
+def is_empty(actual: Any) -> bool:
+    """Whether a record's value is nothing, or a text, list or record with nothing in it.
+
+    A number is not empty and neither is `false`: `0` and `false` are values a backend returned,
+    and reading them as absence is the mistake `written_matches` orders its branches to avoid.
+    """
+    if actual is None:
+        return True
+    if isinstance(actual, str | list | tuple | dict):
+        return len(actual) == 0
+    return False
+
+
+class Uncontainable(Exception):
+    """`contains` was asked of a value where containment has no one meaning."""
+
+    def __init__(self, actual: Any) -> None:
+        self.actual = actual
+        super().__init__(
+            f"{describe(actual)} — a record holds keys and values both, so `contains` cannot say "
+            "which was meant. Name the field inside it instead."
+        )
+
+
 def same_instant(actual: Any, expected: Any) -> bool:
     """Whether two values are the same moment written differently — `Z` against `+00:00`."""
     left, right = parse_datetime(actual), parse_datetime(expected)

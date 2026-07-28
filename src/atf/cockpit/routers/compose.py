@@ -26,6 +26,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from ...catalog import Node, find_node
+from ...context import RESULT
 from ...discovery import (
     CAPTURE_RE,
     GIVEN,
@@ -46,8 +47,10 @@ from ...steps import (
     FIELD,
     NAME,
     RESOURCE,
-    RESULT_OF,
+    SLOT,
+    SLOT_OF,
     TYPE,
+    TYPE_OF,
     VALUE,
     claim_of,
     comparison,
@@ -96,6 +99,10 @@ class Row:
     target: str = ""
     # What the context holds by the time this row runs, so the row can say whether its step fits.
     held: set[str] = field(default_factory=set)
+    # The subset of that a *step* put there. A `Given` also holds its record, but a claim about a
+    # resource re-reads it live and a claim about a slot does not — so offering the slot would be
+    # offering the worse of two ways to say the same thing. See `steps.py`.
+    produced: set[str] = field(default_factory=set)
     text: str = ""
     shown_keyword: str = ""
     problem: str = ""
@@ -306,8 +313,9 @@ def _row(
 
 
 # The three things a Then can be about. A project's own step is a subject too: choosing it is
-# choosing what the assertion is, which is the same question the other two answer.
-NODE_SUBJECT, RESULT_SUBJECT, STEP_SUBJECT = "node:", "result", "step:"
+# choosing what the assertion is, which is the same question the other two answer. A slot carries
+# its name in the prefix, because *which* slot is half of what the choice says.
+NODE_SUBJECT, SLOT_SUBJECT, STEP_SUBJECT, TYPE_SUBJECT = "node:", "slot:", "step:", "type:"
 
 
 def _write_claim(row: Row, nodes: dict[str, Node]) -> None:
@@ -319,19 +327,24 @@ def _write_claim(row: Row, nodes: dict[str, Node]) -> None:
     row.pattern = claimed.pattern
     row.values = {}
 
-    # A claim about a resource names it; a claim about the result names one only when the result is
-    # being searched for it. A claim about a field of the result names no resource at all.
-    if claimed.subject == RESULT_OF:
+    # A claim about a resource names it; a claim about a slot names one only when the slot is being
+    # searched for it. A claim about a field of a slot names no resource at all, and a claim about a
+    # whole type names the type and no instance — there is nothing to name.
+    about = ""
+    if claimed.subject == SLOT_OF:
+        row.values[SLOT] = row.subject.removeprefix(SLOT_SUBJECT)
         about = row.target if claimed.target == "resource" else ""
+    elif claimed.subject == TYPE_OF:
+        row.values[TYPE] = row.subject.removeprefix(TYPE_SUBJECT)
     else:
         about = row.subject.removeprefix(NODE_SUBJECT)
     node = nodes.get(about)
     if node is not None:
-        row.values = {TYPE: node["resource"], NAME: node["name"]}
+        row.values.update({TYPE: node["resource"], NAME: node["name"]})
     if claimed.field:
         row.values[FIELD] = row.aspect
     if claimed.target == "value":
-        row.values[VALUE] = row.target
+        row.values[claimed.value_capture] = row.target
 
 
 def _read_claim(row: Row, nodes: dict[str, Node]) -> None:
@@ -344,12 +357,19 @@ def _read_claim(row: Row, nodes: dict[str, Node]) -> None:
     row.compare = claimed.key
     row.aspect = row.values.get(FIELD, "")
     named = find_node(nodes, row.values.get(TYPE, ""), row.values.get(NAME, ""))
-    if claimed.subject == RESULT_OF:
-        row.subject = RESULT_SUBJECT
-        row.target = (named["id"] if named else "") if claimed.target == "resource" else row.values.get(VALUE, "")
+    if claimed.subject == TYPE_OF:
+        row.subject = f"{TYPE_SUBJECT}{row.values.get(TYPE, '')}"
+        row.target = row.values.get(claimed.value_capture, "")
+    elif claimed.subject == SLOT_OF:
+        row.subject = f"{SLOT_SUBJECT}{row.values.get(SLOT, '')}"
+        row.target = (
+            (named["id"] if named else "")
+            if claimed.target == "resource"
+            else row.values.get(claimed.value_capture, "")
+        )
     else:
         row.subject = f"{NODE_SUBJECT}{named['id']}" if named else ""
-        row.target = row.values.get(VALUE, "")
+        row.target = row.values.get(claimed.value_capture, "")
 
 
 # ---- assembling the draft --------------------------------------------------
@@ -404,6 +424,7 @@ def _resolve(draft: Draft, nodes: dict[str, Node], found: Discovery) -> None:
     """Turn every row into the words it will write, and say plainly where it cannot yet."""
     for row in draft.rows:
         row.held = held_before(draft.rows, row.index)
+        row.produced = produced_before(draft.rows, row.index)
         if row.given:
             _resolve_given(row, nodes)
         else:
@@ -437,15 +458,42 @@ def held_before(rows: list[Row], index: int) -> set[str]:
     source says it writes. This is the whole of what a step can read, so it is the whole of what
     decides whether a step can be used here.
     """
+    return _before(rows, index, givens=True)
+
+
+def produced_before(rows: list[Row], index: int) -> set[str]:
+    """The part of that a step put there, which is what a claim about a slot may be about.
+
+    A `Given`'s record is on the context too, but a claim about the *resource* re-reads it from the
+    environment and a claim about the slot reads the copy the `Given` made. Offering both is
+    offering the worse of two ways to say one thing, so only what a step produced is offered.
+    """
+    return _before(rows, index, givens=False)
+
+
+def _before(rows: list[Row], index: int, givens: bool) -> set[str]:
     held: set[str] = set()
     for row in rows:
         if row.index == index:
             break
         if row.given and row.resource_type:
-            held.add(row.resource_type)
+            if givens:
+                held.add(row.resource_type)
         elif row.definition is not None:
             held.update(row.definition.produces)
     return held
+
+
+def usable(step: StepDef, row: Row) -> bool:
+    """Whether the scenario, as far as this row, can use this step at all.
+
+    A step reading a fixed slot needs that one held. A step reading the slot its own wording names
+    needs there to be *some* slot worth naming — which one it names is a choice, and it is checked
+    when the row is resolved rather than when the step is offered.
+    """
+    if not set(step.needs) <= row.held:
+        return False
+    return bool(row.produced) if step.needs_slot else True
 
 
 def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
@@ -469,6 +517,11 @@ def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
         return
 
     absent = [name for name in row.definition.needs if name not in row.held]
+    # A step that names its own slot is held to the slot it named, not to a fixed one.
+    if row.definition.needs_slot:
+        named = row.values.get(SLOT, "")
+        if named and named not in row.held:
+            absent = [named]
     if absent:
         row.problem = (
             f"nothing above this puts {' or '.join(absent)} on the context — "
@@ -1009,27 +1062,30 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         # Per row, not per keyword: what a step can read depends on what the rows above it put
         # there, so the same picker two rows apart honestly offers different things.
         "step_options": lambda row: _step_options(
-            [step for step in offered[row.keyword] if set(step.needs) <= row.held]
+            [step for step in offered[row.keyword] if usable(step, row)]
         ),
         # A Then said as a claim: what it is about, what of it, how, and against what.
         "subject_options": lambda row: _subject_options(
-            engine, status, [step for step in offered[row.keyword] if set(step.needs) <= row.held], row
+            engine, status, [step for step in offered[row.keyword] if usable(step, row)], row
         ),
         "aspect_options": lambda row: _aspect_options(
             engine, status, row.subject.removeprefix(NODE_SUBJECT)
         ),
+        # Completions for a field of a slot, gathered from what the last run saw every slot hold.
+        # Across all of them rather than per slot: it is a hint while typing, and a slot the run
+        # has never seen is exactly the case where a hint is worth having.
         "held_fields": lambda: sorted(
             {field for result in cockpit.results(env).values() for slot in result.held
-             if slot.name == RESULT_OF for field in slot.fields}
+             for field in slot.fields}
         ),
         "comparison_options": lambda subject, aspect: [
             {"value": item.key, "label": item.label, "meta": "", "desc": ""}
-            for item in comparisons_for(RESULT_OF if subject == "result" else RESOURCE, bool(aspect))
+            for item in comparisons_for(_subject_kind(subject), bool(aspect))
         ],
         "resource_options": _resource_options(engine, status),
         "claim": comparison,
         "unusable": lambda row: [
-            step for step in offered[row.keyword] if not set(step.needs) <= row.held
+            step for step in offered[row.keyword] if not usable(step, row)
         ],
         # Only the steps ATF itself defines get a picker per parameter: they are the only ones
         # whose parameters ATF chose, so the only ones whose meaning it can know. A project's
@@ -1062,22 +1118,53 @@ def _elsewhere(
     return sorted(files)
 
 
+def _subject_kind(subject: str) -> str:
+    """Which of the three things a chosen subject is, in the terms `COMPARISONS` is written in."""
+    if subject.startswith(TYPE_SUBJECT):
+        return TYPE_OF
+    if subject.startswith(SLOT_SUBJECT):
+        return SLOT_OF
+    return RESOURCE
+
+
 def _subject_options(
     engine: Any, status: dict[str, Any], steps: list[StepDef], row: Row
 ) -> list[dict[str, str]]:
-    """What a Then can be about: a resource, what the step before produced, or a step of your own.
+    """What a Then can be about: a resource, a whole type of them, a slot, or a step of your own.
 
     One question first — *what are you asserting about?* — because it is the one anybody actually
     starts from, and because answering it is what decides the shape of everything after it.
     """
     options = _resource_options(engine, status, group="A resource")
-    if RESULT_OF in row.held:
+    # A whole type, for the one claim that is about a population rather than about a resource:
+    # "nothing was created the second time" names nothing, because there is nothing to name.
+    for resource_type in engine.resource_types():
         options.append(
             {
-                "value": "result",
-                "label": "what the step before produced",
-                "meta": "",
-                "desc": "the records a When put on the context",
+                "value": f"{TYPE_SUBJECT}{resource_type}",
+                "label": f"every {resource_type}",
+                "meta": resource_type,
+                "desc": f"how many {resource_type} records this environment holds",
+                "group": "All of a type",
+            }
+        )
+    # One option per slot the rows above actually put there, rather than the single `result` this
+    # offered while that was the only slot an assertion could name. A scenario with two actions has
+    # two things to be about, and the picker is where that has to be visible.
+    for name in sorted(row.produced):
+        # `result` is the name ATF suggests, so it keeps the wording it always had. A slot a suite
+        # named itself is said by that name, because the name is the whole point of having chosen it.
+        conventional = name == RESULT
+        options.append(
+            {
+                "value": f"{SLOT_SUBJECT}{name}",
+                "label": "what the step before produced" if conventional else f"what {name} holds",
+                "meta": "" if conventional else name,
+                "desc": (
+                    "the records a When put on the context"
+                    if conventional
+                    else f"what a step above put on the context as {name}"
+                ),
                 "group": "A resource",
             }
         )
@@ -1085,11 +1172,14 @@ def _subject_options(
         if generic(step.pattern) is None:
             options.append(
                 {
-                    "value": f"step:{step.pattern}",
+                    "value": f"{STEP_SUBJECT}{step.pattern}",
                     "label": step.pattern,
                     "meta": Path(step.file).name if step.file else "",
                     "desc": step.docstring,
-                    "group": "A step this suite defines",
+                    # A phrase is not a step this suite defines — it is this suite's wording over
+                    # steps that needed no code, and saying so is what keeps someone from going
+                    # looking for the Python behind it.
+                    "group": "A phrase this suite writes" if step.phrase else "A step this suite defines",
                 }
             )
     return options
@@ -1180,22 +1270,34 @@ def _step_options(steps: list[StepDef]) -> list[dict[str, str]]:
 
     Order is the whole point here. An author looking for "check this field" will take the first
     plausible thing they see, and if that is a step the project had to write, they conclude that
-    assertions are something you write. They are not, for anything in the catalog.
+    assertions are something you write. They are not, for anything in the catalog — and a phrase
+    sits between the two, because it is this suite's own wording over steps that needed no code.
     """
     options: list[dict[str, str]] = []
     for step in steps:
-        mine = generic(step.pattern) is None
         options.append(
             {
                 "value": step.pattern,
                 "label": step.pattern,
                 "meta": Path(step.file).name if step.file else "",
                 "desc": step.docstring,
-                "group": "This suite's own" if mine else "Ready to use",
-                "rank": "1" if mine else "0",
+                "group": _group(step),
+                "rank": _rank(step),
             }
         )
     return sorted(options, key=lambda option: (option["rank"], option["label"]))
+
+
+def _group(step: StepDef) -> str:
+    if step.phrase:
+        return "This suite's wording"
+    return "Ready to use" if generic(step.pattern) is not None else "This suite's own"
+
+
+def _rank(step: StepDef) -> str:
+    if step.phrase:
+        return "1"
+    return "0" if generic(step.pattern) is not None else "2"
 
 
 def _field_options(

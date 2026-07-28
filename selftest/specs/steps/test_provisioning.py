@@ -1,6 +1,12 @@
-"""The shared vocabulary. Every step reads its subject from `context` and writes back."""
+"""The suite's whole vocabulary: two actions.
 
-from pytest_bdd import parsers, scenarios, then, when
+There is nothing else here, and that is the point. Running a command is something ATF has no
+generic way to do — it is the third-party action the philosophy accepts as needing code — so it is
+written once, returns what it got, and every claim about the outcome is one ATF makes for every
+suite. No `@then` below means no assertion a reader would have to open Python to understand.
+"""
+
+from pytest_bdd import parsers, scenarios, when
 
 scenarios("../features/provisioning.feature")
 scenarios("../features/safety.feature")
@@ -11,28 +17,11 @@ def _(context, atf, command):
     context.result = atf.run(context.workspace, *command.split())
 
 
-@then(parsers.parse("it exits {code:d}"))
-def _(context, code):
-    assert context.result.exit_code == code, context.result.output
+@when(parsers.parse('I run "atf {command}", holding it as {slot:w}'))
+def _(context, atf, command, slot):
+    """The same action, keeping its outcome under a name a later step can say.
 
-
-@then(parsers.parse('the output mentions "{text}"'))
-def _(context, text):
-    assert text in context.result.output, context.result.output
-
-
-@then(parsers.parse('the output does not mention "{text}"'))
-def _(context, text):
-    assert text not in context.result.output, context.result.output
-
-
-@then(parsers.parse("the backend has {count:d} {collection}"))
-def _(context, atf, count, collection):
-    assert len(atf.records(collection)) == count
-
-
-@then("the list points at the owner")
-def _(context, atf):
-    owner = atf.records("owners")[0]
-    todo_list = atf.records("lists")[0]
-    assert todo_list["owner_id"] == owner["id"]
+    `context.result` is one slot, so a scenario doing two things could only ever assert on the
+    second. Naming the slot is what lets both survive to be compared.
+    """
+    setattr(context, slot, atf.run(context.workspace, *command.split()))

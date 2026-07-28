@@ -13,7 +13,7 @@ from markupsafe import escape
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import Cockpit, set_cockpit
 from atf.discovery import parse_feature
-from atf.steps import FIELD_IS, FIELD_IS_NOT
+from atf.steps import COUNT, FIELD_IS, FIELD_IS_NOT
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
@@ -672,14 +672,20 @@ def test_a_step_is_offered_only_once_the_context_holds_what_it_reads(client):
 
 
 def test_asserting_on_what_a_step_produced_waits_for_a_step_that_produces(client):
+    """A slot is offered by name, and only once a step has actually put one there.
+
+    Not the `Given` above it: that record is on the context too, but a claim about the *resource*
+    re-reads it live, so offering the slot would be offering the worse of two ways to say one thing.
+    """
     before = client.post("/compose/preview", data=with_given("account", "primary")).text
-    assert 'data-value="result"' not in before
+    assert 'data-value="slot:result"' not in before
+    assert 'data-value="slot:account"' not in before
 
     after = client.post(
         "/compose/preview",
         data=with_given("account", "primary", pattern_1="I list the projects of the account"),
     ).text
-    assert 'data-value="result"' in after
+    assert 'data-value="slot:result"' in after
     assert "what the step before produced" in after
 
 
@@ -715,21 +721,53 @@ def test_a_step_chosen_before_its_subject_was_removed_stops_resolving(client):
         ({"compare": "gone", "aspect": "", "target": ""}, 'Then the account "primary" is gone'),
         ({"compare": "is"}, 'Then the account "primary" field "plan" is "standard"'),
         ({"compare": "is-not"}, 'Then the account "primary" field "plan" is not "standard"'),
+        ({"compare": "holds"}, 'Then the account "primary" field "plan" contains "standard"'),
         (
-            {"subject": "result", "aspect": "", "compare": "contains", "target": "node:accounts.primary"},
+            {"compare": "holds-not"},
+            'Then the account "primary" field "plan" does not contain "standard"',
+        ),
+        ({"compare": "empty", "target": ""}, 'Then the account "primary" field "plan" is empty'),
+        (
+            {"compare": "not-empty", "target": ""},
+            'Then the account "primary" field "plan" is not empty',
+        ),
+        (
+            {"subject": "slot:result", "aspect": "", "compare": "contains", "target": "node:accounts.primary"},
             'Then the result contains the account "primary"',
         ),
         (
-            {"subject": "result", "aspect": "", "compare": "lacks", "target": "node:accounts.primary"},
+            {"subject": "slot:result", "aspect": "", "compare": "lacks", "target": "node:accounts.primary"},
             'Then the result does not contain the account "primary"',
+        ),
+        # A claim about a whole type names no instance, because there is none to name.
+        (
+            {"subject": "type:account", "aspect": "", "compare": "count", "target": "1"},
+            "Then the environment has 1 account",
         ),
     ],
 )
 def test_every_claim_writes_the_gherkin_it_means(client, fields, written):
     data = claim(**fields)
-    if fields.get("subject") == "result":
+    if str(fields.get("subject", "")).startswith("slot:"):
         data["pattern_1"] = "I list the projects of the account"  # something has to produce one
     assert written in preview_of(client.post("/compose/preview", data=data).text)
+
+
+def test_a_whole_type_is_something_a_then_can_be_about(client):
+    """How many there are is not a claim about any one resource, so the picker offers the type."""
+    body = client.post("/compose/preview", data=claim()).text
+    assert 'data-value="type:account"' in body
+    assert "All of a type" in body
+
+
+def test_a_count_read_back_names_the_type_and_the_number(client):
+    body = client.post(
+        "/compose/preview",
+        data=draft(pattern_2=COUNT, p_2_expected=None, p_2_resource_type="account", p_2_count="2"),
+    ).text
+    assert 'name="subject_2" value="type:account"' in body
+    assert 'name="compare_2" value="count"' in body
+    assert 'name="target_2" value="2"' in body
 
 
 def test_a_written_scenario_reads_back_into_the_same_four_choices(client):

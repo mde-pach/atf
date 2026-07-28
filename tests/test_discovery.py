@@ -19,7 +19,7 @@ from atf.discovery import (
     slug,
 )
 from atf.discovery import _step_defs as step_defs
-from atf.steps import EXISTS, GENERIC_STEPS, RESULT_CONTAINS
+from atf.steps import EXISTS, GENERIC_STEPS, SLOT_CONTAINS
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
@@ -285,8 +285,9 @@ def test_a_step_declares_what_it_touches_on_the_context_by_being_read(found):
 
 def test_atfs_own_steps_declare_what_they_need_rather_than_being_read(found):
     """They reach the context through `getattr`, which no walk over attributes can see."""
-    contains = next(step for step in found.steps if step.pattern == RESULT_CONTAINS)
-    assert contains.needs == ["result"]
+    contains = next(step for step in found.steps if step.pattern == SLOT_CONTAINS)
+    assert contains.needs == [], "which slot it reads is named in the step, not fixed in advance"
+    assert contains.needs_slot
 
     reads_nothing = next(step for step in found.steps if step.pattern == EXISTS)
     assert reads_nothing.needs == [], "it resolves from the catalog, so it needs nothing put there"
@@ -430,3 +431,51 @@ def test_a_module_that_will_not_parse_says_nothing_rather_than_raising(tmp_path)
     """Discovery runs on every page render. A half-written steps module must not take a page down."""
     assert context_use_of(tmp_path, "def broken(:\n") == {}
     assert context_use(tmp_path / "not-there.py") == {}
+
+
+# ---- phrases ---------------------------------------------------------------
+
+
+PHRASEBOOK = '''
+'the account is on the standard plan':
+  - the account "primary" exists
+  - the account "primary" field "plan" is "standard"
+'the plan came back right':
+  - the result field "plan" is "standard"
+'''
+
+
+@pytest.fixture
+def phrased(project, catalog):
+    (project / "specs" / "phrasebook.yaml").write_text(PHRASEBOOK, encoding="utf-8")
+    types, nodes = catalog
+    return discover(project / "specs", nodes, set(types), "dev", project)
+
+
+def test_a_phrase_is_part_of_the_vocabulary_a_scenario_may_be_written_in(phrased):
+    """It registers as a step, so anything that offers steps offers phrases without being told."""
+    phrase = next(step for step in phrased.steps if step.pattern == "the account is on the standard plan")
+    assert phrase.keyword == "*", "a phrase is said under whichever keyword its steps are"
+    assert phrase.phrase
+    assert phrase.expands_to == ['the account "primary" exists', 'the account "primary" field "plan" is "standard"']
+
+
+def test_a_phrase_says_it_came_from_the_phrasebook_not_from_atfs_own_source(phrased):
+    """Otherwise the interface would send someone to `atf/plugin.py` to change a line of YAML."""
+    phrase = next(step for step in phrased.steps if step.pattern == "the account is on the standard plan")
+    assert phrase.file.endswith(os.path.join("specs", "phrasebook.yaml"))
+
+
+def test_a_phrase_needs_whatever_the_steps_it_stands_for_need(phrased):
+    """It has no source of its own to read, so its needs are the union of what it says."""
+    catalog_only = next(step for step in phrased.steps if step.pattern == "the account is on the standard plan")
+    assert catalog_only.needs == [], "both claims resolve from the catalog, so nothing is needed"
+    assert not catalog_only.needs_slot
+
+    from_a_slot = next(step for step in phrased.steps if step.pattern == "the plan came back right")
+    assert from_a_slot.needs_slot, "it stands for a claim about a slot, so it waits for one"
+
+
+def test_a_phrase_describes_itself_by_what_it_stands_for(phrased):
+    phrase = next(step for step in phrased.steps if step.pattern == "the plan came back right")
+    assert phrase.docstring == 'Says in one line: the result field "plan" is "standard"'

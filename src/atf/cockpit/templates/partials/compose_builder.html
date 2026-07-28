@@ -86,7 +86,7 @@
                   placeholder='what is this about…', empty='Nothing here can be asserted on yet.') }}
     </div>
 
-    {% if row.subject == 'result' %}
+    {% if row.subject.startswith('slot:') %}
       {# What a step produced is only knowable by running it, so this is typed rather than picked —
          with the fields the last run actually saw offered as completions. #}
       <div class="field">
@@ -94,7 +94,9 @@
         <input id="aspect-{{ row.index }}" name="aspect_{{ row.index }}" value="{{ row.aspect }}"
                autocomplete="off" list="held-fields" placeholder="a field of it, or leave empty">
       </div>
-    {% elif row.subject and not row.subject.startswith('step:') %}
+    {% elif row.subject and not row.subject.startswith('step:') and not row.subject.startswith('type:') %}
+      {# A claim about a whole type has no field to name: how many there are is not a field of
+         anything, so the control that would ask for one is not shown rather than shown empty. #}
       <div class="field">
         <label>assert</label>
         {{ ui.combo('aspect_' ~ row.index, aspect_options(row), row.aspect,

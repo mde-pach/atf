@@ -1,0 +1,32 @@
+# The one place this suite's technical vocabulary lives.
+#
+# Everything below is a sentence a reader can check against what ATF promises, standing for claims
+# ATF can decide. Nothing here performs anything: each line is a step that already existed, said
+# in words that mean something outside the framework.
+#
+# Rename `mutable_envs`, or change which exit code a refusal uses, and this file is the only place
+# that has to know.
+
+'the command succeeds':
+  - the result field "exit_code" is "0"
+
+'it is refused because "{reason}"':
+  - the result field "exit_code" is "2"
+  - the result field "output" contains "{reason}"
+
+'the run fails':
+  - the result field "exit_code" is "1"
+  - the result field "output" contains "failed"
+
+'nothing was created':
+  - the environment has 0 owner
+  - the environment has 0 todo_list
+
+# One scenario runs the same command against two environments and keeps both outcomes, so these
+# two say which of them they are about. That is what naming a slot buys — with one, only the
+# second could ever be asserted on.
+'seeding the locked environment was refused':
+  - the locked_env field "exit_code" is "2"
+
+'seeding the open environment worked':
+  - the open_env field "exit_code" is "0"

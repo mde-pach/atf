@@ -217,8 +217,9 @@ The per-scenario scratchpad, and the only channel between steps.
 
 The provisioning step writes each record onto it — `context.owner`, `context.task` — and your own
 steps read them back. Everything on it other than the records and `_ephemeral` belongs to your
-suite, with one name reserved: **`context.result`** is what a step produced, and it is the word
-`Then the result contains …` is about.
+suite. Anything a step writes there is a **slot**, and a slot can be asserted on by name:
+`Then the result contains …` names the one ATF suggests calling `result`, and a scenario doing two
+things names each of them instead — otherwise only the second would survive.
 
 It remembers what it is holding. Each attribute set on it gets a description — its kind, the fields
 it carries, how many records there are — which is what lets the cockpit say what a scenario had

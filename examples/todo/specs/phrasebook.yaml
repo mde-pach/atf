@@ -1,0 +1,19 @@
+# The wording this suite uses, and what each sentence stands for.
+#
+# Every line below turns a claim about a *field* — which is the shape of a record, and nobody's
+# domain language — into a sentence about a todo list. Nothing here performs anything: each is a
+# claim ATF already makes, said in words that mean something outside the framework.
+#
+# `atf lint` is what keeps the features honest about using them.
+
+'the guest "{name}" is ready':
+  - the guest "{name}" field "state" is "ready"
+
+'the label "{name}" is called "{title}"':
+  - the label "{name}" field "name" is "{title}"
+
+'the owner "{name}" is on the "{plan}" plan':
+  - the owner "{name}" field "plan" is "{plan}"
+
+'the task "{name}" is done':
+  - the task "{name}" field "done" is "true"

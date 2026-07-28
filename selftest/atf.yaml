@@ -20,6 +20,13 @@ environments:
       page: {}
       element: {}
       browser: {}
+      # The same backend the suites-under-test provision into, read back through the same generic
+      # adapter they use. It is what turns `the backend has 1 owners` — a hand-written assertion
+      # about a collection — into `the owner "primary" exists`, which is a claim ATF already makes.
+      rest:
+        base_url_env: SELFTEST_BACKEND
+        auth: { header: X-Actor, value_env: SELFTEST_ACTOR }
+        pagination: { results_key: results, count_key: count }
     clients:
       atf:
         backend_url_env: SELFTEST_BACKEND
@@ -32,3 +39,4 @@ display:
     page: { label: Page, color: "#0f8f6f" }
     element: { label: Element, color: "#b8860b" }
     browser: { label: Browser, color: "#c2410c" }
+    rest: { label: Backend, color: "#475569" }

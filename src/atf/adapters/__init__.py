@@ -165,11 +165,15 @@ class NoopDelete:
 
 
 def _register_builtins() -> None:
+    # `browser` imports no browser library until a page is actually opened, so a suite with no UI
+    # in it pays nothing for this being here.
+    from .browser import BrowserAdapter
     from .reference import ReferenceAdapter
     from .rest import RestAdapter
 
     register("rest", RestAdapter.from_settings)
     register("reference", ReferenceAdapter.from_settings)
+    register("browser", BrowserAdapter.from_settings)
 
 
 _register_builtins()

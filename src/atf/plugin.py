@@ -25,10 +25,10 @@ from .materializer import Materializer
 from .placeholders import PLACEHOLDER_RE, Unresolved
 from .runner import PROGRESS_OUT
 
-# The read-and-compare steps are a plugin of their own so that the step definitions land in their
-# own module namespace. pytest reads `pytest_plugins` from any plugin it registers, so a suite that
-# enables `atf.plugin` gets them without naming a second thing.
-pytest_plugins = ["atf.steps"]
+# The read-and-compare steps, and the ones that act on an interface, are plugins of their own so
+# that their step definitions land in their own module namespaces. pytest reads `pytest_plugins`
+# from any plugin it registers, so a suite that enables `atf.plugin` gets them without naming more.
+pytest_plugins = ["atf.steps", "atf.ui"]
 
 _BOOT: Boot = bootstrap()
 

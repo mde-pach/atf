@@ -137,6 +137,56 @@ An action puts what it produced on `result`, so a scenario can claim something a
 as well as about the resource. A system that says nothing useful leaves the record the action was
 performed on, so there is always something there.
 
+## Acting on an interface {#ui}
+
+A page in a browser is a resource like any other, and the controls on it are named **inline**, by
+**role** and **accessible name** — never in the catalog, and never with a selector.
+
+```yaml
+# The only thing a catalog says about a screen is where it is.
+screen:
+  system: browser
+  mode: data
+  natural_key: at
+  id_field: at
+```
+
+```gherkin
+Given the screen "compose"
+When I click the combobox "what is this about…"
+And I type "groceries" into the combobox "what is this about…"
+Then the option "groceries" is showing
+And the option "every owner" is not showing
+```
+
+| Step | What it does |
+|---|---|
+| `When I click the <role> "<name>"` | clicks it |
+| `When I type "<text>" into the <role> "<name>"` | replaces its contents |
+| `When I choose the <role> "<name>"` | picks an option |
+| `Then the <role> "<name>" is showing` | it is there and visible |
+| `Then the <role> "<name>" is not showing` | it is not — *hidden* counts, which is what a person means |
+| `Then the <role> "<name>" reads "<text>"` | compares what it says |
+| `Then the words "<text>" are showing` | prose, which has no accessible name |
+| `Then the words "<text>" are not showing` | it does not |
+
+**Why role and name.** They are what a screen reader announces, so a scenario written in them is a
+scenario about what a person can perceive — and they are what an accessibility tree exposes, so they
+are also the most stable thing to automate against. A selector describes today's markup; a role and
+a name describe the thing. A catalog node per control would be a Page Object with a YAML file for a
+class, and would put the shape of a template into the file that describes the domain.
+
+**Prose is the exception.** ARIA computes an accessible name for things you can *do* something to,
+and a paragraph is not one — so what a page *says* is claimed with `the words "…"`, which is still
+what a reader reads and still not a selector.
+
+**A failure says what is there.** Naming a control that is not on the page lists the ones that are,
+with that role, so a wrong name is one line to fix rather than a hunt.
+
+Playwright is an optional dependency (`uv sync --group browser`). Without it the adapter reports
+itself [unavailable](adapter-spi.md#unavailable) and scenarios tagged as needing it
+[skip with the reason](manifest.md#requires).
+
 ## Read-and-compare steps {#read-and-compare-steps}
 
 A family of steps, registered by the plugin, available in every suite without writing anything. They

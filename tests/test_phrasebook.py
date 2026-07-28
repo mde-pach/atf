@@ -85,16 +85,47 @@ def test_a_step_using_a_capture_the_phrase_does_not_take_is_refused(tmp_path):
     assert "it captures: reason" in str(caught.value)
 
 
-def test_a_step_yaml_read_as_a_mapping_says_so(tmp_path):
-    """A colon and a space start a mapping in YAML, and `registered: env, now` is full of them.
+def test_a_step_is_read_as_the_line_it_was_written_as(tmp_path):
+    """YAML would rather a step were something else, and a step is a line of English.
 
-    Without this the phrase loads holding a dict, and the failure arrives much later as a step
-    nothing is worded as — which says nothing about the real mistake.
+    A colon and a space start a mapping, so `contains "registered: env, now"` loads as a dict;
+    `true` loads as a boolean. Both are sentences. Reading them from the document tree rather than
+    from loaded values takes the footgun away instead of asking every author to know about it.
     """
-    with pytest.raises(PhrasebookError) as caught:
-        load(book(tmp_path, "'it lists them':\n  - the result field \"output\" contains \"registered: env, now\"\n"))
-    assert "was read as a mapping, not as text" in str(caught.value)
-    assert "single quotes" in str(caught.value)
+    phrases = load(
+        book(
+            tmp_path,
+            '''
+'it lists them':
+  - the result field "output" contains "registered: env, now"
+  - the result field "flag" is "true"
+  - 'quoting still works: and still means what it means'
+''',
+        )
+    )
+    assert phrases[0].expands_to == (
+        'the result field "output" contains "registered: env, now"',
+        'the result field "flag" is "true"',
+        "quoting still works: and still means what it means",
+    )
+
+
+def test_a_comment_after_a_step_is_not_part_of_it(tmp_path):
+    """A node's end mark runs on to the next token, past the blank lines and the comment."""
+    phrases = load(
+        book(
+            tmp_path,
+            '''
+'it lists them':
+  - the result field "output" contains "registered: env, now"
+
+# something else entirely
+'and this':
+  - the owner "primary" exists
+''',
+        )
+    )
+    assert phrases[0].expands_to == ('the result field "output" contains "registered: env, now"',)
 
 
 def test_a_phrase_standing_for_nothing_is_refused(tmp_path):

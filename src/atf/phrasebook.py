@@ -21,6 +21,11 @@ Then it is refused because "not in mutable_envs"
 The technical vocabulary now lives in one file — which is also the only place to edit when
 `mutable_envs` is renamed — and the spec says what a person means.
 
+**A step is read as the line it was written as.** YAML would rather it were something else — a colon
+and a space start a mapping, so `contains "registered: env, now"` loads as a dict, and `"flag: true"`
+comes back holding a boolean. Both are sentences. They are read from the document tree rather than
+from loaded values, which takes that footgun away instead of asking every author to know about it.
+
 **Three rules hold this in place.**
 
 *A phrase expands to steps, never to another phrase.* Flat, one level, no recursion, checked when
@@ -117,46 +122,70 @@ def load(path: Path) -> list[Phrase]:
     """Read and validate a phrasebook. An absent file is an empty one, not an error."""
     if not path.is_file():
         return []
+    text = path.read_text(encoding="utf-8")
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        root = yaml.compose(text)
     except yaml.YAMLError as exc:
         raise PhrasebookError([f"could not be read as YAML: {exc}"], path) from None
-    if raw is None:
+    if root is None:
         return []
-    if not isinstance(raw, dict):
+    if not isinstance(root, yaml.MappingNode):
         raise PhrasebookError(["the top level must be a mapping of phrase to the steps it stands for"], path)
 
     problems: list[str] = []
-    phrases = [made for pattern, body in raw.items() if (made := _phrase(pattern, body, problems)) is not None]
+    phrases = [
+        made
+        for key, value in root.value
+        if (made := _phrase(_text(key, text), _steps(value, text), problems)) is not None
+    ]
     _check_flat(phrases, problems)
     if problems:
         raise PhrasebookError(problems, path)
     return phrases
 
 
-def _phrase(pattern: Any, body: Any, problems: list[str]) -> Phrase | None:
-    if not isinstance(pattern, str) or not pattern.strip():
-        problems.append(f"{pattern!r}: a phrase is the sentence a spec will say, so it must be text")
+def _steps(node: yaml.Node, text: str) -> list[str] | None:
+    """The steps a phrase stands for, as the *text* they were written as.
+
+    Read from the document tree rather than from loaded values, because a step is a line of English
+    and YAML would rather it were something else. `contains "registered: env, now"` is a mapping to
+    YAML — a colon and a space start one — and `contains "flag: true"` would come back holding a
+    boolean. Both are sentences, and both are recovered here exactly as they were typed.
+
+    The alternative was to refuse them and make every author quote a line they had no reason to
+    think was special. This is that footgun taken away rather than labelled.
+    """
+    if isinstance(node, yaml.ScalarNode):
+        return [_text(node, text)]
+    if isinstance(node, yaml.SequenceNode):
+        return [_text(item, text) for item in node.value]
+    return None
+
+
+def _text(node: yaml.Node, source: str) -> str:
+    """One node as the line a person wrote.
+
+    A scalar is taken as YAML read it, so quoting still works and still means what it means.
+    Anything else — which is always YAML having found structure in a sentence — is taken back from
+    the source between the marks the parser left.
+
+    The first line of it, because a step is one line and a node's end mark runs on to the next
+    token: past the blank lines and the comment that follow it.
+    """
+    if isinstance(node, yaml.ScalarNode):
+        return str(node.value)
+    raw = source[node.start_mark.index : node.end_mark.index]
+    return raw.split("\n", 1)[0].strip()
+
+
+def _phrase(pattern: str, steps: list[str] | None, problems: list[str]) -> Phrase | None:
+    if not pattern.strip():
+        problems.append("a phrase is the sentence a spec will say, so it must be text")
         return None
-    if isinstance(body, str):
-        body = [body]
-    if not isinstance(body, list) or not body:
+    if not steps:
         problems.append(f"{pattern!r}: stands for nothing — list the steps it says in one line")
         return None
 
-    for item in body:
-        if isinstance(item, dict):
-            # `- the output contains "registered: env, now"` is a *mapping* to YAML, because a
-            # colon and a space start one. Saying so is worth more than the step-not-found this
-            # would otherwise become at run time.
-            spelled = ", ".join(f"{key}: {value}" for key, value in item.items())
-            problems.append(
-                f"{pattern!r}: its step `{spelled}` was read as a mapping, not as text — a colon "
-                "followed by a space starts one in YAML. Put the whole line in single quotes."
-            )
-            return None
-
-    steps = tuple(str(item) for item in body)
     captures = tuple(dict.fromkeys(CAPTURE_RE.findall(pattern)))
     for text in steps:
         unknown = [name for name in CAPTURE_RE.findall(text) if name not in captures]
@@ -166,7 +195,7 @@ def _phrase(pattern: Any, body: Any, problems: list[str]) -> Phrase | None:
                 f"{pattern!r}: its step {text!r} uses {{{unknown[0]}}}, which the phrase does not "
                 f"capture (it captures: {known})"
             )
-    return Phrase(pattern=pattern, expands_to=steps, captures=captures)
+    return Phrase(pattern=pattern, expands_to=tuple(steps), captures=captures)
 
 
 def _check_flat(phrases: list[Phrase], problems: list[str]) -> None:

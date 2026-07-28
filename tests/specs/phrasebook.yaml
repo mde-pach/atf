@@ -210,14 +210,13 @@
   - the result field "exit_code" is "0"
   - the result field "output" contains "No technical vocabulary"
 
-# A colon inside a plain YAML scalar starts a mapping, so this one is quoted whole.
 'it objects, naming the rule "{rule}"':
   - the result field "exit_code" is "1"
   - the result field "output" contains "{rule}"
 
 'it says how to answer the objection':
   - the result field "output" contains "Write a phrase for it"
-  - 'the result field "output" contains "atf-lint: ignore"' 
+  - the result field "output" contains "atf-lint: ignore"
 
 # ---- what a run collected ---------------------------------------------------
 
@@ -246,7 +245,7 @@
   - the result field "output" contains "expected `now+1d 09:00`"
 
 'it says which providers there are':
-  - 'the result field "output" contains "registered: env, fake, now, uuid"' 
+  - the result field "output" contains "registered: env, fake, now, uuid"
 
 # ---- what a claim says when it does not hold --------------------------------
 #
@@ -276,7 +275,7 @@
 
 'it lists the instances of that type':
   - the result field "output" contains "the catalog declares no owner called 'primry'"
-  - 'the result field "output" contains "it declares: primary"' 
+  - the result field "output" contains "it declares: primary"
 
 'it says an ephemeral resource is never looked up':
   - the result field "output" contains "is ephemeral, so ATF never looks one up"

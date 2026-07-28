@@ -44,6 +44,12 @@ One mapping. Each key is the sentence; each value is the steps it stands for, in
 `{capture}` in the sentence is a value the spec writes, and it reaches every step that names it.
 A step naming a capture the sentence does not take is refused when the file loads.
 
+**A step is read as the line you wrote.** YAML would rather it were something else — a colon and a
+space start a mapping, so `contains "registered: env, now"` would load as one, and `"flag: true"`
+would come back holding a boolean. ATF reads steps from the document tree instead of from loaded
+values, so neither happens and no line needs quoting it did not ask for. Quoting still works where
+you want it.
+
 [`${...}` placeholders](providers.md) work inside a phrase exactly as they do in a step a scenario
 wrote itself.
 

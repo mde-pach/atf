@@ -594,28 +594,32 @@ def test_writing_a_scenario_is_not_gated_on_mutable_envs(client, project):
 # ---- after writing ---------------------------------------------------------
 
 
-def test_a_scenario_in_a_bound_feature_needs_no_new_module(client):
+def test_composing_a_scenario_writes_the_feature_and_nothing_else(client, project):
+    """No `.py` is written for it any more: ATF collects a `.feature` nobody bound."""
+    before = {path.name for path in (project / "specs" / "steps").glob("*.py")}
     body = client.post("/compose/apply", data={**draft(), "confirm": confirm(client)}).text
     assert "Written to" in body
-    assert "so pytest collects it" not in body, "accounts.feature is already bound"
+    assert {path.name for path in (project / "specs" / "steps").glob("*.py")} == before
 
 
-def test_a_brand_new_feature_is_bound_without_anyone_writing_a_py_file(client, project):
+def test_a_brand_new_feature_needs_no_python_file_at_all(client, project):
     """Composing a scenario and then being told to go and write Python is the point at which the
-    interface stops being one."""
+    interface stops being one — and now there is nothing to write.
+
+    ATF collects a `.feature` nobody bound, so a scenario built entirely from the vocabulary the
+    framework provides gets a feature file and nothing else.
+    """
     body = client.post(
         "/compose/apply", data={**fresh_feature(), "confirm": confirm(client)}
     ).text
-    assert "so pytest collects it" in body
+    assert "Written to" in body
     assert "It will not run yet" not in body
 
-    module = project / "specs" / "steps" / "test_billing.py"
-    assert module.is_file()
-    assert 'scenarios("../features/billing.feature")' in module.read_text()
+    assert not (project / "specs" / "steps" / "test_billing.py").exists()
 
     found = client.cockpit.discovery("dev", refresh=True)
     spec = next(item for item in found.specs if item.feature == "Billing")
-    assert found.tests_for_spec(spec.id), "pytest collects it now, with nothing else written"
+    assert found.tests_for_spec(spec.id), "pytest collects it, with nothing else written"
 
 
 def test_writing_invalidates_the_cached_discovery(client):

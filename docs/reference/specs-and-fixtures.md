@@ -73,6 +73,28 @@ def pytest_collection_modifyitems(items):
             item.add_marker(pytest.mark.skip(reason="work in progress"))
 ```
 
+## Collecting a feature {#collecting}
+
+A `.feature` is normally handed to pytest by a module that calls `scenarios("…")`. For a feature
+that needs step code of its own, that module is where the code lives. For one written entirely in
+the vocabulary ATF provides, it is a file whose whole content is an import and a call.
+
+**ATF collects a `.feature` nobody bound.** The file becomes a module that was never on disk, one
+test per scenario, built with pytest-bdd's own `scenario()` — so the nodeids, the failures and the
+report are exactly what a hand-written binding would produce.
+
+What such a feature can reach, and what it cannot, is pytest's fixture rule and nothing new:
+
+| Reachable from an auto-collected feature | Not reachable |
+|---|---|
+| every step ATF defines | a step declared in some *other* module |
+| every [phrase](phrasebook.md) this suite writes | |
+| anything a `conftest.py` above it declares | |
+
+A feature needing a `@when` of its own therefore still wants its module — or the step moves into a
+`conftest.py`, where every feature can see it. A feature some module already binds is left alone;
+collecting it twice would run every scenario twice.
+
 ## Read-and-compare steps {#read-and-compare-steps}
 
 A family of steps, registered by the plugin, available in every suite without writing anything. They

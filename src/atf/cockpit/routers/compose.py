@@ -150,7 +150,6 @@ class Draft:
     spec_id: str = ""
     starting: bool = False
     trial: Trial | None = None
-    bound: str = ""
 
     @property
     def where(self) -> str:
@@ -201,7 +200,6 @@ async def apply(request: Request) -> Any:
         raise HTTPException(status_code=409, detail=f"not ready to write — {draft.problems[0]}")
 
     _write(draft)
-    draft.bound = _bind(draft)
     app().invalidate(env)
     _after_writing(env, draft)
     return partial(request, "partials/compose_builder.html", **_context(env, draft))
@@ -787,16 +785,10 @@ def _steps_dir(found: Discovery) -> Path:
     return existing[0] if existing else app().manifest.specs_dir / "steps"
 
 
-def _binds(specs_dir: Path, feature: Path) -> bool:
-    """Whether some module already hands this feature to pytest."""
-    for path in specs_dir.rglob("*.py"):
-        text = path.read_text(encoding="utf-8", errors="replace")
-        if "scenarios(" in text and feature.name in text:
-            return True
-    return False
-
-
-BINDING = '''"""Hands {name} to pytest. Written by the composer; add your own steps below."""
+# What a scratch module for a trial holds when the feature is new: nothing but the binding, which
+# is also the truth about what such a scenario can reach. Nothing writes one of these to keep —
+# ATF collects a `.feature` nobody bound, so a composed scenario needs no Python beside it.
+BINDING = '''"""Binds {name} for one trial run. Written and removed by the composer."""
 
 from pytest_bdd import scenarios
 
@@ -858,34 +850,6 @@ def reachable(step: StepDef, module: Path | None, specs_dir: Path) -> bool:
     if path.name == "conftest.py":
         return module is None or path.parent in module.parents
     return module is not None and path == module
-
-
-def _bind(draft: Draft) -> str:
-    """Write the module that makes a feature collectable, unless something already does.
-
-    A scenario composed here and then not collected is a scenario that does not exist as far as
-    anything else is concerned, and being told to go and write a `.py` for it is exactly the seam
-    this page exists to remove. Nothing is written when a module already binds the feature — which
-    is the common case, because a feature only needs binding once.
-    """
-    cockpit = app()
-    if draft.path is None:
-        return ""
-    specs_dir = cockpit.manifest.specs_dir
-    if _binds(specs_dir, draft.path):
-        return ""
-
-    steps = _steps_dir(cockpit.discovery(draft.env))
-    steps.mkdir(parents=True, exist_ok=True)
-    module = _inside(steps / f"test_{slug(draft.path.stem)}.py")
-    if module.exists():
-        return ""
-
-    relative = os.path.relpath(draft.path, module.parent)
-    module.write_text(
-        BINDING.format(name=draft.path.name, path=Path(relative).as_posix()), encoding="utf-8"
-    )
-    return str(module)
 
 
 def _try(env: str, draft: Draft) -> Trial:

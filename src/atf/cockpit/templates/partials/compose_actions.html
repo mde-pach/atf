@@ -18,8 +18,7 @@
 {% if draft.written %}
   <div class="banner ok stack">
     <span>
-      Written to <span class="mono">{{ rel(draft.where) }}</span>{% if draft.bound %}, and bound by
-      <span class="mono">{{ rel(draft.bound) }}</span> so pytest collects it{% endif %}.
+      Written to <span class="mono">{{ rel(draft.where) }}</span>.
     </span>
     {% if draft.next_steps %}
       {# Never "done" while something real is still missing. #}

@@ -16,7 +16,7 @@ import pytest
 from pytest_bdd import given, parsers
 from pytest_bdd import step as register_step
 
-from . import phrasebook
+from . import collect, phrasebook
 from .adapters import Record, why_unavailable
 from .bootstrap import Boot, bootstrap
 from .catalog import natural_keys
@@ -187,6 +187,15 @@ PHRASEBOOK = phrasebook.path_for(_BOOT.manifest.specs_dir)
 
 for _phrase in phrasebook.load(PHRASEBOOK):
     register_step(parsers.parse(_phrase.pattern), type_=None)(phrasebook.make_step(_phrase, PHRASEBOOK))
+
+
+def pytest_collect_file(file_path, parent):
+    """Collect a `.feature` nobody bound, so a feature needing no step code needs no file beside it.
+
+    See [collect.py](collect.py) for what such a feature can reach — the short answer is ATF's own
+    steps, this suite's phrases, and anything a `conftest.py` above it declares.
+    """
+    return collect.collect(file_path, parent, _BOOT.manifest.specs_dir)
 
 
 def pytest_collection_modifyitems(items) -> None:

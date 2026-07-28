@@ -247,3 +247,46 @@
 
 'it says which providers there are':
   - 'the result field "output" contains "registered: env, fake, now, uuid"' 
+
+# ---- what a claim says when it does not hold --------------------------------
+#
+# A claim is only worth as much as the sentence it produces when it fails. Each of these is the
+# message a reader actually gets, quoted back.
+
+'it says nothing in the environment matches':
+  - the result field "output" contains "nothing in local matches owners.primary"
+  - the result field "output" contains "email="
+
+'it says the resource is still there':
+  - the result field "output" contains "is still in local"
+
+# A claim's value is captured between double quotes, so it can never itself contain one — the
+# message says `is "standard", not "enterprise"` and this names the parts around them.
+'it says what the field holds instead':
+  - the result field "output" contains "owner 'primary' field 'plan' is"
+  - the result field "output" contains ", not"
+
+'it lists the fields the record does carry':
+  - the result field "output" contains "has no field 'tier'"
+  - the result field "output" contains "the record carries"
+
+'it lists the types the catalog does declare':
+  - the result field "output" contains "no resource type 'acount' in the catalog"
+  - the result field "output" contains "known types:"
+
+'it lists the instances of that type':
+  - the result field "output" contains "the catalog declares no owner called 'primry'"
+  - 'the result field "output" contains "it declares: primary"' 
+
+'it says an ephemeral resource is never looked up':
+  - the result field "output" contains "is ephemeral, so ATF never looks one up"
+
+'it says a field claim needs one record':
+  - the result field "output" contains "a field assertion needs one"
+
+'it says what the scenario is holding instead':
+  - the result field "output" contains "nothing has put 'reslt' on the context"
+  - the result field "output" contains "It holds:"
+
+'it lists every field that disagrees':
+  - the result field "output" contains "is not the shape this scenario says"

@@ -25,7 +25,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 SUITE = REPO / "tests"
 
-SCENARIOS = 100
+SCENARIOS = 109
 
 # The scenarios that need the page to have *run*, not merely been served. They skip where there is
 # no browser, which is the one thing about this suite that legitimately differs between machines.

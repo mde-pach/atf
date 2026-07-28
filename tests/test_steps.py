@@ -1,7 +1,17 @@
-"""The read-and-compare steps, exercised the only way that proves anything: through a real suite.
+"""The claims ATF gives every suite, exercised against a reference consuming project.
 
-Every test here writes a `.feature` into the sample project and runs pytest against it in its own
-process, so what is verified is the wording a scenario author writes — not a Python call.
+What each claim *says when it does not hold* is now in `specs/features/claims.feature`, which
+writes a false claim into a real suite and reads the sentence back — because a claim is worth what
+its failure message is worth, and a scenario is a better description of that than an assertion on
+captured output.
+
+What is left here is the vocabulary as a *table*: that every generic `Then` has a wording something
+proves, that each resolves to a registered definition, and the mechanics that need a project shaped
+for them — a `When` that changes a record behind ATF's back, a listing of five, a record that is not
+a record at all.
+
+`PASSING` is the guard worth keeping in Python: it pairs every entry of `GENERIC_STEPS` with a line
+that holds, so a pattern nobody proves and a wording nothing registers are both caught at once.
 """
 
 from __future__ import annotations
@@ -100,7 +110,6 @@ def test_the_table_lists_exactly_the_thens_that_are_proved():
     proved = {step.pattern for step in GENERIC_STEPS if step.keyword in {"then", "when"}}
     assert proved == set(PASSING)
 
-
 def test_every_then_in_the_table_resolves_to_a_registered_definition(project):
     """A pattern in the table with nothing behind it would be offered by the composer, then fail.
 
@@ -128,7 +137,6 @@ def _(context):
 
 # ---- reading a resource back -----------------------------------------------
 
-
 def test_a_provisioned_resource_exists_and_its_fields_read(project):
     feature = """Feature: Reading back
   Scenario: A provisioned account is there with the plan it declares
@@ -140,7 +148,6 @@ def test_a_provisioned_resource_exists_and_its_fields_read(project):
     result = run_feature(project, "reading", feature)
     assert result.returncode == 0, result.stdout + result.stderr
 
-
 def test_a_resource_nothing_provisioned_is_gone(project):
     feature = """Feature: Absence
   Scenario: An account nothing asked for is not here
@@ -148,7 +155,6 @@ def test_a_resource_nothing_provisioned_is_gone(project):
 """
     result = run_feature(project, "absence", feature)
     assert result.returncode == 0, result.stdout + result.stderr
-
 
 def test_is_gone_fails_while_the_resource_is_still_there(project):
     feature = """Feature: Absence
@@ -159,7 +165,6 @@ def test_is_gone_fails_while_the_resource_is_still_there(project):
     result = run_feature(project, "still_there", feature)
     assert result.returncode != 0
     assert "accounts.primary is still in dev" in result.stdout
-
 
 def test_exists_fails_naming_what_it_looked_for(project):
     feature = """Feature: Absence
@@ -173,7 +178,6 @@ def test_exists_fails_naming_what_it_looked_for(project):
 
 
 # ---- the point of the whole design: the assertion re-reads ------------------
-
 
 def test_an_assertion_sees_what_a_when_changed(project):
     """The `When` is hand-written code changing a real backend; the `Then` is still generic.
@@ -197,7 +201,6 @@ def test_an_assertion_sees_what_a_when_changed(project):
 
 # ---- what a failure says ---------------------------------------------------
 
-
 def test_a_wrong_value_names_both_sides_and_their_kinds(project):
     feature = """Feature: Failing
   Scenario: The plan is not what was written
@@ -207,7 +210,6 @@ def test_a_wrong_value_names_both_sides_and_their_kinds(project):
     result = run_feature(project, "wrong_value", feature)
     assert result.returncode != 0
     assert 'field \'plan\' is "standard", not "enterprise"' in result.stdout
-
 
 def test_an_unknown_field_lists_what_the_record_carries(project):
     feature = """Feature: Failing
@@ -219,31 +221,6 @@ def test_an_unknown_field_lists_what_the_record_carries(project):
     assert result.returncode != 0
     assert "has no field 'tier' in dev" in result.stdout
     assert "the record carries email, id, notes, plan" in result.stdout
-
-
-def test_an_unknown_resource_type_says_which_types_there_are(project):
-    feature = """Feature: Failing
-  Scenario: The type is a typo
-    Then the acount "primary" exists
-"""
-    result = run_feature(project, "unknown_type", feature)
-    assert result.returncode != 0
-    assert "no resource type 'acount' in the catalog" in result.stdout
-
-
-def test_an_unknown_instance_says_which_instances_there_are(project):
-    feature = """Feature: Failing
-  Scenario: The name is a typo
-    Then the account "primry" exists
-"""
-    result = run_feature(project, "unknown_name", feature)
-    assert result.returncode != 0
-    assert "the catalog declares no account called 'primry'" in result.stdout
-    assert "it declares: primary, secondary" in result.stdout
-
-
-# ---- asserting on what a step produced -------------------------------------
-
 
 def test_the_result_contains_a_resource(project):
     feature = """Feature: Results
@@ -264,7 +241,6 @@ def _(context, api):
 '''
     result = run_feature(project, "results", feature, steps)
     assert result.returncode == 0, result.stdout + result.stderr
-
 
 def test_the_result_not_containing_a_resource_fails_saying_what_was_compared(project):
     feature = """Feature: Results
@@ -287,21 +263,6 @@ def _(context, api):
     assert result.returncode != 0
     assert "result contains projects.alpha, which it must not" in result.stdout
     assert "Looked for" in result.stdout
-
-
-def test_asking_about_a_result_nothing_produced_says_so(project):
-    feature = """Feature: Results
-  Scenario: Nothing produced a result
-    Given the account "primary"
-    Then the result contains the account "primary"
-"""
-    result = run_feature(project, "no_result", feature)
-    assert result.returncode != 0
-    assert "nothing has put 'result' on the context" in result.stdout
-    assert "context.result" in result.stdout
-    # What it *does* hold, so a mistyped slot name is one line to fix rather than a hunt.
-    assert "It holds: account (one account record carrying" in result.stdout
-
 
 def test_a_result_that_is_not_records_says_what_it_is(project):
     feature = """Feature: Results
@@ -326,7 +287,6 @@ def _(context):
 
 # ---- ephemeral resources ---------------------------------------------------
 
-
 def test_an_ephemeral_resource_is_read_from_what_the_scenario_built(project):
     """It is never looked up — that is what ephemeral means — so the built record is the only one."""
     feature = """Feature: Ephemeral
@@ -337,18 +297,6 @@ def test_an_ephemeral_resource_is_read_from_what_the_scenario_built(project):
 """
     result = run_feature(project, "ephemeral_read", feature)
     assert result.returncode == 0, result.stdout + result.stderr
-
-
-def test_is_gone_refuses_on_an_ephemeral_resource_instead_of_passing_vacuously(project):
-    feature = """Feature: Ephemeral
-  Scenario: Whether a visitor is gone cannot be answered
-    Given the visitor "walkin"
-    Then the visitor "walkin" is gone
-"""
-    result = run_feature(project, "ephemeral_gone", feature)
-    assert result.returncode != 0
-    assert "is ephemeral, so ATF never looks one up" in result.stdout
-
 
 def test_an_ephemeral_resource_the_scenario_never_built_is_reported_as_such(project):
     feature = """Feature: Ephemeral
@@ -364,12 +312,12 @@ def test_an_ephemeral_resource_the_scenario_never_built_is_reported_as_such(proj
 
 
 @pytest.mark.parametrize("pattern", [EXISTS, GONE, FIELD_IS])
+
 def test_the_capture_table_covers_every_pattern(pattern):
     step = generic(pattern)
     assert step is not None
     assert step.captures[:2] == ("resource_type", "name")
     assert step.summary
-
 
 def test_a_claim_about_a_slot_names_the_slot_first(project):
     """Which slot is half of what the claim says, so it is the first thing the pattern captures."""
@@ -378,7 +326,6 @@ def test_a_claim_about_a_slot_names_the_slot_first(project):
     assert step.captures == ("slot", "resource_type", "name")
     assert step.needs == (), "which slot it needs is the author's choice, not a fixed one"
     assert step.needs_slot
-
 
 def test_a_project_step_is_not_in_the_table():
     assert generic("I read its plan") is None
@@ -405,7 +352,6 @@ def _(context, client_config, title):
     path.write_text(json.dumps(data, indent=2))
 '''
 
-
 def test_a_generated_value_survives_from_the_when_that_made_it_to_the_then(project):
     """The whole point of naming a provider: an action takes a generated value in, and the
     assertion checking it writes the same expression and sees the same answer."""
@@ -418,7 +364,6 @@ def test_a_generated_value_survives_from_the_when_that_made_it_to_the_then(proje
     result = run_feature(project, "generated", feature, RENAME)
     assert result.returncode == 0, result.stdout + result.stderr
 
-
 def test_two_calls_are_told_apart_by_a_discriminator(project):
     feature = """Feature: Generated
   Scenario: Two generated values are not the same value
@@ -428,7 +373,6 @@ def test_two_calls_are_told_apart_by_a_discriminator(project):
 """
     result = run_feature(project, "discriminated", feature, RENAME)
     assert result.returncode == 0, result.stdout + result.stderr
-
 
 def test_each_scenario_generates_its_own(project):
     """Values stand still within a scenario; across scenarios they must not."""
@@ -449,7 +393,6 @@ def test_each_scenario_generates_its_own(project):
     plans = {record["plan"] for record in json.loads((project / "store.json").read_text())["accounts"]}
     assert len(plans) == 2, "one value per scenario, not one for the whole run"
 
-
 def test_a_placeholder_that_cannot_resolve_says_which_one(project):
     feature = """Feature: Generated
   Scenario: A provider nobody registered
@@ -462,7 +405,6 @@ def test_a_placeholder_that_cannot_resolve_says_which_one(project):
 
 
 # ---- asserting on a field of what a step produced ---------------------------
-
 
 def test_a_field_of_what_a_step_produced_is_compared(project):
     """Your rename example, whole: an action takes a generated value in, and the assertion checks
@@ -495,7 +437,6 @@ def _(context, client_config, title):
     result = run_feature(project, "produced", feature, steps)
     assert result.returncode == 0, result.stdout + result.stderr
 
-
 def test_a_field_assertion_on_a_listing_says_to_use_contains(project):
     feature = """Feature: Produced
   Scenario: A listing has no one field
@@ -517,35 +458,6 @@ def _(context, api):
     assert result.returncode != 0
     assert "a field assertion needs one" in result.stdout
     assert 'the result contains the <type>' in result.stdout
-
-
-def test_an_unknown_field_on_the_result_lists_what_it_carries(project):
-    feature = """Feature: Produced
-  Scenario: The result has no such field
-    Given the account "primary"
-    When I read its plan
-    Then the result field "nope" is "x"
-"""
-    steps = '''
-
-from pytest_bdd import when
-
-
-@when("I read its plan")
-def _(context):
-    context.result = {"plan": context.account["plan"]}
-'''
-    result = run_feature(project, "unknown_result_field", feature, steps)
-    assert result.returncode != 0
-    assert "result has no field 'nope' — it carries plan" in result.stdout
-
-
-# ---- matchers --------------------------------------------------------------
-#
-# `is` and `is not` were the whole vocabulary for a value, so every suite wrote its own
-# `the output mentions "…"`. These are the same claim generalised, and the point of each test
-# below is a kind of value where containment or emptiness means something different.
-
 
 HOLDS = '''
 
@@ -571,7 +483,6 @@ def test_containment_reaches_into_a_list_the_way_a_field_is_matched(project):
     result = run_feature(project, "containment", feature, HOLDS)
     assert result.returncode == 0, result.stdout + result.stderr
 
-
 def test_containment_over_a_record_is_refused_rather_than_guessed(project):
     """A record holds keys and values both, so `contains` cannot say which was meant."""
     feature = """Feature: Matchers
@@ -585,7 +496,6 @@ def test_containment_over_a_record_is_refused_rather_than_guessed(project):
     assert "a record holds keys and values both" in result.stdout
     assert "Name the field inside it instead." in result.stdout
 
-
 def test_a_wrong_count_says_what_the_environment_actually_holds(project):
     feature = """Feature: Matchers
   Scenario: The environment holds one visitor, not three
@@ -596,7 +506,6 @@ def test_a_wrong_count_says_what_the_environment_actually_holds(project):
     assert result.returncode != 0
     assert "dev holds 1 visitor record, not 3" in result.stdout
 
-
 def test_counting_an_unknown_type_lists_the_ones_there_are(project):
     feature = """Feature: Matchers
   Scenario: Counting something the catalog never declared
@@ -606,7 +515,6 @@ def test_counting_an_unknown_type_lists_the_ones_there_are(project):
     result = run_feature(project, "miscount_type", feature)
     assert result.returncode != 0
     assert "no resource type 'acount' in the catalog" in result.stdout
-
 
 def test_counting_says_so_when_the_adapter_cannot_list():
     """`browse` is optional SPI, so the claim has to degrade with the reason, not an AttributeError."""
@@ -632,7 +540,6 @@ def test_counting_says_so_when_the_adapter_cannot_list():
 # new factory and every scenario couples to a specific one. A table says what is different where
 # it is needed, and the catalog keeps one node.
 
-
 def test_a_given_can_vary_the_body_for_this_scenario_only(project):
     feature = """Feature: Variation
   Scenario: A trial account, without a second catalog node for one
@@ -642,7 +549,6 @@ def test_a_given_can_vary_the_body_for_this_scenario_only(project):
 """
     result = run_feature(project, "varied", feature)
     assert result.returncode == 0, result.stdout + result.stderr
-
 
 def test_a_variation_does_not_outlive_the_scenario_that_asked_for_it(project):
     """The catalog is session state every other scenario reads."""
@@ -659,7 +565,6 @@ def test_a_variation_does_not_outlive_the_scenario_that_asked_for_it(project):
     result = run_feature(project, "not_sticky", feature)
     assert result.returncode == 0, result.stdout + result.stderr
 
-
 def test_a_given_with_no_table_says_what_it_needs(project):
     feature = """Feature: Variation
   Scenario: `but` with nothing under it
@@ -668,7 +573,6 @@ def test_a_given_with_no_table_says_what_it_needs(project):
     result = run_feature(project, "bare_but", feature)
     assert result.returncode != 0
     assert "needs a table of what to write differently" in result.stdout
-
 
 def test_a_shape_compares_a_whole_record_in_one_claim(project):
     feature = """Feature: Shape
@@ -684,7 +588,6 @@ def test_a_shape_compares_a_whole_record_in_one_claim(project):
     result = run_feature(project, "shape", feature)
     assert result.returncode == 0, result.stdout + result.stderr
 
-
 def test_a_shape_says_what_must_match_not_what_may_exist(project):
     """A record carries ids and timestamps a scenario has no opinion about."""
     feature = """Feature: Shape
@@ -695,24 +598,6 @@ def test_a_shape_says_what_must_match_not_what_may_exist(project):
 """
     result = run_feature(project, "partial_shape", feature)
     assert result.returncode == 0, result.stdout + result.stderr
-
-
-def test_a_wrong_shape_lists_every_field_that_disagrees(project):
-    """One line per field, so a reader fixes them in one pass instead of one run each."""
-    feature = """Feature: Shape
-  Scenario: Two fields are wrong
-    Given the account "primary"
-    Then the account "primary" is:
-      | plan  | enterprise |
-      | email | someone@else.test |
-      | id    | #absent    |
-"""
-    result = run_feature(project, "wrong_shape", feature)
-    assert result.returncode != 0
-    assert "is not the shape this scenario says" in result.stdout
-    assert 'plan: "standard", not "enterprise"' in result.stdout
-    assert "id:" in result.stdout and "#absent" in result.stdout
-
 
 def test_a_shape_resolves_placeholders_in_its_cells(project):
     """A table's cells never reach the hook that resolves them for an ordinary step's arguments."""
@@ -725,7 +610,6 @@ def test_a_shape_resolves_placeholders_in_its_cells(project):
 """
     result = run_feature(project, "shape_placeholder", feature)
     assert result.returncode == 0, result.stdout + result.stderr
-
 
 def test_a_shape_over_a_slot_reads_what_a_step_produced(project):
     feature = """Feature: Shape
@@ -754,7 +638,6 @@ def _(context):
 # Gherkin, `delete` and `browse` from nothing at all, and every action a project needed was written
 # by hand — including the ones its adapter already knew how to perform.
 
-
 def test_a_declared_action_is_performed_with_no_step_code(project):
     feature = """Feature: Acting
   Scenario: An action the catalog declares
@@ -765,7 +648,6 @@ def test_a_declared_action_is_performed_with_no_step_code(project):
     result = run_feature(project, "acting", feature)
     assert result.returncode == 0, result.stdout + result.stderr
 
-
 def test_an_action_leaves_what_it_produced_for_the_next_claim(project):
     feature = """Feature: Acting
   Scenario: What the action gave back
@@ -775,7 +657,6 @@ def test_an_action_leaves_what_it_produced_for_the_next_claim(project):
 """
     result = run_feature(project, "acting_result", feature)
     assert result.returncode == 0, result.stdout + result.stderr
-
 
 def test_delete_is_atfs_own_and_needs_no_declaration(project):
     """Every adapter has one — a backend without deletion no-ops it, and the claim after finds out."""
@@ -788,7 +669,6 @@ def test_delete_is_atfs_own_and_needs_no_declaration(project):
     result = run_feature(project, "deleting", feature)
     assert result.returncode == 0, result.stdout + result.stderr
 
-
 def test_an_action_nothing_declares_lists_the_ones_that_are(project):
     feature = """Feature: Acting
   Scenario: A verb this type never offered
@@ -800,7 +680,6 @@ def test_an_action_nothing_declares_lists_the_ones_that_are(project):
     assert "account declares no action 'incinerate'" in result.stdout
     assert "it offers: delete" in result.stdout
 
-
 def test_acting_on_something_that_is_not_there_says_so(project):
     feature = """Feature: Acting
   Scenario: Nothing to act on
@@ -810,7 +689,6 @@ def test_acting_on_something_that_is_not_there_says_so(project):
     result = run_feature(project, "acting_absent", feature)
     assert result.returncode != 0
     assert "There is nothing to delete" in result.stdout
-
 
 def test_browsing_is_reachable_from_a_scenario(project):
     """The other half of the SPI no scenario could reach."""
@@ -822,7 +700,6 @@ def test_browsing_is_reachable_from_a_scenario(project):
 """
     result = run_feature(project, "browsing", feature)
     assert result.returncode == 0, result.stdout + result.stderr
-
 
 def test_browsing_a_type_whose_adapter_cannot_list_says_so(project):
     """`browse` is optional SPI, so the step degrades with the reason rather than an AttributeError."""

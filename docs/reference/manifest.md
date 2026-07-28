@@ -67,6 +67,25 @@ Leaving production off this list makes the protection structural rather than a m
 discipline. Nothing read-only is gated: [`atf status`](cli.md#atf-status) and every cockpit page
 work in any environment.
 
+### `requires` {#requires}
+
+Mapping of **tag** to **system**, default `{}`. A scenario carrying the tag cannot run where that
+system is unavailable, so ATF skips it — saying which system and why — instead of failing it.
+
+```yaml
+requires:
+  browser: browser        # a @browser scenario needs the `browser` system
+```
+
+Whether a system is available is the adapter's answer, through the optional
+[`unavailable()`](adapter-spi.md#unavailable). An adapter that does not implement it is always
+available; an environment that configures no such system at all makes the tag skip too, with that
+as the reason.
+
+A skip, never a pass: the report says the scenario did not run and what is missing. This replaces
+the `pytest_collection_modifyitems` hook every suite used to write for itself — a raw pytest hook
+in a `conftest.py` that otherwise never mentions pytest.
+
 ### `environments` {#environments}
 
 **Required**, mapping. Per-environment settings, keyed by environment name. See

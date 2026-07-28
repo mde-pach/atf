@@ -234,6 +234,9 @@ class BrowserUnavailable(Exception):
 class ViewAdapter(NoopDelete):
     """What a selector matches in a real browser, optionally after doing something first.
 
+    It answers `unavailable()`, so ATF skips the scenarios tagged with whatever the manifest says
+    needs this system rather than failing them on a machine with no browser installed.
+
     An `element` is what the server sent. A `view` is what is *there* — after the stylesheet has
     applied, htmx has swapped and a combobox has decided what to show. That difference is the only
     reason to pay for a browser, so it is the only thing this type is for: `visible` is the field
@@ -254,6 +257,12 @@ class ViewAdapter(NoopDelete):
     """
 
     ACTIONS = ("click", "focus", "type", "press")
+
+    def unavailable(self) -> str:
+        """Why the scenarios that need a real browser cannot run here — `""` when they can."""
+        if browser_available():
+            return ""
+        return "no browser installed — `uv sync --group browser && uv run playwright install chromium`"
 
     def find(self, node: Node, ctx: Context) -> Record | None:
         cockpit = str(ctx.resolve(node["body"]["cockpit"]))

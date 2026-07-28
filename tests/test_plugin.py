@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from tests.sample_project import run_pytest
+from tests.sample_project import run_pytest, write_spec
 
 
 def test_the_whole_sample_suite_passes(project):
@@ -125,3 +125,41 @@ def test_an_ephemeral_dependency_is_torn_down_too(project):
     store = json.loads((project / "store.json").read_text())
     assert store["badges"], "the badge itself is persistent and stays"
     assert store["visitors"] == [], "the ephemeral dependency must not leak"
+
+
+# ---- skipping what this machine cannot run ----------------------------------
+#
+# `requires: {<tag>: <system>}` in the manifest, and an adapter that answers `unavailable()`.
+# Every suite used to write this as its own `pytest_collection_modifyitems` — a raw pytest hook in
+# a conftest that otherwise never mentions pytest.
+
+
+TAGGED = """Feature: Needs a system
+  @ephemeral
+  Scenario: This one needs the ephemeral system
+    Given the visitor "walkin"
+
+  Scenario: This one does not
+    Given the account "primary"
+"""
+
+
+def test_a_scenario_is_skipped_when_the_system_it_needs_is_unavailable(project, monkeypatch):
+    monkeypatch.setenv("SAMPLE_EPHEMERAL_DOWN", "the farm is unreachable from here")
+    write_spec(project, "needs_a_system", TAGGED)
+    result = run_pytest(project, "-q", "-rs", "-p", "no:randomly", "specs/steps/test_needs_a_system.py")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 passed" in result.stdout and "1 skipped" in result.stdout
+    # The reason names the system and what is wrong with it: a skip nobody can act on is a skip
+    # nobody ever removes.
+    assert "needs ephemeral: the farm is unreachable from here" in result.stdout
+
+
+def test_nothing_is_skipped_when_the_system_is_there(project, monkeypatch):
+    monkeypatch.delenv("SAMPLE_EPHEMERAL_DOWN", raising=False)
+    write_spec(project, "system_is_fine", TAGGED)
+    result = run_pytest(project, "-q", "-p", "no:randomly", "specs/steps/test_system_is_fine.py")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "2 passed" in result.stdout

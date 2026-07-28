@@ -17,7 +17,7 @@ from pytest_bdd import given, parsers
 from pytest_bdd import step as register_step
 
 from . import phrasebook
-from .adapters import Record
+from .adapters import Record, why_unavailable
 from .bootstrap import Boot, bootstrap
 from .catalog import natural_keys
 from .context import EPHEMERAL_ATTR, Context, Recogniser
@@ -146,6 +146,38 @@ PHRASEBOOK = phrasebook.path_for(_BOOT.manifest.specs_dir)
 
 for _phrase in phrasebook.load(PHRASEBOOK):
     register_step(parsers.parse(_phrase.pattern), type_=None)(phrasebook.make_step(_phrase, PHRASEBOOK))
+
+
+def pytest_collection_modifyitems(items) -> None:
+    """Skip what needs a system this machine has not got, and say what is missing.
+
+    `requires: {browser: browser}` in the manifest says a `@browser` scenario cannot run where the
+    `browser` system is unavailable. Every suite used to write this itself, as a raw
+    `pytest_collection_modifyitems` in a `conftest.py` that otherwise never mentions pytest — and
+    the alternative to writing it is worse: the scenarios fail, and a suite that is red on a
+    machine without a browser stops being read at all.
+
+    A skip, never a pass. The scenario did not run, and the report says so, with the reason.
+    """
+    requires = _BOOT.manifest.requires
+    if not requires:
+        return
+
+    reasons: dict[str, str] = {}
+    for tag, system in requires.items():
+        adapter = _BOOT.materializer.adapters.get(system)
+        if adapter is None:
+            reasons[tag] = f"this environment configures no {system!r} system"
+            continue
+        why = why_unavailable(adapter)
+        if why:
+            reasons[tag] = why
+
+    if not reasons:
+        return
+    for item in items:
+        for tag in {mark.name for mark in item.iter_markers()} & set(reasons):
+            item.add_marker(pytest.mark.skip(reason=f"needs {requires[tag]}: {reasons[tag]}"))
 
 
 def pytest_bdd_before_step_call(request, feature, scenario, step, step_func, step_func_args) -> None:

@@ -153,3 +153,24 @@ def test_toml_is_rejected(tmp_path):
     with pytest.raises(ConfigError) as err:
         load_manifest(path)
     assert "atf.toml is not supported" in str(err.value)
+
+
+# ---- `requires` -------------------------------------------------------------
+
+
+def test_requires_maps_a_tag_to_the_system_it_needs(tmp_path):
+    manifest = load_manifest(
+        write(tmp_path, MANIFEST + "requires:\n  browser: browser\n  '@farm': device_farm\n")
+    )
+    # The `@` is how an author writes a tag and not part of its name, so it is accepted and dropped.
+    assert manifest.requires == {"browser": "browser", "farm": "device_farm"}
+
+
+def test_no_requires_is_no_requirements(tmp_path):
+    assert load_manifest(write(tmp_path)).requires == {}
+
+
+def test_requires_must_be_a_mapping_of_tag_to_system(tmp_path):
+    with pytest.raises(ConfigError) as err:
+        load_manifest(write(tmp_path, MANIFEST + "requires:\n  - browser\n"))
+    assert "mapping of tag to the system it needs" in str(err.value)

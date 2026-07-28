@@ -1237,6 +1237,7 @@ def _type_options(engine: Any, instances: dict[str, list[Node]], status: dict[st
         mode = str(entry.get("mode", "create"))
         note = " · built fresh per run" if lifecycle == "ephemeral" else ""
         note += " · must already exist here" if mode == "reference" else ""
+        note += " · observed, never created" if mode == "data" else ""
         options.append(
             {
                 "value": name,

@@ -57,6 +57,11 @@ widget:
   mode: reference
   natural_key: name
   ref_field: name
+sighting:
+  system: fake
+  mode: data
+  natural_key: name
+  ref_field: name
 """
 
 GOOD_INSTANCES = {
@@ -100,6 +105,13 @@ imported:
   represents: A widget that must already exist.
   body:
     name: imported
+""",
+    "sightings.yaml": """
+watched:
+  resource: sighting
+  represents: Something to look at — it may or may not be there, and either is an answer.
+  body:
+    name: watched
 """,
 }
 

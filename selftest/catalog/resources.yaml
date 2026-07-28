@@ -28,7 +28,10 @@ element:
   id_field: selector
 
 # What the suites-under-test leave behind in the stub backend. ATF never creates these — the suite
-# being tested does, by seeding or by running — so they are observed, exactly like a page is.
+# being tested does, by seeding or by running — so they are `mode: data`: observations, not
+# preconditions. Absent means only "not there yet", which is frequently the very thing a scenario
+# is about to claim (`Then the guest "visitor" is gone`). A `reference` node would *block* instead,
+# and rightly so, because that mode means "ATF cannot create this and it must already be here".
 #
 # Declaring them is what lets this suite say `the owner "primary" exists` instead of hand-writing an
 # assertion about a collection. Their shape mirrors `suites/*/catalog/resources.yaml`, because it is
@@ -36,19 +39,19 @@ element:
 
 owner:
   system: rest
-  mode: reference
+  mode: data
   path: /owners
   natural_key: email
 
 todo_list:
   system: rest
-  mode: reference
+  mode: data
   path: /lists
   natural_key: [owner_id, slug]
 
 guest:
   system: rest
-  mode: reference
+  mode: data
   path: /guests
   natural_key: nickname
 

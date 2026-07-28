@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any, TypeVar, cast
 
 from .adapters import Adapter, Browsable, Record, can_browse, close_adapter, registered_systems
-from .catalog import UNIVERSAL_TYPE_KEYS, Node, find_node, load_catalog
+from .catalog import DATA, UNIVERSAL_TYPE_KEYS, Node, find_node, load_catalog
+from .catalog import REFERENCE as REFERENCE_MODE
 from .placeholders import Unresolved
 from .placeholders import resolve as resolve_placeholders
 
@@ -29,6 +30,7 @@ BLOCKED = "blocked"
 CREATED = "created"
 EXISTS = "exists"
 REFERENCE = "reference"
+OBSERVED = "observed"
 
 _T = TypeVar("_T")
 
@@ -272,8 +274,10 @@ class Materializer:
         report the same refusal back, so the honest UI never offers the button.
         """
         node = self.node(node_id)
-        if node["mode"] == "reference":
+        if node["mode"] == REFERENCE_MODE:
             return False, "reference resources must already exist in the environment — ATF never creates them"
+        if node["mode"] == DATA:
+            return False, "an observation, not a resource ATF makes — there is nothing here to create"
         if node["lifecycle"] == EPHEMERAL:
             return False, "built fresh for every run by the test that needs it"
         return True, ""
@@ -358,11 +362,17 @@ class Materializer:
             return {"id": nid, "action": ERROR, "ok": False, "detail": _short(exc)}
 
         if record is None:
+            # An absent observation is an answer, not a failure: `data` says "look at this", and
+            # "it is not there" is one of the things a scenario may want to claim about it.
+            if node["mode"] == DATA:
+                return {"id": nid, "action": OBSERVED, "ok": True, "record": {}}
             return {"id": nid, "action": action, "ok": False, "detail": "reference resource not found"}
         return {"id": nid, "action": action, "ok": True, "record": record}
 
     def _provision(self, node: Node, adapter: Adapter) -> tuple[Record | None, str]:
-        if node["mode"] == "reference":
+        if node["mode"] == DATA:
+            return adapter.find(node, self), OBSERVED
+        if node["mode"] == REFERENCE_MODE:
             return adapter.find(node, self), REFERENCE
 
         existing = None if node["lifecycle"] == EPHEMERAL else adapter.find(node, self)

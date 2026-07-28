@@ -48,6 +48,10 @@ class Spec:
     id: str
     feature: str
     scenario: str
+    # The `Rule:` this scenario sits under, if the feature groups its scenarios that way. Gherkin's
+    # keyword for Example Mapping's middle card: a business rule, with the examples that show it.
+    # Empty for a feature that does not use them, which is most.
+    rule: str = ""
     narrative: str = ""
     file: str = ""
     line: int = 0
@@ -400,6 +404,7 @@ def parse_specs(specs_dir: Path, nodes: dict[str, Node], resource_types: set[str
 
 def parse_feature(path: Path, nodes: dict[str, Node], resource_types: set[str]) -> list[Spec]:
     feature = ""
+    rule = ""
     narrative_lines: list[str] = []
     specs: list[Spec] = []
     current: Spec | None = None
@@ -422,6 +427,15 @@ def parse_feature(path: Path, nodes: dict[str, Node], resource_types: set[str]) 
         if line.startswith("Feature:"):
             feature = line[len("Feature:") :].strip()
             current, in_examples, in_background = None, False, False
+            rule = ""
+            continue
+
+        if line.startswith("Rule:"):
+            # A rule groups the scenarios under it until the next one. It carries no steps of its
+            # own, so nothing else about parsing changes — which is the point of supporting it:
+            # a feature gains the structure a discovery workshop already produced, for free.
+            rule = line[len("Rule:") :].strip()
+            current, in_examples, in_background = None, False, False
             continue
 
         if line.startswith(("Scenario:", "Scenario Outline:", "Example:")):
@@ -430,6 +444,7 @@ def parse_feature(path: Path, nodes: dict[str, Node], resource_types: set[str]) 
                 id=f"{slug(feature)}::{slug(title)}",
                 feature=feature,
                 scenario=title.strip(),
+                rule=rule,
                 file=str(path),
                 line=number,
                 tags=pending_tags,

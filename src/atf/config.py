@@ -56,6 +56,11 @@ class Manifest:
     environments: dict[str, EnvConfig]
     mutable_envs: set[str]
     display: DisplayConfig
+    # Which system a tag says a scenario needs: `browser: browser` means a `@browser` scenario
+    # cannot run where the `browser` system is unavailable. Acting on a tag used to be every
+    # suite's own `pytest_collection_modifyitems`, which is a raw pytest hook in a file that
+    # otherwise never mentions pytest.
+    requires: dict[str, str] = field(default_factory=dict)
 
     def env(self, name: str) -> EnvConfig:
         try:
@@ -135,6 +140,7 @@ def load_manifest(path: Path | None = None) -> Manifest:
         problems.append(f"mutable_envs: unknown environment(s) {', '.join(unknown_mutable)}")
 
     display = _parse_display(raw.get("display"), problems)
+    requires = _parse_requires(raw.get("requires"), problems)
 
     if problems:
         raise ConfigError(f"{path}: invalid manifest:\n  - " + "\n  - ".join(problems))
@@ -149,7 +155,30 @@ def load_manifest(path: Path | None = None) -> Manifest:
         environments=environments,
         mutable_envs=mutable_envs,
         display=display,
+        requires=requires,
     )
+
+
+def _parse_requires(value: Any, problems: list[str]) -> dict[str, str]:
+    """`requires: {<tag>: <system>}` — which system a tagged scenario cannot run without.
+
+    A mapping rather than a list because the tag and the system are different words: `@browser` is
+    what an author writes on a scenario, and `browser` is what the manifest happens to have called
+    the adapter. Nothing checks the system exists here — an environment is free not to configure
+    one, which is exactly the case this is for.
+    """
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        problems.append("requires: must be a mapping of tag to the system it needs")
+        return {}
+    out: dict[str, str] = {}
+    for tag, system in value.items():
+        if not isinstance(tag, str) or not isinstance(system, str) or not tag or not system:
+            problems.append(f"requires.{tag}: a tag and the system it needs, both non-empty strings")
+            continue
+        out[tag.lstrip("@")] = system
+    return out
 
 
 def _string_list(value: Any, key: str, problems: list[str]) -> list[str]:

@@ -26,12 +26,16 @@
   <div class="list" id="scenario-list">
     {% for feature, members in views | groupby("spec.feature") %}
       <div class="list-group-label">{{ feature }}</div>
-      {% for item in members %}
+      {# A `Rule:` groups the examples that show it. Features that use none render exactly as
+         before, because their scenarios all share one empty rule. #}
+      {% for rule, under in members | groupby("spec.rule") %}
+      {% if rule %}<div class="list-group-label sub-label">{{ rule }}</div>{% endif %}
+      {% for item in under %}
         {% set link = u('/scenarios/' ~ item.id) %}
         <a href="{{ link }}"
            hx-get="{{ link }}" hx-target="#scenario-detail" hx-swap="innerHTML" hx-push-url="true"
            data-state="{{ item.state }}"
-           data-find="{{ [item.spec.scenario, item.spec.feature, item.spec.narrative,
+           data-find="{{ [item.spec.scenario, item.spec.feature, item.spec.rule, item.spec.narrative,
                           item.spec.tags | join(' ')] | join(' ') | lower }}"
            {% if item.id == focus %}aria-current="true"{% endif %}>
           <span class="name">{{ item.spec.scenario }}</span>
@@ -41,6 +45,7 @@
             {% if item.flaky %}<span>flaky</span>{% endif %}
           </span>
         </a>
+      {% endfor %}
       {% endfor %}
     {% endfor %}
     <p class="empty-note" id="scenario-none" style="display: none">No scenario matches that filter.</p>

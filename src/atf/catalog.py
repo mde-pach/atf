@@ -14,7 +14,15 @@ from .placeholders import generated as is_generated
 
 TYPES_FILE = "resources.yaml"
 UNIVERSAL_TYPE_KEYS = frozenset({"system", "mode", "lifecycle", "id_field"})
-MODES = frozenset({"create", "reference"})
+# What ATF is being asked to do about a resource.
+#
+# `create` makes it exist. `reference` is a precondition ATF *cannot* create — an account someone
+# else provisioned — so an absent one blocks, and that blocking is the whole point of the mode.
+# `data` is neither: it is an observation, something to look at and make claims about, and an
+# absent one means only that it is not there yet. Conflating the last two would make every page a
+# scenario reads into a precondition the environment has to satisfy first.
+CREATE, REFERENCE, DATA = "create", "reference", "data"
+MODES = frozenset({CREATE, REFERENCE, DATA})
 LIFECYCLES = frozenset({"persistent", "ephemeral"})
 
 # The plugin generates one fixture per resource type, named after the type. These names are

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .bootstrap import bootstrap
-from .catalog import CatalogError
+from .catalog import DATA, CatalogError
 from .config import ConfigError, load_manifest, resolve_manifest
 from .lint import check as lint_specs
 from .lint import report as lint_report
@@ -252,7 +252,15 @@ def _subset(engine, resource_type: str | None, name: str | None) -> list[str] | 
     if resource_type is None and name is None:
         # Ephemeral resources are built per run and torn down by the test that used them;
         # seeding them would leave orphans behind. Name one explicitly to force it.
-        return [nid for nid, node in engine.nodes.items() if node["lifecycle"] != EPHEMERAL]
+        #
+        # `data` nodes are left out for a different reason: there is nothing to seed. They are
+        # observations — things a scenario looks at — and seeding one could only ever mean going
+        # and looking, which `atf status` already does.
+        return [
+            nid
+            for nid, node in engine.nodes.items()
+            if node["lifecycle"] != EPHEMERAL and node["mode"] != DATA
+        ]
 
     if resource_type is None:
         print("atf: --name needs --type", file=sys.stderr)

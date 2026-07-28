@@ -176,6 +176,10 @@ def readiness(node_ids: list[str], nodes: dict[str, Node], status: dict[str, dic
                 out.blockers.append((member, reason))
             elif state == ABSENT and nodes[member]["mode"] == "reference":
                 out.blockers.append((member, "must already exist here — ATF never creates a reference resource"))
+            elif nodes[member]["mode"] == "data":
+                # An observation is not a precondition. Absent means only "not there yet", which is
+                # frequently the very thing the scenario is about to claim.
+                continue
             elif state == ABSENT:
                 out.will_create.append(member)
     return out
@@ -593,6 +597,7 @@ TONES = {
     NEVER_RUN: "idle",
     EPHEMERAL: "accent",
     "reference": "accent",
+    "observed": "accent",
     "running": "running",
     FAILED: "bad",
     FAILING: "bad",

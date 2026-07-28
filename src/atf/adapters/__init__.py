@@ -50,6 +50,32 @@ def can_browse(adapter: Adapter) -> bool:
     return callable(getattr(adapter, "browse", None))
 
 
+class Available(Protocol):
+    """Optional: an adapter that can say it cannot work here, and why.
+
+    Some systems are not a matter of configuration. A browser adapter needs a browser installed; a
+    device farm needs the farm reachable. A scenario that needs one should *skip* on a machine
+    without it, saying what is missing — not fail, which reads as a broken suite, and not pass,
+    which is a lie.
+
+    Returns the reason it is unavailable, or `""` when it is fine. A reason is required because a
+    skip nobody can act on is a skip nobody removes.
+    """
+
+    def unavailable(self) -> str: ...
+
+
+def why_unavailable(adapter: Adapter) -> str:
+    """Why this adapter cannot work here, or `""`. An adapter that does not say is available."""
+    asked = getattr(adapter, "unavailable", None)
+    if not callable(asked):
+        return ""
+    try:
+        return str(asked() or "")
+    except Exception as exc:  # noqa: BLE001 - a broken check is itself a reason to skip
+        return f"checking whether it is available raised {type(exc).__name__}: {exc}"
+
+
 class Closeable(Protocol):
     """Optional: an adapter holding a connection, session or browser can release it here."""
 
@@ -112,6 +138,7 @@ _register_builtins()
 
 __all__ = [
     "Adapter",
+    "Available",
     "Browsable",
     "Closeable",
     "AdapterFactory",
@@ -124,4 +151,5 @@ __all__ = [
     "register",
     "registered_systems",
     "unregister",
+    "why_unavailable",
 ]

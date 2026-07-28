@@ -69,6 +69,26 @@ class QueueAdapter:
         self.connection.close()
 ```
 
+### `unavailable()` {#unavailable}
+
+Optional. Returns why this adapter cannot work here, or `""` when it can.
+
+Some systems are not a matter of configuration: a browser adapter needs a browser installed, a
+device farm needs the farm reachable. A scenario that needs one should **skip** on a machine
+without it — not fail, which reads as a broken suite, and not pass, which is a lie.
+
+```python
+class ViewAdapter:
+    def unavailable(self) -> str:
+        if browser_available():
+            return ""
+        return "no browser installed — `uv run playwright install chromium`"
+```
+
+Say which tag needs the system with [`requires`](manifest.md#requires) in the manifest. The reason
+is required, not optional prose: a skip nobody can act on is a skip nobody ever removes. An
+exception raised here is itself treated as a reason to skip.
+
 ## `Context` {#context}
 
 A protocol describing what the materializer offers an adapter. The object passed as `ctx` is the

@@ -479,3 +479,53 @@ def test_a_phrase_needs_whatever_the_steps_it_stands_for_need(phrased):
 def test_a_phrase_describes_itself_by_what_it_stands_for(phrased):
     phrase = next(step for step in phrased.steps if step.pattern == "the plan came back right")
     assert phrase.docstring == 'Says in one line: the result field "plan" is "standard"'
+
+
+# ---- rules -----------------------------------------------------------------
+
+
+RULED = """Feature: Seeding
+  Narrative here.
+
+  Rule: What is declared is made to exist
+
+    Scenario: A list is created under its owner
+      Given the account "primary"
+
+    Scenario: Seeding twice changes nothing
+      Given the account "primary"
+
+  Rule: An environment not opened for writing is refused
+
+    @slow
+    Scenario: Seeding a locked environment touches nothing
+      Given the account "primary"
+"""
+
+
+def test_a_rule_groups_the_scenarios_under_it(tmp_path):
+    """Gherkin's keyword for Example Mapping's middle card, and it costs the parser one branch."""
+    path = tmp_path / "seeding.feature"
+    path.write_text(RULED, encoding="utf-8")
+    specs = parse_feature(path, {}, set())
+
+    assert [spec.rule for spec in specs] == [
+        "What is declared is made to exist",
+        "What is declared is made to exist",
+        "An environment not opened for writing is refused",
+    ]
+
+
+def test_a_rule_changes_nothing_else_about_a_scenario(tmp_path):
+    path = tmp_path / "seeding.feature"
+    path.write_text(RULED, encoding="utf-8")
+    specs = parse_feature(path, {}, set())
+
+    assert [spec.feature for spec in specs] == ["Seeding"] * 3
+    assert specs[0].narrative == "Narrative here."
+    assert specs[2].tags == ["slow"], "a tag above a scenario still belongs to that scenario"
+    assert all(spec.steps for spec in specs)
+
+
+def test_a_feature_with_no_rules_has_none(found):
+    assert all(spec.rule == "" for spec in found.specs)

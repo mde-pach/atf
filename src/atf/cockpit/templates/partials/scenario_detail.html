@@ -51,6 +51,9 @@
         trusted either way{% endif %}
     </p>
 
+    {# What this scenario is an example *of*. Example Mapping's middle card, and the reason the
+       scenario is worth having — so it reads above the narrative, not buried under it. #}
+    {% if view.spec.rule %}<p class="small">Shows that {{ view.spec.rule }}</p>{% endif %}
     {% if view.spec.narrative %}<p class="small muted">{{ view.spec.narrative }}</p>{% endif %}
 
     {# The failure is shown where it happened. Reading a traceback beside the Gherkin is the whole

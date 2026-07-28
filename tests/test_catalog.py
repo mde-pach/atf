@@ -10,13 +10,14 @@ SYSTEMS = {"fake"}
 def test_loads_ids_types_and_reverse_edges(good_catalog):
     types, nodes = load_catalog(good_catalog, SYSTEMS)
 
-    assert set(types) == {"account", "project", "job_run", "lead", "widget"}
+    assert set(types) == {"account", "project", "job_run", "lead", "widget", "sighting"}
     assert set(nodes) == {
         "accounts.primary",
         "projects.alpha",
         "runs.nightly",
         "leads.walkin",
         "widgets.imported",
+        "sightings.watched",
     }
 
     alpha = nodes["projects.alpha"]
@@ -46,7 +47,7 @@ def test_type_level_keys_reach_the_node(good_catalog):
 
 def test_helpers(good_catalog):
     _, nodes = load_catalog(good_catalog, SYSTEMS)
-    assert resource_types(nodes) == {"account", "project", "job_run", "lead", "widget"}
+    assert resource_types(nodes) == {"account", "project", "job_run", "lead", "widget", "sighting"}
     node = find_node(nodes, "project", "alpha")
     assert node is not None and node["id"] == "projects.alpha"
     assert find_node(nodes, "project", "nope") is None
@@ -299,3 +300,11 @@ def test_a_node_reference_in_a_natural_key_is_not_a_generated_value(write_catalo
     )
     _, nodes = load_catalog(root)
     assert nodes["notes.first"]["body"]["account_id"] == "${accounts.primary.id}"
+
+
+def test_the_three_modes_are_the_ones_the_model_has(good_catalog):
+    """`data` is a third mode, not a rename of `reference`: an observation is not a precondition."""
+    _, nodes = load_catalog(good_catalog, SYSTEMS)
+    assert nodes["accounts.primary"]["mode"] == "create"
+    assert nodes["widgets.imported"]["mode"] == "reference"
+    assert nodes["sightings.watched"]["mode"] == "data"

@@ -23,6 +23,11 @@ adapters:
 
 mutable_envs: [dev]
 
+# A scenario tagged `@ephemeral` cannot run where the `ephemeral` system is unavailable. Nothing
+# reports it unavailable unless a test says so, so this is inert by default.
+requires:
+  ephemeral: ephemeral
+
 environments:
   dev:
     adapters:
@@ -131,6 +136,7 @@ ADAPTERS = '''
 """Project adapters: a JSON-file store and an ephemeral variant with teardown."""
 
 import json
+import os
 from pathlib import Path
 
 from atf.adapters import register
@@ -195,6 +201,10 @@ class EphemeralAdapter(StoreAdapter):
 
     def browse(self, node, ctx, limit=200):
         return list(self.read().get(self.collection(node), []))[:limit]
+
+    def unavailable(self):
+        """Optional SPI: why this system cannot work here. Driven by the environment, for a test."""
+        return os.environ.get("SAMPLE_EPHEMERAL_DOWN", "")
 
     def find(self, node, ctx):
         return None

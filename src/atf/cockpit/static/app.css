@@ -374,6 +374,15 @@ body.rail-collapsed .rail a.nav { justify-content: center; padding-inline: 0; }
   color: var(--text-dim);
   padding: 12px 8px 4px;
 }
+/* A `Rule:` inside a feature: the same label one level in, and sentence-cased, because a rule is
+   written as a sentence and shouting it makes it unreadable. */
+.list-group-label.sub-label {
+  padding-left: 18px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11.5px;
+  font-style: italic;
+}
 .list > a {
   display: flex;
   flex-direction: column;

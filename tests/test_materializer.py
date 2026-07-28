@@ -322,3 +322,33 @@ def test_ensure_is_never_keep_going(two_chains, fake):
     with pytest.raises(ProvisioningError) as err:
         two_chains.ensure("project", "one")
     assert err.value.node_id == "accounts.alpha"
+
+
+# ---- `mode: data` -----------------------------------------------------------
+#
+# An observation, not a precondition. The distinction matters because `reference` deliberately
+# *blocks* when absent — that is what it means — and a page, an element or a record a suite under
+# test happens to have left behind is nothing of the kind.
+
+
+def test_data_mode_is_an_answer_when_absent_rather_than_a_failure(materializer):
+    outcome = materializer.create_closure("sightings.watched")
+    assert outcome["results"][0]["ok"] is True
+    assert outcome["results"][0]["action"] == "observed"
+
+
+def test_data_mode_reads_back_what_is_there(materializer, fake):
+    fake.seed("sighting", {"name": "watched", "id": "s-1"})
+    record = materializer.ensure("sighting", "watched")
+    assert record["id"] == "s-1"
+    assert fake.actions("create") == [], "an observation is never created"
+
+
+def test_data_mode_is_never_offered_as_something_to_create(materializer):
+    can, why = materializer.provisionable("sightings.watched")
+    assert can is False
+    assert "an observation" in why
+
+    can, why = materializer.provisionable("widgets.imported")
+    assert can is False
+    assert "must already exist" in why, "reference keeps its own reason, and its own behaviour"

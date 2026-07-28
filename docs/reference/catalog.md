@@ -47,12 +47,36 @@ Settings for a system are per environment, under
 
 ### `mode` {#mode}
 
-`create` (default) or `reference`.
+`create` (default), `reference`, or `data` — what ATF is being asked to *do* about the resource.
 
-A `reference` type is looked up and **never created**. If it is absent, that is a failure worth
-stopping for: the environment is not configured the way the suite assumes. See
-[`mode: reference` and `system: reference`](#reference-mode-vs-system) for the distinction from the
-built-in adapter of the same name.
+| `mode` | Means | Absent means |
+|---|---|---|
+| `create` | ATF makes it exist. | it will be created |
+| `reference` | a precondition ATF cannot create. | **blocks** — the environment is not configured the way the suite assumes |
+| `data` | an observation: something to look at and claim things about. | nothing. It is simply not there yet |
+
+A **`reference`** type is looked up and never created, and an absent one is a failure worth stopping
+for. See [`mode: reference` and `system: reference`](#reference-mode-vs-system) for the distinction
+from the built-in adapter of the same name.
+
+A **`data`** type is also never created, and that is the only thing the two share. An observation is
+not a precondition: a page a scenario reads, or a record the system under test is expected to have
+left behind, is something to make a claim *about*, and "it is not there" is frequently the claim.
+So `data` never blocks, never appears in [`atf seed`](cli.md#atf-seed) — there is nothing to seed —
+and never makes an environment un-ready. It still reports `present` / `absent` in
+[`atf status`](cli.md#atf-status), because that is the observation.
+
+```yaml
+# The list the system under test is supposed to create. This suite watches for it; it never makes it.
+todo_list:
+  system: rest
+  mode: data
+  path: /lists
+  natural_key: [owner_id, slug]
+```
+
+Reach for `reference` when the suite cannot run without it, and `data` when the suite is there to
+find out.
 
 ### `lifecycle` {#lifecycle}
 
@@ -324,7 +348,7 @@ type; `represents`, `depends_on` and `body` from the instance.
 | `name` | string | The instance key. |
 | `resource` | string | The type name. |
 | `system` | string | The adapter that handles it. |
-| `mode` | string | `create` or `reference`. |
+| `mode` | string | `create`, `reference` or `data`. |
 | `lifecycle` | string | `persistent` or `ephemeral`. |
 | `id_field` | string | Field carrying the identity. |
 | `config` | mapping | Type keys other than the four universal ones. |

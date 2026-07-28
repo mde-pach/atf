@@ -288,6 +288,7 @@ class Materializer:
         keep_going: bool = False,
         on_start: Callable[[str], None] | None = None,
         on_result: Callable[[dict[str, Any]], None] | None = None,
+        overrides: Mapping[str, Record] | None = None,
     ) -> dict[str, Any]:
         """Provision `subset` and everything it depends on, dependency-first.
 
@@ -332,7 +333,7 @@ class Materializer:
                 continue
 
             _notify(on_start, nid)
-            outcome = self._attempt(node)
+            outcome = self._attempt(node, (overrides or {}).get(nid))
             results.append(outcome)
             if outcome["ok"]:
                 record = outcome.pop("record")
@@ -348,7 +349,7 @@ class Materializer:
 
         return {"results": results, "records": records}
 
-    def _attempt(self, node: Node) -> dict[str, Any]:
+    def _attempt(self, node: Node, overrides: Record | None = None) -> dict[str, Any]:
         """Provision one node. Returns a result entry, carrying `record` when it succeeded."""
         nid = node["id"]
         adapter = self.adapters.get(node["system"])
@@ -357,7 +358,7 @@ class Materializer:
             return {"id": nid, "action": UNSUPPORTED, "ok": False, "detail": detail}
 
         try:
-            record, action = self._provision(node, adapter)
+            record, action = self._provision(_varied(node, overrides), adapter)
         except Exception as exc:  # noqa: BLE001 - reported, not raised: callers read `results`
             return {"id": nid, "action": ERROR, "ok": False, "detail": _short(exc)}
 
@@ -384,23 +385,31 @@ class Materializer:
         self.invalidate_cache()
         return record, CREATED
 
-    def create_closure(self, nid: str, keep_going: bool = False) -> dict[str, Any]:
-        return self.materialize(self.closure(nid), keep_going=keep_going)
+    def create_closure(
+        self, nid: str, keep_going: bool = False, overrides: Mapping[str, Record] | None = None
+    ) -> dict[str, Any]:
+        return self.materialize(self.closure(nid), keep_going=keep_going, overrides=overrides)
 
     def create_all(self, keep_going: bool = False) -> dict[str, Any]:
         return self.materialize(list(self.nodes), keep_going=keep_going)
 
-    def ensure(self, resource_type: str, name: str) -> Record:
-        return self.ensure_closure(resource_type, name)[0]
+    def ensure(self, resource_type: str, name: str, overrides: Record | None = None) -> Record:
+        return self.ensure_closure(resource_type, name, overrides)[0]
 
-    def ensure_closure(self, resource_type: str, name: str) -> tuple[Record, dict[str, Record]]:
+    def ensure_closure(
+        self, resource_type: str, name: str, overrides: Record | None = None
+    ) -> tuple[Record, dict[str, Record]]:
         """The target's record, plus every record provisioned to get there.
 
         Callers need the second element to tear down ephemeral resources reached *through* a
         dependency — those are created on every pass and nothing else would ever delete them.
+
+        `overrides` vary *this* node's body for this pass only, which is what lets a scenario say
+        `Given the task "milk" but: | due_at | ... |` instead of the catalog needing a second node
+        for every variation anyone ever wants. The catalog is untouched — see `_varied`.
         """
         nid = self.resolve_id(resource_type, name)
-        outcome = self.create_closure(nid)
+        outcome = self.create_closure(nid, overrides={nid: overrides} if overrides else None)
         for result in outcome["results"]:
             if not result["ok"]:
                 raise ProvisioningError(str(result["id"]), str(result.get("detail", "")))
@@ -441,6 +450,24 @@ class Materializer:
                 adapter.delete(node, record, self)
             except Exception as exc:
                 log.warning("teardown of %s failed: %s", nid, _short(exc))
+
+
+def _varied(node: Node, overrides: Record | None) -> Node:
+    """This node with some of its body written differently, for one pass.
+
+    A copy, never the node itself: `self.nodes` is session state that every other scenario reads,
+    and a variation that outlived the scenario asking for it would be a shared fixture wearing a
+    different hat — which is the problem inline variation exists to solve.
+
+    The varied body is what `find` matches on as well as what `create` sends, so overriding a field
+    of the natural key genuinely selects a different resource, and overriding anything else changes
+    what a newly created one holds.
+    """
+    if not overrides:
+        return node
+    varied = dict(node)
+    varied["body"] = {**node["body"], **overrides}
+    return cast("Node", varied)
 
 
 def _notify(callback: Callable[[_T], None] | None, value: _T) -> None:

@@ -88,9 +88,9 @@ def _fits(entry: dict[str, Any], record: Record) -> bool:
 def _make_factory(resource_type: str) -> Any:
     def _factory(
         request: pytest.FixtureRequest, materializer: Materializer, context: Context
-    ) -> Callable[[str], Record]:
-        def provision(name: str) -> Record:
-            record, provisioned = materializer.ensure_closure(resource_type, name)
+    ) -> Callable[..., Record]:
+        def provision(name: str, overrides: Record | None = None) -> Record:
+            record, provisioned = materializer.ensure_closure(resource_type, name, overrides)
             _track_ephemeral(context, materializer, provisioned)
             if provisioned:
                 _emit({"event": "provisioned", "nodeid": request.node.nodeid, "ids": sorted(provisioned)})
@@ -117,6 +117,47 @@ for _type in _BOOT.materializer.resource_types():
 @given(parsers.parse('the {resource_type} "{name}"'))
 def _provision(context: Context, request: pytest.FixtureRequest, resource_type: str, name: str) -> Record:
     """`Given the account "primary"` -> provisions accounts.primary onto `context.account`."""
+    return _make(context, request, resource_type, name, None)
+
+
+@given(parsers.parse('the {resource_type} "{name}" but:'))
+def _provision_varied(
+    context: Context, request: pytest.FixtureRequest, resource_type: str, name: str, datatable: Any = None
+) -> Record:
+    """The same resource, with some of its body written differently for this scenario only.
+
+    The alternative is a second catalog node per variation, which is Object Mother: a global set of
+    named factories where every variation needs a new one and every scenario couples to a specific
+    one. One node, and the scenarios that need something different say so where they need it.
+    """
+    return _make(context, request, resource_type, name, _overrides(datatable, resource_type, name))
+
+
+def _overrides(datatable: Any, resource_type: str, name: str) -> Record:
+    if not datatable:
+        pytest.fail(
+            f'the {resource_type} "{name}" but: — `but` needs a table of what to write differently, '
+            "below it."
+        )
+    varied: Record = {}
+    for row in datatable:
+        cells = [str(cell) for cell in row]
+        if len(cells) != 2:
+            pytest.fail(
+                f"every row takes a field and what to put in it — two cells. "
+                f"Got {len(cells)}: {' | '.join(cells)}"
+            )
+        varied[cells[0].strip()] = cells[1]
+    return varied
+
+
+def _make(
+    context: Context,
+    request: pytest.FixtureRequest,
+    resource_type: str,
+    name: str,
+    overrides: Record | None,
+) -> Record:
     engine: Materializer = request.getfixturevalue("materializer")
     if resource_type not in engine.types:
         known = ", ".join(engine.resource_types()) or "none"
@@ -124,7 +165,7 @@ def _provision(context: Context, request: pytest.FixtureRequest, resource_type: 
 
     # The factory records every ephemeral resource in the closure, including ones reached
     # through a dependency rather than named here.
-    record = request.getfixturevalue(resource_type)(name)
+    record = request.getfixturevalue(resource_type)(name, overrides)
     setattr(context, resource_type, record)
     # The record itself does not say which catalog node it came from, and this is the one place
     # that knows. Everything downstream reads it from the slot rather than guessing at it.

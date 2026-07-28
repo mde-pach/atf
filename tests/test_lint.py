@@ -231,3 +231,20 @@ def test_the_command_needs_no_environment_at_all(suite, capsys):
     )
     assert main(["lint"]) == 1
     assert "path" in capsys.readouterr().err
+
+
+def test_a_data_table_is_a_deliberate_exception():
+    """The rule is aimed at technical detail embedded in a sentence, which a table is not.
+
+    Flagging tables would push suites back to one claim per field, which is what whole-shape
+    matching exists to replace.
+    """
+    text = """Feature: F
+  Scenario: S
+    Given the task "milk" but:
+      | due_at | 2026-01-01 |
+    Then the task "milk" is:
+      | title | Buy milk |
+      | done  | false    |
+"""
+    assert findings(text) == []

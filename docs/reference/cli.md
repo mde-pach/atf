@@ -196,6 +196,11 @@ Exits `1` when there is anything to report, and prints the report on stderr, so 
 Only **step lines** are checked. The narrative and comments are where an author explains, and
 explaining is allowed to be specific.
 
+A **data table is a deliberate exception.** `Then the task "milk" is:` followed by a table of
+fields is the [whole-shape claim](specs-and-fixtures.md#tables), and the rule exists to stop
+technical detail being embedded in a sentence a reader has to parse. A table reads as data, sits
+apart from the prose, and replaces the field-by-field assertions the rule is really aimed at.
+
 ### Waiving a rule {#lint-waivers}
 
 A suite mid-migration has lines it already knows about, and a check that lands permanently red is a

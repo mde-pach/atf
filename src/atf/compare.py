@@ -12,6 +12,7 @@ Pure functions; no I/O, no knowledge of any particular backend.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from typing import Any
 
@@ -114,6 +115,71 @@ class Uncontainable(Exception):
             f"{describe(actual)} — a record holds keys and values both, so `contains` cannot say "
             "which was meant. Name the field inside it instead."
         )
+
+
+# ---- markers ---------------------------------------------------------------
+#
+# A table row compares one field with one written value, and sometimes the value is not the point:
+# an id is whatever the backend assigned, a timestamp is whatever `now` was. A marker says what
+# *kind* of thing must be there instead of what it must equal.
+#
+# Deliberately a closed list of things ATF can decide. A pattern language here would be a schema
+# language nobody asked for, and it could not be offered in a dropdown.
+
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+MARKERS: dict[str, str] = {
+    "#present": "the field is there, whatever it holds",
+    "#absent": "the field is not there at all",
+    "#notnull": "the field is there and holds something",
+    "#null": "the field holds nothing",
+    "#string": "text",
+    "#number": "a number",
+    "#boolean": "a true/false value",
+    "#uuid": "a UUID",
+}
+
+MISSING = object()
+"""What `field_matches` is handed for a field the record does not carry at all."""
+
+
+def is_marker(written: str) -> bool:
+    return written.strip() in MARKERS
+
+
+def marker_matches(actual: Any, written: str) -> bool:
+    """Whether a value is the *kind* of thing a marker asks for. `actual is MISSING` when absent."""
+    marker = written.strip()
+    there = actual is not MISSING
+    if marker == "#present":
+        return there
+    if marker == "#absent":
+        return not there
+    if not there:
+        return False
+    if marker == "#notnull":
+        return actual is not None
+    if marker == "#null":
+        return actual is None
+    if marker == "#string":
+        return isinstance(actual, str)
+    if marker == "#boolean":
+        return isinstance(actual, bool)
+    if marker == "#number":
+        # Before the bool check would matter: in Python a bool *is* an int, and `true` is not 1.
+        return isinstance(actual, int | float) and not isinstance(actual, bool)
+    if marker == "#uuid":
+        return isinstance(actual, str) and bool(_UUID_RE.match(actual))
+    return False
+
+
+def field_matches(actual: Any, written: str) -> bool:
+    """One field against one written cell, marker or value. `actual is MISSING` when absent."""
+    if is_marker(written):
+        return marker_matches(actual, written)
+    if actual is MISSING:
+        return False
+    return written_matches(actual, written)
 
 
 def same_instant(actual: Any, expected: Any) -> bool:

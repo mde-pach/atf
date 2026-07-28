@@ -33,9 +33,20 @@ from pytest_bdd import parsers, then
 
 from .adapters import Record, can_browse
 from .catalog import Node, find_node, key_criteria, natural_keys
-from .compare import Uncontainable, describe, is_empty, matches, written_contains, written_matches
+from .compare import (
+    MARKERS,
+    MISSING,
+    Uncontainable,
+    describe,
+    field_matches,
+    is_empty,
+    matches,
+    written_contains,
+    written_matches,
+)
 from .context import Slot, ephemeral_record
 from .materializer import EPHEMERAL, Materializer, ScopeRequired
+from .placeholders import Unresolved
 from .records import as_records
 
 # ---- the vocabulary --------------------------------------------------------
@@ -44,6 +55,7 @@ from .records import as_records
 # here because this table is what the composer reads to know which of a step's parameters it can
 # offer a real choice for, and that is as true of the Given as of the assertions.
 PROVISION = 'the {resource_type} "{name}"'
+PROVISION_VARIED = 'the {resource_type} "{name}" but:'
 
 EXISTS = 'the {resource_type} "{name}" exists'
 GONE = 'the {resource_type} "{name}" is gone'
@@ -58,6 +70,13 @@ FIELD_NOT_EMPTY = 'the {resource_type} "{name}" field "{field}" is not empty'
 # than about one resource, because "nothing was created the second time" is a claim about a
 # population and there is nothing to name.
 COUNT = "the environment has {count:d} {resource_type}"
+
+# Whole-shape claims. A record has a shape, and checking it a field at a time costs a line each and
+# says nothing about the record as a whole. A table says the shape in one claim, and a `#marker`
+# says what *kind* of thing a field must hold where the value itself is not the point — an id the
+# backend assigned, a timestamp that was `now`.
+SHAPE_IS = 'the {resource_type} "{name}" is:'
+SLOT_SHAPE_IS = "the {slot:w} is:"
 
 # The four claims about what a step produced name the slot they are about, rather than assuming the
 # one called `result`. `Context` has always described every slot it holds; until these patterns
@@ -100,6 +119,9 @@ class GenericStep:
     # listed in `needs` for these — which slot they need is a choice the author has not made yet —
     # so what an interface checks is that the slot they *did* name is one the scenario holds.
     needs_slot: bool = False
+    # Whether the step carries a table under it. A picker that offers one has offered a line it
+    # cannot finish, so it does not offer them — they are written by hand, or in text mode.
+    takes_table: bool = False
 
 
 GENERIC_STEPS: tuple[GenericStep, ...] = (
@@ -108,6 +130,13 @@ GENERIC_STEPS: tuple[GenericStep, ...] = (
         PROVISION,
         "Make this resource exist here, and everything it depends on first.",
         (TYPE, NAME),
+    ),
+    GenericStep(
+        "given",
+        PROVISION_VARIED,
+        "The same, with some of its body written differently for this scenario only.",
+        (TYPE, NAME),
+        takes_table=True,
     ),
     GenericStep(
         "then",
@@ -165,6 +194,13 @@ GENERIC_STEPS: tuple[GenericStep, ...] = (
     ),
     GenericStep(
         "then",
+        SHAPE_IS,
+        "Read this resource back and compare a whole table of its fields at once.",
+        (TYPE, NAME),
+        takes_table=True,
+    ),
+    GenericStep(
+        "then",
         SLOT_CONTAINS,
         "Require the records a step put on the context to include this resource.",
         (SLOT, TYPE, NAME),
@@ -218,6 +254,14 @@ GENERIC_STEPS: tuple[GenericStep, ...] = (
         "Require one field of what a step put on the context to hold something.",
         (SLOT, FIELD),
         needs_slot=True,
+    ),
+    GenericStep(
+        "then",
+        SLOT_SHAPE_IS,
+        "Compare a whole table of fields against what a step put on the context.",
+        (SLOT,),
+        needs_slot=True,
+        takes_table=True,
     ),
 )
 
@@ -381,6 +425,79 @@ def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: st
     actual = _field(request, context, resource_type, name, field)
     if is_empty(actual):
         pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, which is empty")
+
+
+@then(parsers.parse(SHAPE_IS))
+def _(
+    request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, datatable: Any = None
+) -> None:
+    """Read this resource back and compare a whole table of its fields at once."""
+    engine, node = _node(request, resource_type, name)
+    record = read(engine, node, context)
+    if record is None:
+        pytest.fail(_absent(engine, node))
+    _shape(record, datatable, f"{resource_type} {name!r}", engine)
+
+
+@then(parsers.parse(SLOT_SHAPE_IS))
+def _(request: pytest.FixtureRequest, context: Any, slot: str, datatable: Any = None) -> None:
+    """Compare a whole table of fields against what a step put on the context."""
+    records = _slot(context, slot)
+    if len(records) != 1:
+        pytest.fail(
+            f"{slot} holds {len(records)} records, and a shape needs one. "
+            f'Use `the {slot} contains the <type> "<name>"` for a listing.'
+        )
+    _shape(records[0], datatable, slot, request.getfixturevalue("materializer"))
+
+
+def _shape(record: Record, datatable: Any, subject: str, engine: Materializer) -> None:
+    """Compare a whole table of field/value rows against one record.
+
+    **The table says what must match, not what may exist.** A field the table does not mention is
+    not looked at — a record carries ids, timestamps and half a dozen things a scenario has no
+    opinion about, and requiring it to list them all would make every table a maintenance burden
+    and every backend change a hundred red scenarios. `#absent` is how a scenario says a field must
+    *not* be there, which is the only case the looser reading would otherwise lose.
+    """
+    __tracebackhide__ = True
+    wrong: list[str] = []
+    for field, written in _rows(datatable, subject):
+        # `${...}` resolves here rather than in the plugin's hook: a table's cells never reach it,
+        # because pytest-bdd hands them over as one `datatable` argument rather than as values.
+        try:
+            expected = str(engine.resolve(written))
+        except Unresolved as exc:
+            pytest.fail(f"{subject}: {exc}")
+        actual = record.get(field, MISSING)
+        if not field_matches(actual, expected):
+            shown = "not there at all" if actual is MISSING else describe(actual)
+            wrong.append(f"  {field}: {shown}, not {_wanted(expected)}")
+
+    if wrong:
+        pytest.fail(f"{subject} is not the shape this scenario says:\n" + "\n".join(wrong))
+
+
+def _wanted(written: str) -> str:
+    """What a cell asked for, said the way a failure should say it."""
+    marker = written.strip()
+    return f"{marker} ({MARKERS[marker]})" if marker in MARKERS else describe(written)
+
+
+def _rows(datatable: Any, subject: str) -> list[tuple[str, str]]:
+    """A table's rows as field/value pairs, or a refusal saying what shape one has to be."""
+    if not datatable:
+        pytest.fail(f"{subject}: this step needs a table of fields and what each must hold, below it.")
+    pairs: list[tuple[str, str]] = []
+    for row in datatable:
+        cells = [str(cell) for cell in row]
+        if len(cells) != 2:
+            pytest.fail(
+                f"{subject}: every row takes a field and what it must hold — two cells. "
+                f"Got {len(cells)}: {' | '.join(cells)}"
+            )
+        pairs.append((cells[0].strip(), cells[1]))
+    return pairs
 
 
 @then(parsers.parse(COUNT))

@@ -1061,12 +1061,18 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         "instance_options": lambda resource_type: _instance_options(instances.get(resource_type, []), status),
         # Per row, not per keyword: what a step can read depends on what the rows above it put
         # there, so the same picker two rows apart honestly offers different things.
+        # A step carrying a table is left out of both pickers: the builder has no way to write the
+        # table under it, and offering a line it cannot finish is worse than not offering it. Those
+        # are written by hand, or in text mode, which is held to exactly the same checks.
         "step_options": lambda row: _step_options(
-            [step for step in offered[row.keyword] if usable(step, row)]
+            [step for step in offered[row.keyword] if usable(step, row) and not step.takes_table]
         ),
         # A Then said as a claim: what it is about, what of it, how, and against what.
         "subject_options": lambda row: _subject_options(
-            engine, status, [step for step in offered[row.keyword] if usable(step, row)], row
+            engine,
+            status,
+            [step for step in offered[row.keyword] if usable(step, row) and not step.takes_table],
+            row,
         ),
         "aspect_options": lambda row: _aspect_options(
             engine, status, row.subject.removeprefix(NODE_SUBJECT)

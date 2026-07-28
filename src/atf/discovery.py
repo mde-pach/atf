@@ -107,6 +107,8 @@ class StepDef:
     # Whether the step reads the slot its own wording names. Nothing can be listed in `needs` for
     # one of these: which slot it needs is a choice whoever composes it has not made yet.
     needs_slot: bool = False
+    # Whether the step carries a table under it, which a picker cannot compose.
+    takes_table: bool = False
     # For a [phrase](phrasebook.py), the steps it stands for. Empty for an ordinary step. A phrase
     # needs and produces whatever they do, so this is where those are read from.
     expands_to: list[str] = field(default_factory=list)
@@ -338,6 +340,7 @@ def _attach_context_use(steps: list[StepDef]) -> None:
         if generic is not None:
             step.needs = list(generic.needs)
             step.needs_slot = generic.needs_slot
+            step.takes_table = generic.takes_table
 
     _attach_phrase_use(steps)
 

@@ -123,6 +123,67 @@ Counting needs the adapter to be able to *list* what a type holds, which is the 
 [`browse`](adapter-spi.md) half of the SPI. An adapter without one makes the claim say so and name
 what is missing, rather than failing obscurely.
 
+### Tables: one node, many variations {#tables}
+
+A catalog is a set of named resources, which is fine until every variation of one needs another
+entry — `task`, `overdue_task`, `done_task`, `overdue_done_task`. That is the **Object Mother**
+pattern: a global set of factories where every variation needs a new one and every scenario couples
+to a specific one. A table says what is different where it is needed, and the catalog keeps one
+node.
+
+```gherkin
+Scenario: An overdue task is still an ordinary task
+  Given the task "milk" but:
+    | due_at | ${now-1d 09:00} |
+  Then the task "milk" is:
+    | title  | Buy milk |
+    | done   | false    |
+    | uuid   | #notnull |
+```
+
+**`Given the <type> "<name>" but:`** provisions that node with part of its body written differently,
+**for this scenario only** — the catalog is session state every other scenario reads, so the
+variation is a copy and never outlives the scenario that asked for it. The varied body is what
+`find` matches on as well as what `create` sends, so overriding a field of the
+[natural key](../explanation/glossary.md#natural-key) genuinely selects a different resource.
+
+**`Then the <type> "<name>" is:`** and **`Then the <s> is:`** compare a whole table of fields in one
+claim. The table says **what must match, not what may exist**: a field the table does not mention is
+not looked at, because a record carries ids and timestamps a scenario has no opinion about and
+requiring it to list them all would make every backend change a hundred red scenarios. `#absent` is
+how a scenario says a field must *not* be there.
+
+A failure lists **every** field that disagrees, so they are fixed in one pass rather than one run
+each.
+
+#### Markers {#markers}
+
+Sometimes the value is not the point: an id is whatever the backend assigned, a timestamp is
+whatever `now` was. A marker says what *kind* of thing must be there instead.
+
+| Marker | Passes when the field |
+|---|---|
+| `#present` | is there, whatever it holds |
+| `#absent` | is not there at all |
+| `#notnull` | is there and holds something |
+| `#null` | holds nothing |
+| `#string` | holds text |
+| `#number` | holds a number (and not `true`/`false`) |
+| `#boolean` | holds a true/false value |
+| `#uuid` | holds a UUID |
+
+A closed list, on purpose: every entry is something ATF can decide, and a pattern language here
+would be a schema language nobody asked for — and could not be offered in a dropdown, which is what
+[the composer](cockpit.md) needs.
+
+`${...}` resolves inside a table's cells, which it has to do explicitly: pytest-bdd hands a table
+over as one argument rather than as step values, so it never reaches the hook that resolves them
+everywhere else.
+
+**A table step is not offered by the composer.** The builder has no way to write the table under the
+line, and offering a line it cannot finish is worse than not offering it — so these are written by
+hand, or in the composer's text mode, which is held to exactly the same checks.
+
 ### What `contains` means {#containment}
 
 Containment means one thing per kind of value, and only the kinds where it means something

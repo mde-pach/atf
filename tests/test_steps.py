@@ -22,6 +22,7 @@ from atf.steps import (
     FIELD_NOT_EMPTY,
     GENERIC_STEPS,
     GONE,
+    SHAPE_IS,
     SLOT_CONTAINS,
     SLOT_FIELD_CONTAINS,
     SLOT_FIELD_EMPTY,
@@ -30,6 +31,7 @@ from atf.steps import (
     SLOT_FIELD_LACKS,
     SLOT_FIELD_NOT_EMPTY,
     SLOT_LACKS,
+    SLOT_SHAPE_IS,
     generic,
 )
 from tests.sample_project import run_pytest, write_spec
@@ -84,6 +86,9 @@ PASSING = {
     SLOT_FIELD_EMPTY: 'the result field "notes" is empty',
     SLOT_FIELD_NOT_EMPTY: 'the result field "plan" is not empty',
     COUNT: "the environment has 0 visitor",
+    # A table step carries its table with it, indented under the line the test writes.
+    SHAPE_IS: 'the account "primary" is:\n      | plan  | standard |\n      | id    | #notnull |',
+    SLOT_SHAPE_IS: "the result is:\n      | plan  | standard |\n      | notes | #string  |",
 }
 
 
@@ -614,3 +619,125 @@ def test_counting_says_so_when_the_adapter_cannot_list():
         _listing(engine, "thing")
     assert "cannot list what an environment holds" in str(caught.value)
     assert "`browse`" in str(caught.value)
+
+
+# ---- tables: one node, many variations --------------------------------------
+#
+# The catalog is a global set of named factories, which is Object Mother: every variation needs a
+# new factory and every scenario couples to a specific one. A table says what is different where
+# it is needed, and the catalog keeps one node.
+
+
+def test_a_given_can_vary_the_body_for_this_scenario_only(project):
+    feature = """Feature: Variation
+  Scenario: A trial account, without a second catalog node for one
+    Given the account "primary" but:
+      | plan | trial |
+    Then the account "primary" field "plan" is "trial"
+"""
+    result = run_feature(project, "varied", feature)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_variation_does_not_outlive_the_scenario_that_asked_for_it(project):
+    """The catalog is session state every other scenario reads."""
+    feature = """Feature: Variation
+  Scenario: One scenario varies it
+    Given the account "secondary" but:
+      | plan | enterprise |
+    Then the account "secondary" field "plan" is "enterprise"
+
+  Scenario: The next one sees the catalog as written
+    Given the account "primary"
+    Then the account "primary" field "plan" is "standard"
+"""
+    result = run_feature(project, "not_sticky", feature)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_given_with_no_table_says_what_it_needs(project):
+    feature = """Feature: Variation
+  Scenario: `but` with nothing under it
+    Given the account "primary" but:
+"""
+    result = run_feature(project, "bare_but", feature)
+    assert result.returncode != 0
+    assert "needs a table of what to write differently" in result.stdout
+
+
+def test_a_shape_compares_a_whole_record_in_one_claim(project):
+    feature = """Feature: Shape
+  Scenario: The whole record, said once
+    Given the account "primary"
+    Then the account "primary" is:
+      | email | primary@example.test |
+      | plan  | standard             |
+      | id    | #notnull             |
+      | notes | #present             |
+      | nope  | #absent              |
+"""
+    result = run_feature(project, "shape", feature)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_shape_says_what_must_match_not_what_may_exist(project):
+    """A record carries ids and timestamps a scenario has no opinion about."""
+    feature = """Feature: Shape
+  Scenario: Naming two fields says nothing about the rest
+    Given the account "primary"
+    Then the account "primary" is:
+      | plan | standard |
+"""
+    result = run_feature(project, "partial_shape", feature)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_wrong_shape_lists_every_field_that_disagrees(project):
+    """One line per field, so a reader fixes them in one pass instead of one run each."""
+    feature = """Feature: Shape
+  Scenario: Two fields are wrong
+    Given the account "primary"
+    Then the account "primary" is:
+      | plan  | enterprise |
+      | email | someone@else.test |
+      | id    | #absent    |
+"""
+    result = run_feature(project, "wrong_shape", feature)
+    assert result.returncode != 0
+    assert "is not the shape this scenario says" in result.stdout
+    assert 'plan: "standard", not "enterprise"' in result.stdout
+    assert "id:" in result.stdout and "#absent" in result.stdout
+
+
+def test_a_shape_resolves_placeholders_in_its_cells(project):
+    """A table's cells never reach the hook that resolves them for an ordinary step's arguments."""
+    feature = """Feature: Shape
+  Scenario: A node reference inside a table
+    Given the project "alpha"
+    Then the project "alpha" is:
+      | slug       | alpha                    |
+      | account_id | ${accounts.primary.id}   |
+"""
+    result = run_feature(project, "shape_placeholder", feature)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_shape_over_a_slot_reads_what_a_step_produced(project):
+    feature = """Feature: Shape
+  Scenario: The shape of what came back
+    Given the account "primary"
+    When I read its plan
+    Then the result is:
+      | plan | standard |
+"""
+    steps = '''
+
+from pytest_bdd import when
+
+
+@when("I read its plan")
+def _(context):
+    context.result = {"plan": context.account["plan"]}
+'''
+    result = run_feature(project, "slot_shape", feature, steps)
+    assert result.returncode == 0, result.stdout + result.stderr

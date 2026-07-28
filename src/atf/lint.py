@@ -7,8 +7,15 @@ of an API to understand what the test claims. That is exactly the trade the
 [phrasebook](phrasebook.py) exists to undo, and it is checkable by machine, so it ships as a check
 rather than as advice.
 
-**What counts as a spec line is a step.** Not the narrative, not a comment: prose is where an
-author explains, and explaining is allowed to be specific. A step is the claim itself.
+**What counts as a spec line is a step.** Not the narrative, not a comment, and not a data table:
+prose is where an author explains, and explaining is allowed to be specific.
+
+A **table is a deliberate exception**, not an oversight. `Then the task "milk" is:` followed by a
+table of fields is the whole-shape claim, and the rule exists to stop technical detail being
+*embedded in a sentence a reader has to parse* — `field "owner_id"` reads as English and is not.
+A table reads as data, is visually separate from the prose, and replaces the field-by-field
+assertions the rule is really aimed at. Flagging it would push suites back to one claim per field,
+which is the opposite of what the rule is for. A step is the claim itself.
 
 **Every finding names a rule, and every rule can be waived.** A suite mid-migration has lines it
 already knows about, and a check that lands permanently red is a check somebody turns off. A

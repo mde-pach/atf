@@ -203,3 +203,47 @@
 
 'writing it is not offered as a badge':
   - the element "compose_write_chip" is gone
+
+# ---- what `atf lint` says ---------------------------------------------------
+
+'the specs say nothing only the layer below should know':
+  - the result field "exit_code" is "0"
+  - the result field "output" contains "No technical vocabulary"
+
+# A colon inside a plain YAML scalar starts a mapping, so this one is quoted whole.
+'it objects, naming the rule "{rule}"':
+  - the result field "exit_code" is "1"
+  - the result field "output" contains "{rule}"
+
+'it says how to answer the objection':
+  - the result field "output" contains "Write a phrase for it"
+  - 'the result field "output" contains "atf-lint: ignore"' 
+
+# ---- what a run collected ---------------------------------------------------
+
+'both its scenarios ran':
+  - the result field "output" contains "2 passed"
+
+'the scenario ran once, not twice':
+  - the result field "output" contains "1 passed"
+  - the result field "output" does not contain "2 passed"
+
+'the run says no step is worded that way':
+  - the result field "output" contains "Step definition is not found"
+
+'the run names it "{nodeid}"':
+  - the result field "output" contains "{nodeid}"
+
+# ---- generated values -------------------------------------------------------
+
+'the refusal names the variable nobody exported':
+  - the result field "output" contains "ATF_TESTS_NOT_EXPORTED is not set"
+
+# The message shows the form it wanted, which is the only useful thing to say about an offset
+# nobody can read.
+'it refuses the offset, showing the form it wanted':
+  - the result field "exit_code" is "1"
+  - the result field "output" contains "expected `now+1d 09:00`"
+
+'it says which providers there are':
+  - 'the result field "output" contains "registered: env, fake, now, uuid"' 

@@ -85,6 +85,18 @@ def test_a_step_using_a_capture_the_phrase_does_not_take_is_refused(tmp_path):
     assert "it captures: reason" in str(caught.value)
 
 
+def test_a_step_yaml_read_as_a_mapping_says_so(tmp_path):
+    """A colon and a space start a mapping in YAML, and `registered: env, now` is full of them.
+
+    Without this the phrase loads holding a dict, and the failure arrives much later as a step
+    nothing is worded as — which says nothing about the real mistake.
+    """
+    with pytest.raises(PhrasebookError) as caught:
+        load(book(tmp_path, "'it lists them':\n  - the result field \"output\" contains \"registered: env, now\"\n"))
+    assert "was read as a mapping, not as text" in str(caught.value)
+    assert "single quotes" in str(caught.value)
+
+
 def test_a_phrase_standing_for_nothing_is_refused(tmp_path):
     with pytest.raises(PhrasebookError) as caught:
         load(book(tmp_path, "'it went well': []\n"))

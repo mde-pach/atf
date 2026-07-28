@@ -144,6 +144,18 @@ def _phrase(pattern: Any, body: Any, problems: list[str]) -> Phrase | None:
         problems.append(f"{pattern!r}: stands for nothing — list the steps it says in one line")
         return None
 
+    for item in body:
+        if isinstance(item, dict):
+            # `- the output contains "registered: env, now"` is a *mapping* to YAML, because a
+            # colon and a space start one. Saying so is worth more than the step-not-found this
+            # would otherwise become at run time.
+            spelled = ", ".join(f"{key}: {value}" for key, value in item.items())
+            problems.append(
+                f"{pattern!r}: its step `{spelled}` was read as a mapping, not as text — a colon "
+                "followed by a space starts one in YAML. Put the whole line in single quotes."
+            )
+            return None
+
     steps = tuple(str(item) for item in body)
     captures = tuple(dict.fromkeys(CAPTURE_RE.findall(pattern)))
     for text in steps:

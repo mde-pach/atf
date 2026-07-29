@@ -19,7 +19,11 @@ from typing import Any
 
 from .catalog import Node, find_node
 
-PROVISION_RE = re.compile(r'\bthe ([A-Za-z_][A-Za-z0-9_]*) "([^"]+)"')
+# A resource named in a step. Both articles, because both name the same catalog node: `the todo_list
+# "groceries"` is the shared one and `a fresh todo_list "groceries"` is an instance of it — and a
+# scenario that builds its own copy is still a scenario about that node, which is what the cockpit
+# has to be able to say.
+PROVISION_RE = re.compile(r'\b(?:the|a fresh) ([A-Za-z_][A-Za-z0-9_]*) "([^"]+)"')
 _STEP_KEYWORDS = ("Given", "When", "Then", "And", "But", "*")
 _COLLECT_TIMEOUT = 300
 

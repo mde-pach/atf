@@ -166,6 +166,44 @@
   - the owner "primary" exists
   - the todo_list "groceries" exists
 
+# ---- what a scenario that had one to itself leaves behind --------------------
+#
+# An isolated instance is deleted with the scenario that asked for it, so what is left in the
+# backend afterwards is the whole of the evidence: the shared resources, and none of the copies.
+
+'the list it made is gone and the owner it hung off is not':
+  - the environment has 0 todo_list
+  - the owner "primary" exists
+
+'the shared list is the only one left':
+  - the environment has 1 todo_list
+  - the todo_list "groceries" exists
+
+'the owner it made is gone and the seeded one is not':
+  - the environment has 1 owner
+  - the owner "primary" exists
+
+# ---- what a copy nobody could make is refused with ---------------------------
+#
+# Three refusals, quoted back as the sentence a reader gets. The wordings are ATF's own — a
+# lifecycle, a mode, and the shape of a natural key — which is exactly the vocabulary this file
+# exists to keep out of a feature.
+
+'it says this one is built for each run already':
+  - the result field "output" contains "built fresh for every run"
+
+'it says this one is never made here':
+  - the result field "output" contains "ATF never creates them"
+
+'it says to ask for it the ordinary way':
+  - the result field "output" contains "which is how this one is asked for"
+
+'it says nothing would tell the copy from the shared one':
+  - the result field "output" contains "is either a link to another resource or not text"
+
+'it says how to say what makes the copy different':
+  - the result field "output" contains "say what makes this one different"
+
 # ---- what a spec written wrongly says ---------------------------------------
 
 'the run says the catalog declares no such type':

@@ -16,7 +16,7 @@ import pytest
 from pytest_bdd import given, parsers
 from pytest_bdd import step as register_step
 
-from . import collect, phrasebook
+from . import collect, phrasebook, steps
 from .adapters import Record, can_show, why_unavailable
 from .bootstrap import Boot, bootstrap
 from .catalog import natural_keys
@@ -133,6 +133,26 @@ def _provision_varied(
     return _make(context, request, resource_type, name, _overrides(datatable, resource_type, name))
 
 
+@given(parsers.parse(steps.PROVISION_FRESH))
+def _provision_fresh(context: Context, request: pytest.FixtureRequest, resource_type: str, name: str) -> Record:
+    """`Given a fresh todo_list "groceries"` -> a groceries list this scenario alone holds."""
+    return _make_fresh(context, request, resource_type, name, None)
+
+
+@given(parsers.parse(steps.PROVISION_FRESH_VARIED))
+def _provision_fresh_varied(
+    context: Context, request: pytest.FixtureRequest, resource_type: str, name: str, datatable: Any = None
+) -> Record:
+    """The same isolated instance, with some of its body written differently for this scenario.
+
+    It means what `but:` means everywhere else — this node's body, varied for one scenario — with
+    one addition it gets for free: a field the table writes is taken *exactly* as written, including
+    a natural key. That is how a scenario says what makes its copy different when appending to the
+    written key would spoil it, which is what happens to anything with a shape, an email above all.
+    """
+    return _make_fresh(context, request, resource_type, name, _overrides(datatable, resource_type, name))
+
+
 def _overrides(datatable: Any, resource_type: str, name: str) -> Record:
     if not datatable:
         pytest.fail(
@@ -171,6 +191,58 @@ def _make(
     # that knows. Everything downstream reads it from the slot rather than guessing at it.
     if isinstance(context, Context):
         context.note(resource_type, resource_type=resource_type, node_id=engine.resolve_id(resource_type, name))
+    _note_what_is_showing(context, engine, resource_type)
+    return record
+
+
+def _make_fresh(
+    context: Context,
+    request: pytest.FixtureRequest,
+    resource_type: str,
+    name: str,
+    overrides: Record | None,
+) -> Record:
+    """Provision an instance of a catalog node that belongs to this scenario and goes with it.
+
+    The two refusals are here rather than in the engine because a refusal is a sentence somebody
+    reads, and this is the only place that knows what they wrote. Both are answers, not obstacles:
+    there is no isolated instance of a resource ATF cannot create, and no telling two instances
+    apart where nothing distinguishes them.
+    """
+    engine: Materializer = request.getfixturevalue("materializer")
+    if resource_type not in engine.types:
+        known = ", ".join(engine.resource_types()) or "none"
+        pytest.fail(f"no resource type {resource_type!r} in the catalog (known types: {known})")
+
+    node_id = engine.resolve_id(resource_type, name)
+    can, why = engine.provisionable(node_id)
+    if not can:
+        # The three nodes nothing can provision are exactly the three there can be no fresh instance
+        # of, and `provisionable` is where ATF already decides that — including for the cockpit's
+        # "create it" button, which is the same question asked by a different surface.
+        pytest.fail(
+            f'a fresh {resource_type} "{name}": {why}. '
+            f'Say `Given the {resource_type} "{name}"`, which is how this one is asked for.'
+        )
+
+    fields, cannot = engine.key_of_its_own(engine.node(node_id))
+    if not fields and not overrides:
+        pytest.fail(
+            f'a fresh {resource_type} "{name}": {cannot}. '
+            f"Give the type a `natural_key` ATF can vary, or say what makes this one different with "
+            f'`Given a fresh {resource_type} "{name}" but:` and a table under it.'
+        )
+
+    record, provisioned = engine.ensure_fresh(resource_type, name, overrides)
+    # Its dependencies were provisioned as usual, so an ephemeral one among them is tracked as
+    # usual; the instance itself is tracked whatever its catalog says, because being taken away with
+    # the scenario is the whole of what was asked for.
+    _track_ephemeral(context, engine, provisioned)
+    _remember(context, [(node_id, record)])
+    _emit({"event": "provisioned", "nodeid": request.node.nodeid, "ids": [node_id]})
+
+    setattr(context, resource_type, record)
+    context.note(resource_type, resource_type=resource_type, node_id=node_id)
     _note_what_is_showing(context, engine, resource_type)
     return record
 
@@ -295,11 +367,15 @@ def _track_ephemeral(
     materializer: Materializer,
     provisioned: dict[str, Record],
 ) -> None:
-    ephemeral = materializer.ephemeral_records(provisioned)
-    if not ephemeral:
+    _remember(context, materializer.ephemeral_records(provisioned))
+
+
+def _remember(context: Context, made: list[tuple[str, Record]]) -> None:
+    """Note what this scenario built for itself, so teardown knows what to take away again."""
+    if not made:
         return
     tracked: list[tuple[str, Record]] = getattr(context, EPHEMERAL_ATTR, [])
-    tracked.extend(ephemeral)
+    tracked.extend(made)
     setattr(context, EPHEMERAL_ATTR, tracked)
 
 

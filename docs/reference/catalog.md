@@ -127,6 +127,19 @@ fresh on each pass, and is deleted when the scenario that provisioned it ends.
 Which to choose is a design decision, not a lookup: see
 [About lifecycles](../explanation/lifecycles.md).
 
+**It is per node, and it is not the last word.** A suite is normally forced to choose one lifecycle
+for everything; here every type chooses its own, so the tenant, the account and the API key can be
+seeded once while the data hanging off them is built per scenario. The choice a *type* makes is
+still only the default, though: a scenario that needs its own instance of something this file calls
+persistent asks for one with [`Given a fresh <type> "<name>"`](specs-and-fixtures.md#fresh), and
+nothing here changes for it.
+
+That is deliberate, and it is the reason `lifecycle` stays a single word. Isolation is a property of
+a *scenario*, not of a resource: the same type is usually one another scenario is happy to share, so
+saying it in the catalog would make every reader of that type pay for one scenario's need. A node
+this file calls `ephemeral` is one nobody can ever share — that is a genuine fact about the
+resource, and it is what belongs here.
+
 ### `id_field` {#id_field}
 
 String, default `id`. The record field carrying the resource's

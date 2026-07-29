@@ -50,6 +50,20 @@ The catalog makes this cheap on purpose:
 when adding a resource costs almost nothing, "give the mutating test its own" stops being a
 discipline you have to remember and becomes the obvious move.
 
+**Or say it in the scenario.** A second node is right when the two resources mean different things
+and both are worth naming. When it would only ever be "the same thing, but mine", the scenario says
+so and the catalog keeps one node:
+
+```gherkin
+Given a fresh task "laundry"
+When I complete the task "laundry"
+Then the task "laundry" field "done" is "true"
+```
+
+That instance is created rather than found, belongs to this scenario, and is deleted with it — the
+ephemeral behaviour, borrowed for one scenario, without the type giving it up for everyone else. See
+[one to yourself](../reference/specs-and-fixtures.md#fresh).
+
 The general rule: **read-only scenarios can share a resource; a scenario that changes one needs its
 own.** If you cannot tell whether a scenario mutates something, it does.
 
@@ -98,7 +112,7 @@ whether ATF may create it, `lifecycle` says whether it is reused.
 
 - Reused across runs, and no scenario changes it → **persistent** (the default).
 - Reused across runs, but one scenario changes it → **persistent**, and give that scenario its own
-  instance.
+  instance: a second node when it is worth naming, `Given a fresh …` when it is not.
 - Meaningless to reuse, or must be new each time → **ephemeral**.
 - Must already exist, and ATF should never create it → **persistent** with `mode: reference`.
 

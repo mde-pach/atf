@@ -227,13 +227,47 @@ failure for a BDD suite and the first thing a person reading CI wants.
 atf lint
 ```
 
-Checks that no spec line says something only the layer below should have to know. Reads the
-`.feature` files under [`specs`](manifest.md) and nothing else — no environment, no adapters, no
-collection — so it runs in a checkout with no backend anywhere near it.
+Checks that the `.feature` files under [`specs`](manifest.md) are **well formed** — that each file
+is the thing it claims to be. It reads the files and nothing else: no environment, no adapters, no
+collection, so it runs in a checkout with no backend anywhere near it.
 
 Exits `1` when there is anything to report, and prints the report on stderr, so CI can gate on it.
 
 ### The rules {#lint-rules}
+
+| Rule | Catches | Why it matters |
+|---|---|---|
+| `no-feature` | a `.feature` with no `Feature:` line | it is collected and contributes nothing |
+| `two-features` | a second `Feature:` in one file | everything after the first is ignored by every Gherkin reader |
+| `untitled` | a keyword with nothing after the colon | the title is what the cockpit lists, a run reports, and `-k` matches |
+| `stray-step` | a step before any `Scenario:` or `Background:` | nothing will run it where it is |
+| `dangling-and` | an `And` or `But` with no step above it | there is nothing for it to continue |
+| `empty-scenario` | a scenario with no steps | it passes without asserting anything |
+| `outline-without-examples` | a `Scenario Outline:` with no `Examples:` | it runs zero times |
+| `ragged-table` | rows with differing numbers of cells | the short rows lose their last values |
+| `unknown-placeholder` | a `<name>` no `Examples:` column supplies | it reaches the step with its angle brackets on |
+| `duplicate-scenario` | two scenarios in one feature with the same title | they generate one test name and one of them runs |
+
+Every one is a fact about the file that is wrong in every domain, so **there are no waivers and
+nothing to waive.**
+
+### What it does not check, and why {#lint-not}
+
+**The words.** An earlier version reported a spec line naming a field, a status code, a path, a flag
+or a selector, on the grounds that the layer below had leaked into the layer above. That rule is
+real — it is the reason the [phrasebook](phrasebook.md) exists — but it is not checkable, because it
+infers *meaning* from *syntax*.
+
+A quoted `/products/42` is a route escaping an adapter in one suite and the domain's own value in
+another: a redirect target, a CMS slug, a router rule. `503` is an implementation detail here and
+the entire subject matter of a monitoring product. Nothing separates the two but knowing what the
+system under test *is*, which a linter does not. What the rule produced was false positives on
+correct specs, a waiver comment per line, and a check that meant nothing.
+
+Keeping technical vocabulary out of spec text is still the point of the
+[phrasebook](phrasebook.md#why). It is a judgement, and it belongs to a reviewer.
+
+## The rules {#lint-rules}
 
 | Rule | Catches | Say instead |
 |---|---|---|

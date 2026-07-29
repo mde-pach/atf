@@ -1,100 +1,112 @@
-Feature: Keeping the layers apart
-  A spec is what a product owner or a tester reads. The moment a field name, a selector, a status
-  code, a path or a CLI flag appears in one, the layer below has leaked into it — and the reader now
-  needs to know the shape of a record to understand what the test claims.
+Feature: Feature files that are what they claim to be
+  `atf lint` reads the `.feature` files and answers one question: is this file well formed? Not
+  whether its words are the right words — that is a judgement about a domain, and a machine that
+  makes it produces false positives on correct specs and a check that means nothing.
 
-  That is the one rule of the model that can be checked by machine, so it ships as a check rather
-  than as advice. Every scenario below writes a `.feature` into a suite and runs `atf lint` over it.
+  Everything below is a fact about a file that is wrong in every domain, and each is something a
+  run would otherwise do quietly: a step nothing will execute, an outline that runs zero times, a
+  row that loses its last value, two scenarios that become one test.
 
-  Rule: Technical vocabulary in a spec line is reported
+  Every scenario writes a `.feature` into a suite and runs `atf lint` over it.
 
-    Scenario: Naming a field of a record
+  Rule: A file that is not a feature is not silently collected
+
+    Scenario: A feature file with no Feature in it
       Given the workspace "bare" but:
-        | specs/features/a.feature | Feature: F\n  Scenario: S\n    Then the task "milk" field "done" is "false"\n |
+        | specs/features/a.feature | Scenario: S\n  Given the owner "primary"\n |
       When I run "atf lint"
-      Then it objects, naming the rule "field-claim"
-      And it says how to answer the objection
+      Then it objects, naming the rule "no-feature"
 
-    Scenario: Quoting a status code
+    Scenario: Two features in one file, where everything after the first is ignored
       Given the workspace "bare" but:
-        | specs/features/a.feature | Feature: F\n  Scenario: S\n    Then the page "overview" is "200"\n |
+        | specs/features/a.feature | Feature: One\n  Scenario: S\n    Given the owner "primary"\nFeature: Two\n  Scenario: T\n    Given the owner "primary"\n |
       When I run "atf lint"
-      Then it objects, naming the rule "status-code"
+      Then it objects, naming the rule "two-features"
 
-    Scenario: Naming a route into a system
+    Scenario: A keyword with nothing after the colon
+      # The title is what the cockpit lists, what a run reports, and what a person searches for.
       Given the workspace "bare" but:
-        | specs/features/a.feature | Feature: F\n  Scenario: S\n    When I call "/tasks"\n |
+        | specs/features/a.feature | Feature: F\n  Scenario:\n    Given the owner "primary"\n |
       When I run "atf lint"
-      Then it objects, naming the rule "path"
+      Then it objects, naming the rule "untitled"
 
-    Scenario: Spelling a command-line flag
+  Rule: A step nothing will run is reported rather than left to be noticed
+
+    Scenario: A step above every scenario
       Given the workspace "bare" but:
-        | specs/features/a.feature | Feature: F\n  Scenario: S\n    When I run "atf run --json"\n |
+        | specs/features/a.feature | Feature: F\n  Given the owner "primary"\n\n  Scenario: S\n    Given the owner "primary"\n |
       When I run "atf lint"
-      Then it objects, naming the rule "cli-flag"
+      Then it objects, naming the rule "stray-step"
 
-    Scenario: Writing a selector
+    Scenario: An And with nothing above it to continue
       Given the workspace "bare" but:
-        | specs/features/a.feature | Feature: F\n  Scenario: S\n    Then the element "#compose-form li[role=option]" exists\n |
+        | specs/features/a.feature | Feature: F\n  Scenario: S\n    And the owner "primary"\n |
       When I run "atf lint"
-      Then it objects, naming the rule "selector"
+      Then it objects, naming the rule "dangling-and"
 
-    Scenario: One line saying two technical things is reported for both
+    Scenario: A scenario with no steps at all, which passes without claiming anything
       Given the workspace "bare" but:
-        | specs/features/a.feature | Feature: F\n  Scenario: S\n    Then the page "overview" field "status" is "200"\n |
+        | specs/features/a.feature | Feature: F\n  Scenario: S\n\n  Scenario: T\n    Given the owner "primary"\n |
       When I run "atf lint"
-      Then it objects, naming the rule "field-claim"
-      And it objects, naming the rule "status-code"
+      Then it objects, naming the rule "empty-scenario"
 
-  Rule: What a reader is allowed to be specific about is left alone
+  Rule: An outline that cannot run, or runs with a hole in it, is reported
 
-    Scenario: The narrative explains, and explaining may be specific
+    Scenario: An outline with no rows to run
       Given the workspace "bare" but:
-        | specs/features/a.feature | Feature: Seeding\n  It POSTs to /tasks and expects a 201, and `--keep-going` carries on.\n\n  Scenario: S\n    Then the owner "primary" exists\n |
+        | specs/features/a.feature | Feature: F\n  Scenario Outline: S\n    Given the owner "<who>"\n |
       When I run "atf lint"
-      Then the specs say nothing only the layer below should know
+      Then it objects, naming the rule "outline-without-examples"
 
-    Scenario: A table is data, and says what a whole record must be
+    Scenario: A placeholder no column supplies
+      # It reaches the step with its angle brackets still on, and the failure names a resource
+      # called `<who>` — which is a long way from the typo that caused it.
       Given the workspace "bare" but:
-        | specs/features/a.feature | Feature: F\n  Scenario: S\n    Then the task "milk" is:\n      \| title \| Buy milk \|\n |
+        | specs/features/a.feature | Feature: F\n  Scenario Outline: S\n    Given the owner "<who>"\n\n    Examples:\n      \| name \|\n      \| primary \|\n |
       When I run "atf lint"
-      Then the specs say nothing only the layer below should know
+      Then it objects, naming the rule "unknown-placeholder"
 
-    Scenario: The claims that already read as domain language
+    Scenario: A row with the wrong number of cells
       Given the workspace "bare" but:
-        | specs/features/a.feature | Feature: F\n  Scenario: S\n    Given the workspace "chained"\n    Then the owner "primary" exists\n    And the environment has 1 owner\n |
+        | specs/features/a.feature | Feature: F\n  Scenario: S\n    Given the owner "primary" but:\n      \| email \| a@b.test \|\n      \| plan \|\n |
       When I run "atf lint"
-      Then the specs say nothing only the layer below should know
+      Then it objects, naming the rule "ragged-table"
 
-  Rule: A rule can be waived by name, above the line it excuses
+  Rule: Two scenarios that become one test are reported
 
-    Scenario: A waiver above a line excuses that line
+    Scenario: The same title twice in one feature
+      # pytest generates the test name from the title, so the second silently replaces the first.
       Given the workspace "bare" but:
-        | specs/features/a.feature | Feature: F\n  Scenario: S\n    # atf-lint: ignore field-claim\n    Then the task "milk" field "done" is "false"\n |
+        | specs/features/a.feature | Feature: F\n  Scenario: The same name\n    Given the owner "primary"\n\n  Scenario: The same name\n    Given the owner "primary"\n |
       When I run "atf lint"
-      Then the specs say nothing only the layer below should know
+      Then it objects, naming the rule "duplicate-scenario"
 
-    Scenario: And no further than that line
-      Given the workspace "bare" but:
-        | specs/features/a.feature | Feature: F\n  Scenario: S\n    # atf-lint: ignore field-claim\n    Then the task "milk" field "done" is "false"\n    And the task "bread" field "done" is "true"\n |
-      When I run "atf lint"
-      Then it objects, naming the rule "field-claim"
+  Rule: What it does not check is as important as what it does
 
-    Scenario: A waiver before the feature excuses the whole file
+    Scenario: A spec may say whatever its domain says
+      # The words in a spec are a judgement about a domain, and the linter has no opinion. A path,
+      # a status code and a flag are all somebody's domain values.
       Given the workspace "bare" but:
-        | specs/features/a.feature | # atf-lint: ignore field-claim\nFeature: F\n  Scenario: S\n    Then the task "milk" field "done" is "false"\n    And the task "bread" field "done" is "true"\n |
+        | specs/features/a.feature | Feature: F\n  Scenario: S\n    When I follow "/products/42"\n    Then the check "api" reports "503"\n    And it was run with "--keep-going"\n |
       When I run "atf lint"
-      Then the specs say nothing only the layer below should know
+      Then the specs are well formed
 
-    Scenario: A waiver excuses the rules it names and no others
+    Scenario: A cell may hold a pipe, because Gherkin lets it
       Given the workspace "bare" but:
-        | specs/features/a.feature | # atf-lint: ignore field-claim\nFeature: F\n  Scenario: S\n    Then the page "overview" field "status" is "200"\n |
+        | specs/features/a.feature | Feature: F\n  Scenario: S\n    Given the owner "primary" but:\n      \| note \| one \\\| two \|\n |
       When I run "atf lint"
-      Then it objects, naming the rule "status-code"
+      Then the specs are well formed
 
-    Scenario: A waiver naming nothing ATF knows excuses everything rather than nothing
-      # Better obviously too broad than looking like a waiver and doing nothing at all.
-      Given the workspace "bare" but:
-        | specs/features/a.feature | # atf-lint: ignore whatever-that-is\nFeature: F\n  Scenario: S\n    Then the task "milk" field "done" is "false"\n |
+    Scenario: A suite that is well formed says so rather than saying nothing
+      Given the workspace "chained"
       When I run "atf lint"
-      Then the specs say nothing only the layer below should know
+      Then the specs are well formed
+
+  Rule: Every problem in the file, not the first
+
+    Scenario: Two things wrong are two findings
+      Given the workspace "bare" but:
+        | specs/features/a.feature | Feature: F\n  Scenario:\n    And the owner "primary"\n |
+      When I run "atf lint"
+      Then it objects, naming the rule "untitled"
+      And the refusal also mentions "dangling-and"

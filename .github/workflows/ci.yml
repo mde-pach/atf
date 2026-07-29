@@ -50,7 +50,7 @@ jobs:
       - name: Tests
         run: uv run pytest -q
 
-      - name: No technical vocabulary in the specs
+      - name: The feature files are well formed
         run: uv run python -m atf.cli lint
         env:
           ATF_MANIFEST: tests/atf.yaml

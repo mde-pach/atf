@@ -1,4 +1,3 @@
-# atf-lint: ignore field-claim
 # A waypoint, deliberately: every claim below is one ATF makes for any suite, which was the point
 # of getting here — but `the result field "exit_code" is "0"` is still a struct field access spelled
 # in English. `safety.feature` is the same suite one step further on, with a phrasebook behind it.

@@ -307,17 +307,13 @@
 
 # ---- what `atf lint` says ---------------------------------------------------
 
-'the specs say nothing only the layer below should know':
+'the specs are well formed':
   - the result field "exit_code" is "0"
-  - the result field "output" contains "No technical vocabulary"
+  - the result field "output" contains "is well formed"
 
 'it objects, naming the rule "{rule}"':
   - the result field "exit_code" is "1"
   - the result field "output" contains "{rule}"
-
-'it says how to answer the objection':
-  - the result field "output" contains "Write a phrase for it"
-  - the result field "output" contains "atf-lint: ignore"
 
 # ---- what a run collected ---------------------------------------------------
 

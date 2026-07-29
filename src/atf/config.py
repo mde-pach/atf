@@ -56,6 +56,9 @@ class Manifest:
     environments: dict[str, EnvConfig]
     mutable_envs: set[str]
     display: DisplayConfig
+    # Where the schemas ATF can derive a catalog from live, keyed by a name a command can say.
+    # Raw, like `environments`: the `*_env` pointers in it are resolved by whoever reads it.
+    schemas: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Which system a tag says a scenario needs: `browser: browser` means a `@browser` scenario
     # cannot run where the `browser` system is unavailable. Acting on a tag used to be every
     # suite's own `pytest_collection_modifyitems`, which is a raw pytest hook in a file that
@@ -140,6 +143,7 @@ def load_manifest(path: Path | None = None) -> Manifest:
         problems.append(f"mutable_envs: unknown environment(s) {', '.join(unknown_mutable)}")
 
     display = _parse_display(raw.get("display"), problems)
+    schemas = _parse_schemas(raw.get("schemas"), problems)
     requires = _parse_requires(raw.get("requires"), problems)
 
     if problems:
@@ -155,8 +159,34 @@ def load_manifest(path: Path | None = None) -> Manifest:
         environments=environments,
         mutable_envs=mutable_envs,
         display=display,
+        schemas=schemas,
         requires=requires,
     )
+
+
+def _parse_schemas(value: Any, problems: list[str]) -> dict[str, dict[str, Any]]:
+    """`schemas.<name>` — where a schema ATF can derive resource types from is found.
+
+    A named place in the manifest rather than an argument on the command line, because the point of
+    `atf import openapi` is that it is *re-run*: an API changes, and the answer to "which file was
+    that again?" should not be a search through somebody's downloads. One entry, and re-importing is
+    a command with nothing after it.
+
+    Nothing is fetched here. A manifest is read by every command, and a schema is read by one — so
+    this only checks the entry says where the schema is and how to ask for it, and the reading
+    happens when somebody asks for it.
+    """
+    entries = _mapping_of_mappings(value, "schemas", problems)
+    for name, entry in entries.items():
+        given = [key for key in ("url", "path") if entry.get(key)]
+        if not given:
+            problems.append(f"schemas.{name}: needs a `url`, or a `path` for a schema kept in the repository")
+        elif len(given) > 1:
+            problems.append(f"schemas.{name}: has both `url` and `path`, and a schema comes from one place")
+        headers = entry.get("headers")
+        if headers is not None and not isinstance(headers, dict):
+            problems.append(f"schemas.{name}.headers: must be a mapping of header name to the value sent under it")
+    return entries
 
 
 def _parse_requires(value: Any, problems: list[str]) -> dict[str, str]:

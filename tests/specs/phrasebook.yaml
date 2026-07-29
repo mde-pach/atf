@@ -393,6 +393,81 @@
   - the result field "output" contains "the owner is set up the way a new customer should be"
   - the result field "output" contains "and that did not hold"
 
+# ---- what `atf import openapi` writes ---------------------------------------
+#
+# Three vocabularies meet in this command and none of them belongs in a sentence: the file the
+# types land in, the keys ATF writes into it (`path`, `natural_key`), and the flag that turns a
+# proposal into a write. So the scenarios say what a reader would say — where an account lives,
+# what one is recognised by — and everything here knows how ATF spells it.
+
+'the developer imports the schema they were handed':
+  - I run "atf import openapi api.json"
+
+'the developer imports the schema the manifest names':
+  - I run "atf import openapi"
+
+# The flag that turns a proposal into a write. Named here, because a scenario's subject is that the
+# person chose to apply it, not how the command spells the choosing.
+'the developer applies what the import proposed':
+  - I run "atf import openapi api.json --apply"
+
+'the developer reads the resource types':
+  - I run "cat catalog/resources.yaml"
+
+'it says where an account lives':
+  - the result field "output" contains "path: /accounts"
+
+'an account is recognised by its email address':
+  - the result field "output" contains "natural_key: email"
+
+# What the guess was made from, quoted back. `guessed:` is the word the generated file uses to mark
+# an inference, and the clause after it is the reason — a scenario should say that a reason is
+# there, not know how it is punctuated.
+'the guess says it was made from what the service lets you search by':
+  - the result field "output" contains "guessed:"
+  - the result field "output" contains "filters by it"
+
+'the guess says the project''s own catalog is where it learned that':
+  - the result field "output" contains "guessed:"
+  - the result field "output" contains "already uses it as its key"
+
+'nothing says how one label is told from another':
+  - the result field "output" contains "no natural_key"
+
+'both of the fields it weighed up are named':
+  - the result field "output" contains "`name`"
+  - the result field "output" contains "`slug`"
+
+# A composite key, written as ATF writes one. Which fields make it up is the claim; the brackets
+# are ATF's spelling of a list — and they are why this one line is quoted, since a bracket is how
+# YAML starts a sequence and the step is a sentence.
+'a project is recognised by its own name within its account':
+  - 'the result field "output" contains "natural_key: [account_id, slug]"'
+
+'it says which account a project hangs off':
+  - the result field "output" contains "scoped under `account`"
+
+'the owner is still recognised the way somebody wrote it':
+  - the result field "output" contains "natural_key: slug"
+
+'an account is recognised the way this project already recognises everything else':
+  - the result field "output" contains "natural_key: slug"
+
+'nothing about accounts is in the file':
+  - the result field "output" does not contain "/accounts"
+
+'it says nothing was written':
+  - the result field "output" contains "Nothing was written"
+
+# The three things a schema has no opinion about, listed by the names the catalog gives them.
+'it says what a schema could not tell it':
+  - the result field "output" contains "mode"
+  - the result field "output" contains "lifecycle"
+  - the result field "output" contains "depends_on"
+
+'it says where to name one so this never has to be said again':
+  - the result field "output" contains "schemas:"
+
 # ---- what a CI report brings back -------------------------------------------
 
 'it reports what CI saw':

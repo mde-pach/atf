@@ -92,6 +92,38 @@ A skip, never a pass: the report says the scenario did not run and what is missi
 the `pytest_collection_modifyitems` hook every suite used to write for itself — a raw pytest hook
 in a `conftest.py` that otherwise never mentions pytest.
 
+### `schemas` {#schemas}
+
+Mapping, default `{}`. Where the schemas ATF can derive a catalog from live, keyed by a name a
+command can say. Read only by [`atf import openapi`](cli.md#atf-import-openapi); nothing is fetched
+when the manifest loads.
+
+```yaml
+schemas:
+  api:
+    url: https://api.example.com/openapi.json
+    headers: { Authorization: { bearer: { token_env: ATF_TOKEN } } }
+```
+
+Each entry needs **either** a `url` **or** a `path` — a path is for a schema kept in the repository,
+resolved relative to the manifest — and having both is an error, because a schema comes from one
+place.
+
+| Key | Description |
+|---|---|
+| `url` | Where the service publishes its schema. |
+| `path` | A schema committed alongside the suite, relative to the manifest. |
+| `headers` | Sent when fetching a `url`. A value is a string, or a `bearer` mapping. |
+
+A `headers` value written as `{ bearer: { token_env: ... } }` becomes `Authorization: Bearer
+<token>`, so a credential reaches the schema through the same
+[`*_env` pointers](#environment-variable-pointers) as every other secret and never appears as a
+literal.
+
+The point of naming it here rather than passing a file each time is that an API changes more than
+once. With the schema in the manifest, catching the catalog up is `atf import openapi` with nothing
+after it — one place, and no hunting for whichever copy of the spec somebody last downloaded.
+
 ### `environments` {#environments}
 
 **Required**, mapping. Per-environment settings, keyed by environment name. See

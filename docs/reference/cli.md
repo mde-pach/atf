@@ -1,7 +1,7 @@
 # CLI reference
 
 ```
-atf [-h] {init,serve,seed,status,run,lint,docs,import-run} ...
+atf [-h] {init,serve,seed,status,run,lint,docs,import,import-run} ...
 ```
 
 Every command except `init` locates the manifest as described in the
@@ -357,6 +357,110 @@ fault. Regenerate after a run, and review the diff like any other.
 
 If the site is mkdocs with `--strict`, add the generated pages to `nav` — or point `--out` at a
 directory a nav-generating plugin covers.
+
+## `atf import openapi` {#atf-import-openapi}
+
+```
+atf import openapi [SOURCE] [--schema NAME] [--apply]
+```
+
+Derives resource types from an OpenAPI schema and writes them into
+[`resources.yaml`](catalog.md#resource-types). It is the answer to the blank page: a catalog states
+where each resource lives, what identifies one, and how it is reached, and a schema already says
+most of that.
+
+For every collection path in the schema it writes one type — its [`path`](catalog.md#path), its
+[`id_field`](catalog.md#id_field), and a guessed [`natural_key`](catalog.md#natural_key) with the
+reason it was guessed written beside it:
+
+```yaml
+account:
+  system: rest
+  path: /accounts
+  id_field: id
+  # guessed: `GET /accounts` filters by it, and its format is `email`
+  natural_key: email
+```
+
+Read-only against every environment, and not gated by [`mutable_envs`](manifest.md#mutable_envs):
+it writes your repository, not a backend. It does not load the catalog either — a registry too
+broken to load is exactly the state you might be running this to get out of.
+
+### `SOURCE` {#import-openapi-source}
+
+A path or a URL. **Omit it** to read the schema named in the manifest under
+[`schemas`](manifest.md#schemas), which is the form that makes re-importing after an API change a
+command with nothing after it.
+
+### `--schema NAME` {#import-openapi-schema}
+
+Which entry under [`schemas`](manifest.md#schemas) to read, when the manifest names more than one.
+With exactly one entry it is not needed; with none, and no `SOURCE`, the command exits 2 showing
+the manifest key to add.
+
+### `--apply` {#import-openapi-apply}
+
+Write the proposal. Without it, nothing is written and the diff is printed for you to read.
+
+**The first import writes without asking**, because a `resources.yaml` that declares no types is the
+blank page this command exists to remove and there is nothing there to lose. Every import after
+that stops at a diff: by then the file holds a `natural_key` you corrected and a `mode` you set, and
+a generator that reverts those is a generator you cannot afford to re-run.
+
+A re-import therefore **only ever adds**. Types already declared are left byte-for-byte alone; ones
+whose `path` the schema has since moved, or whose `natural_key` names a field a create no longer
+accepts, are reported as drift for you to fix; types the schema no longer mentions are named and
+left. See [How to keep the catalog in step](../how-to/keep-the-catalog-in-step.md).
+
+### How the natural key is guessed {#import-openapi-natural-key}
+
+Deterministic scoring, strongest signal first. Nothing is fetched, nothing is learned, and the same
+schema always produces the same answer.
+
+| Signal | Why it is worth what it is |
+|---|---|
+| The collection endpoint **filters** by the field — `GET /accounts?email=` | the API stating *"you can find one this way"*, which is exactly what a natural key means to ATF |
+| **Another type in your catalog is already keyed on that name** | your project's own convention, learned rather than assumed — correcting one guess by hand raises that name's score next time |
+| `format:` or `pattern` — an email, a uuid, a hostname, a constrained string | somebody bothered to constrain it, so it identifies something |
+| Required, a string, and not the identity | weak, and it separates a candidate from an optional display field |
+| The name looks like a key — `email`, `slug`, `code`, `key`, `reference`, `username`, `sku`, `name` | **last, and only while your catalog has no convention yet** — a resemblance is a guess about English |
+
+Never considered: the identity the backend assigns, timestamps, booleans, numbers, arrays, objects,
+`description`/`notes`, and anything marked `readOnly`. A natural key has to be settable at creation
+and stable afterwards, and none of those are both.
+
+A path that **scopes** a collection is not scored, because it is not a guess.
+`/accounts/{account_id}/projects` gives `natural_key: [account_id, slug]`, a
+[`list_path`](catalog.md#list_path) ATF can fill in from the body, and a comment saying each project
+is declared with the account it belongs to.
+
+**Ambiguity is left unresolved.** When the leading candidate is not clearly ahead of the runner-up,
+no `natural_key` is written and the candidates are listed in the file instead:
+
+```yaml
+label:
+  system: rest
+  path: /labels
+  id_field: id
+  # no natural_key: nothing was clearly ahead — considered `name` (it is a required string),
+  #   `slug` (it is a required string).
+```
+
+That type will not provision until you choose, which is the safe half of the trade: a *wrong*
+natural key never matches, so ATF creates another record on every run and nothing goes red until
+somebody looks at the environment.
+
+### What it does not infer {#import-openapi-not-inferred}
+
+Said in the output rather than guessed, because a schema has no opinion about any of it:
+
+| Key | What you decide |
+|---|---|
+| [`mode`](catalog.md#mode) | defaults to `create`. Set `reference` for anything ATF must never make, `data` for anything it only reads. |
+| [`lifecycle`](catalog.md#lifecycle) | defaults to `persistent`. Set `ephemeral` for anything built per scenario. |
+| [`depends_on`](catalog.md#depends_on) | a fact about your instances, not about the API — except where a path already scopes one resource under another. |
+
+Instances are not written at all. Which accounts your suite needs is a question about your tests.
 
 ## `atf import-run` {#atf-import-run}
 

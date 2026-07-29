@@ -1,4 +1,4 @@
-"""The `atf` command: init, serve, seed, status, run, lint, docs, import-run."""
+"""The `atf` command: init, serve, seed, status, run, lint, docs, import, import-run."""
 
 from __future__ import annotations
 
@@ -10,9 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from . import docs as living
+from . import openapi
 from .bootstrap import bootstrap
 from .catalog import DATA, CatalogError
-from .config import ConfigError, load_manifest, resolve_env, resolve_manifest
+from .config import ConfigError, load_manifest, resolve_env, resolve_env_refs, resolve_manifest
 from .lint import check as lint_specs
 from .lint import report as lint_report
 from .materializer import BLOCKED, CREATED, EPHEMERAL, PRESENT, REFERENCE
@@ -35,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(args.handler(args))
-    except (ConfigError, CatalogError) as exc:
+    except (ConfigError, CatalogError, openapi.SchemaError) as exc:
         print(f"atf: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
@@ -96,6 +97,20 @@ def _parser() -> argparse.ArgumentParser:
     )
     docs.add_argument("--env", help="whose run history the verdicts come from")
     docs.set_defaults(handler=cmd_docs)
+
+    # `import` groups the commands that write *source* from something outside the suite, so the
+    # next one — a schema of another kind — is a word here rather than a new top-level verb.
+    importing = sub.add_parser("import", help="derive catalog source from a schema the service publishes")
+    kinds = importing.add_subparsers(dest="kind", required=True)
+    from_openapi = kinds.add_parser("openapi", help="derive resource types from an OpenAPI schema")
+    from_openapi.add_argument(
+        "source",
+        nargs="?",
+        help="a path or URL; omit it to re-read the one named in the manifest under `schemas:`",
+    )
+    from_openapi.add_argument("--schema", help="which entry under `schemas:` to read, when there is more than one")
+    from_openapi.add_argument("--apply", action="store_true", help="write the proposal instead of only showing it")
+    from_openapi.set_defaults(handler=cmd_import_openapi)
 
     imported = sub.add_parser("import-run", help="record a pytest --json-report file from CI as a run")
     imported.add_argument("env")
@@ -395,6 +410,121 @@ def cmd_docs(args: argparse.Namespace) -> int:
         print(f"  {path.relative_to(out)}")
     print("\n" + living.tally(specs, results, env))
     return 0
+
+
+NOT_INFERRED = """\
+What a schema does not say, and this did not guess:
+  mode       every type here defaults to `create`. Set `mode: reference` on anything ATF must never
+             make, and `mode: data` on anything it only ever looks at.
+  lifecycle  every type here defaults to `persistent`. Set `lifecycle: ephemeral` on anything built
+             for one scenario and torn down with it.
+  depends_on which resource needs which is a fact about your instances, not about the API — except
+             where a path already scopes one under another, which is noted in the file."""
+
+
+def cmd_import_openapi(args: argparse.Namespace) -> int:
+    """Write the resource types an OpenAPI schema describes — once, and then only ever propose them.
+
+    The first import writes, because a registry nobody has written yet is the blank page this
+    command exists to remove and there is nothing there to lose. Every import after that stops at a
+    diff: by then the file holds corrections somebody made, and a generator that reverts those is a
+    generator nobody re-runs. So a re-import adds what is missing, leaves what is declared alone,
+    and reports what the schema no longer agrees with rather than fixing it.
+
+    Read-only against every environment, and not gated by `mutable_envs`: it changes the suite's
+    source, the same way authoring in the cockpit does, and touches no backend at all. It does not
+    even load the catalog — a registry too broken to load is exactly the state somebody might be
+    running this to get out of.
+    """
+    manifest = load_manifest(resolve_manifest())
+    source, headers = _schema_source(manifest, args.source, args.schema)
+    proposal = openapi.propose(openapi.read(source, headers), manifest.catalog_dir, source)
+    label = _under(proposal.path, manifest.root)
+
+    for name in proposal.absent:
+        print(f"  {name}: declared in {label}, and this schema says nothing about it — left alone.")
+    for note in proposal.drifted:
+        print(f"  drifted: {note} — left alone, because that file is yours to change.")
+    for name, why in proposal.skipped:
+        print(f"  skipped {name}: {why}")
+
+    if not proposal.added:
+        print(f"Nothing to import — {label} already declares every type this schema describes.")
+        return 0
+
+    print(f"\n{len(proposal.added)} resource type(s) read from {source}:\n")
+    names = max(len(one.name) for one in proposal.added)
+    paths = max(len(one.path) for one in proposal.added)
+    for one in proposal.added:
+        said = f"natural_key: {openapi.key_said(one.guess.key)}" if one.guess else "no natural_key yet"
+        print(f"  {one.name:<{names}}  {one.path:<{paths}}  {said}")
+
+    # The diff, because why each key was chosen is written in the file itself — a summary a person
+    # has to trust is worth less than the lines they are about to keep.
+    print("\n" + proposal.as_diff(label).rstrip("\n"))
+
+    if not (proposal.first or args.apply):
+        print(f"\nNothing was written. Re-run with --apply to add these to {label}.")
+        return 0
+
+    try:
+        proposal.path.parent.mkdir(parents=True, exist_ok=True)
+        proposal.path.write_text(proposal.after, encoding="utf-8")
+    except OSError as exc:
+        print(f"atf: nothing written — {exc}", file=sys.stderr)
+        return 2
+
+    print(f"\nWrote {len(proposal.added)} resource type(s) to {label}.\n")
+    print(NOT_INFERRED)
+    return 0
+
+
+def _schema_source(manifest: Any, given: str | None, named: str | None) -> tuple[str, dict[str, str]]:
+    """Where the schema is, and what to send to ask for it.
+
+    An argument wins, because somebody who named a file means that file. Otherwise the manifest is
+    the answer — which is the case that makes re-importing a command with nothing after it.
+    """
+    if given:
+        return given, {}
+
+    schemas = manifest.schemas
+    if named is not None:
+        entry = schemas.get(named)
+        if entry is None:
+            known = ", ".join(sorted(schemas)) or "none"
+            raise ConfigError(f"no schema named {named!r} in the manifest (known: {known})")
+    elif len(schemas) == 1:
+        named, entry = next(iter(schemas.items()))
+    elif schemas:
+        raise ConfigError(
+            f"the manifest names {len(schemas)} schemas ({', '.join(sorted(schemas))}) — "
+            "say which one with --schema"
+        )
+    else:
+        raise ConfigError(
+            "no schema to import. Pass a path or URL, or name one in the manifest so that "
+            "re-importing needs no arguments:\n\n"
+            "  schemas:\n"
+            "    api:\n"
+            "      url: <where your service publishes its OpenAPI document>\n"
+            "      headers: { Authorization: { bearer: { token_env: ATF_TOKEN } } }"
+        )
+
+    settings = resolve_env_refs(entry, f"schemas.{named}")
+    url = settings.get("url")
+    if isinstance(url, str) and url:
+        return url, openapi.headers_for(settings)
+    where = Path(str(settings.get("path"))).expanduser()
+    return str(where if where.is_absolute() else manifest.root / where), {}
+
+
+def _under(path: Path, root: Path) -> str:
+    """A file as a reader of the suite names it, never an absolute path off this machine."""
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
 
 
 def cmd_import_run(args: argparse.Namespace) -> int:

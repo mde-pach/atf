@@ -10,6 +10,14 @@
 'the command succeeds':
   - the result field "exit_code" is "0"
 
+# What "it failed" means is the adapter's answer, not this suite's: `ok` is one field whatever the
+# command was, so no scenario here has to know which exit code stands for what.
+'the command failed':
+  - the result field "ok" is "false"
+
+'the output mentions "{words}"':
+  - the result field "output" contains "{words}"
+
 'it is refused because "{reason}"':
   - the result field "exit_code" is "2"
   - the result field "output" contains "{reason}"

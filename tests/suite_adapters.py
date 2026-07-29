@@ -27,7 +27,9 @@ typo would otherwise fail out here instead of in there.
 
 from __future__ import annotations
 
+import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -36,6 +38,10 @@ from atf.adapters import Context, Record, register
 from atf.catalog import Node
 
 HERE = Path(__file__).parent
+
+# Where a command runs when the scenario built no suite for it to run in: an empty directory, made
+# once, holding nothing an `atf` walking upwards could mistake for a project.
+NOWHERE = Path(tempfile.mkdtemp(prefix="atf-tests-nowhere-"))
 
 # The same marker `atf.compare` uses to say a field is not there, said about a file.
 ABSENT = "#absent"
@@ -62,10 +68,39 @@ class WorkspaceAdapter:
         for where, content in body.items():
             if where != "suite":
                 _vary(node, root, str(where), content)
+        aim_the_command_at(root, ctx)
         return {"id": str(root), "suite": str(body["suite"])}
 
     def delete(self, node: Node, record: Record, ctx: Context) -> None:
         shutil.rmtree(record["id"], ignore_errors=True)
+
+
+def aim_the_command_at(root: Path | None, ctx: Any) -> None:
+    """Point ATF's `command` system at the suite this scenario built — or at nowhere in particular.
+
+    Every scenario here runs `atf` *inside* the suite it just made, holding that suite's manifest and
+    the copy of ATF under test. That is the premise of this whole suite, not something each line
+    should have to repeat, so it is settled here and no feature says a word about it. What it buys is
+    that every one of them uses ATF's own `When I run "…"` — the surface a reader knows and a user of
+    ATF would write — instead of a step of this suite's own.
+
+    Called with no suite, it points at an empty directory with no manifest, which is what a scenario
+    running the command *outside* any suite is after.
+    """
+    command = ctx.adapters.get("command") if hasattr(ctx, "adapters") else None
+    if command is None:  # pragma: no cover - the manifest configures one
+        return
+    command.cwd = str(root or NOWHERE)
+    command.env = {
+        "ATF_MANIFEST": str(root / "atf.yaml") if root else "",
+        # The copy of ATF the command runs, ahead of the installed one. Which copy that is, the
+        # mutation guard overrides to aim a scenario at a deliberately broken tree.
+        "PYTHONPATH": os.pathsep.join([os.environ.get("ATF_TESTS_SRC", ""), *([str(root)] if root else [])]),
+        # `atf` on the path is the one belonging to the interpreter this suite was started with,
+        # whatever else the machine has installed. A scenario that runs a different ATF is not
+        # testing this one.
+        "PATH": os.pathsep.join([str(Path(sys.executable).parent), os.environ.get("PATH", "")]),
+    }
 
 
 def _vary(node: Node, root: Path, where: str, content: Any) -> None:

@@ -34,6 +34,7 @@ from atf.steps import (
     GENERIC_STEPS,
     GONE,
     LIST_EVERY,
+    RUN,
     SHAPE_IS,
     SLOT_CONTAINS,
     SLOT_FIELD_CONTAINS,
@@ -100,6 +101,7 @@ PASSING = {
     COUNT: "the environment has 0 visitor",
     ACT: 'I delete the account "secondary"',
     LIST_EVERY: "I list every visitor",
+    RUN: 'I run "echo hello"',
     # A table step carries its table with it, indented under the line the test writes.
     SHAPE_IS: 'the account "primary" is:\n      | plan  | standard |\n      | id    | #notnull |',
     SLOT_SHAPE_IS: "the result is:\n      | plan  | standard |\n      | notes | #string  |",

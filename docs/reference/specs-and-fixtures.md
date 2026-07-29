@@ -100,6 +100,7 @@ collecting it twice would run every scenario twice.
 ```gherkin
 When I <action> the <type> "<name>"
 When I list every <type>
+When I run "<command line>"
 ```
 
 An adapter offers *mechanical* verbs; the catalog names a *domain* action in terms of them; the
@@ -132,6 +133,11 @@ out. A type may not declare an action by that name.
 [`result`](#slots) — which is [`browse`](adapter-spi.md#browse), the optional half of the SPI. A
 type whose listing is scoped to a parent says so rather than guessing at one, and an adapter that
 cannot list says that.
+
+**`I run "<command line>"`** runs a command line through the [`command`](manifest.md#command-settings)
+system this environment configures, and puts what came back on `result` — the exit code, both
+streams, and `ok`. The line is written the way a person writes one: `atf seed local`, split the way
+a shell splits it.
 
 An action puts what it produced on `result`, so a scenario can claim something about the response
 as well as about the resource. A system that says nothing useful leaves the record the action was

@@ -1,34 +1,43 @@
-"""A command-line program: what it was asked, and what came back.
-
-Every suite that tests a CLI was writing the same hundred lines — build an argv, put the right
-things in the environment, pick a working directory, run it, keep the exit code and both streams,
-and decide what "it failed" means. That is not domain knowledge. It is the shape of a class of
-system, the same way a status code and a body are the shape of a JSON API, and it belongs here for
-the same reason `rest` does.
-
-**What a command resource is: one invocation.** A command is never *already* run, so `find` answers
-nothing and `create` runs it — which makes it naturally `lifecycle: ephemeral`, and makes
-`Given the command "…"` mean "this has been run". The record is what came back.
-
-```yaml
-atf:
-  system: command
-  lifecycle: ephemeral
-  natural_key: args
-```
+"""Running a command line: what it was asked, and what came back.
 
 ```gherkin
-Given the command "atf" but:
-  | args | seed local |
-Then the command field "ok" is "true"
+When I run "atf seed local"
+Then the command succeeded
 ```
 
-**`ok` is the point.** "How do you know it failed?" is a question about *commands*, not about any one
-project, and answering it here is what stops every phrasebook in every suite from having to know
-that `2` means refused. A scenario says `it failed`; the adapter says what that means.
+Every suite that drives a command-line program was writing the same hundred lines — build an argv,
+put the right things in the environment, pick a working directory, run it, keep the exit code and
+both streams, and decide what "it failed" means. That is not domain knowledge. It is the shape of a
+class of system, the same way a status code and a body are the shape of a JSON API, and it belongs
+here for the same reason `rest` does.
 
-Nothing here decides what a *domain* action is. `When the developer seeds "local"` is still a suite's
-own wording over its own step — this only takes away the subprocess.
+**A command line is one string**, because that is how a person writes one. `atf seed local` is what
+someone would type and what a reader recognises; a program plus a list of arguments to append to it
+is a thing they would have to be taught. It is split the way a shell splits it, so quoting works.
+
+**`ok` is the point.** "How do you know it failed?" is a question about *commands*, not about any
+one project, and answering it here is what stops every suite from having to know that `2` means
+refused. A scenario says it was refused; the adapter says what that means.
+
+The record is `command`, `exit_code`, `stdout`, `stderr`, `output` — both streams, because which one
+a message came out on is the tool's business and rarely the scenario's — and `ok`.
+
+**What a command resource is: one invocation.** `find` answers nothing, because a command is never
+*already* run, so a node of this system is `lifecycle: ephemeral` and its body says what to run:
+
+```yaml
+seed:
+  system: command
+  lifecycle: ephemeral
+  body:
+    command: atf seed local
+```
+
+Most suites need no such node. `When I run "…"` says the whole thing in the sentence, and that is
+the form to reach for; a node is for a command some *other* resource depends on having been run.
+
+Nothing here decides what a *domain* action is. `When the developer seeds "local"` is still a
+suite's own wording over its own step — this only takes away the subprocess.
 """
 
 from __future__ import annotations
@@ -43,10 +52,9 @@ from typing import Any
 from ..catalog import Node
 from . import Context, NoopDelete, Record
 
-# What a node may say about the invocation. `argv` is the whole of it; `args` is appended to the
-# `program` the environment configured, which is what lets one node serve every invocation of one
-# tool with `but:`.
-ARGV, ARGS, CWD, ENV = "argv", "args", "cwd", "env"
+# What a node may say about the invocation. The command line is the whole of it; `cwd` and `env` are
+# where it stands and what it can see, and both may also be settled once for the environment.
+COMMAND, CWD, ENV = "command", "cwd", "env"
 
 DEFAULT_TIMEOUT = 300.0
 
@@ -55,7 +63,6 @@ DEFAULT_TIMEOUT = 300.0
 class CommandAdapter(NoopDelete):
     """The `command` system: run something, and keep what it said."""
 
-    program: list[str] = field(default_factory=list)
     cwd: str = ""
     env: dict[str, str] = field(default_factory=dict)
     timeout: float = DEFAULT_TIMEOUT
@@ -66,7 +73,6 @@ class CommandAdapter(NoopDelete):
     @classmethod
     def from_settings(cls, settings: dict[str, Any]) -> CommandAdapter:
         return cls(
-            program=_words(settings.get("program")),
             cwd=str(settings.get("cwd", "")),
             env={str(key): str(value) for key, value in (settings.get("env") or {}).items()},
             timeout=float(settings.get("timeout", DEFAULT_TIMEOUT)),
@@ -80,31 +86,45 @@ class CommandAdapter(NoopDelete):
         return None
 
     def create(self, node: Node, body: Record, ctx: Context) -> Record:
-        """Run it, and hand back everything a scenario could want to claim about."""
-        argv = self._argv(node, body)
-        where = Path(str(body.get(CWD) or self.cwd or Path.cwd()))
+        """Run what this node says to run. A command exists by having been run."""
+        line = body.get(COMMAND)
+        if not line:
+            raise ValueError(f"{node['id']}: nothing to run — give the node a `command` to run")
+        return self.run(line, cwd=body.get(CWD), env=body.get(ENV), called=node["id"])
+
+    # ---- running one --------------------------------------------------------
+
+    def run(
+        self,
+        command: Any,
+        *,
+        cwd: Any = None,
+        env: dict[str, str] | None = None,
+        called: str = "",
+    ) -> Record:
+        """Run a command line and hand back everything a scenario could claim about."""
+        argv = [str(item) for item in command] if isinstance(command, list | tuple) else _words(command)
+        if not argv:
+            raise ValueError(f"{called or 'a command'}: there is nothing to run")
+
+        where = Path(str(cwd or self.cwd or Path.cwd()))
         if not where.is_dir():
-            raise ValueError(f"{node['id']}: no directory at {where}")
+            raise ValueError(f"{called or ' '.join(argv)}: no directory at {where}")
 
         environment = {**(os.environ if self.inherit_env else {}), **self.env}
-        environment.update({str(key): str(value) for key, value in (body.get(ENV) or {}).items()})
+        environment.update({str(key): str(value) for key, value in (env or {}).items()})
 
         try:
             completed = subprocess.run(
-                argv,
-                cwd=where,
-                env=environment,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
+                argv, cwd=where, env=environment, capture_output=True, text=True, timeout=self.timeout
             )
         except FileNotFoundError:
-            raise ValueError(f"{node['id']}: there is no {argv[0]!r} to run here") from None
+            raise ValueError(f"there is no {argv[0]!r} to run here") from None
         except subprocess.TimeoutExpired:
-            raise ValueError(f"{node['id']}: {' '.join(argv)} did not finish in {self.timeout:.0f}s") from None
+            raise ValueError(f"{' '.join(argv)} did not finish in {self.timeout:.0f}s") from None
 
         return {
-            "argv": " ".join(argv),
+            "command": " ".join(argv),
             "exit_code": completed.returncode,
             "stdout": completed.stdout,
             "stderr": completed.stderr,
@@ -112,29 +132,11 @@ class CommandAdapter(NoopDelete):
             # rarely the scenario's.
             "output": completed.stdout + completed.stderr,
             # What "it worked" means for a command, answered once here instead of in every suite's
-            # phrasebook. A scenario says `it failed`; this says what that is.
+            # phrasebook. A scenario says it was refused; this says what that is.
             "ok": completed.returncode == 0,
         }
 
-    # ---- internals ----------------------------------------------------------
-
-    def _argv(self, node: Node, body: Record) -> list[str]:
-        whole = _words(body.get(ARGV))
-        if whole:
-            return whole
-        argv = [*self.program, *_words(body.get(ARGS))]
-        if not argv:
-            raise ValueError(
-                f"{node['id']}: nothing to run — give the node an `argv`, or an `args` to follow "
-                "the `program` this environment configures"
-            )
-        return argv
-
 
 def _words(value: Any) -> list[str]:
-    """A command line, however it was written: a list of words, or one string to split like a shell."""
-    if value is None:
-        return []
-    if isinstance(value, list | tuple):
-        return [str(item) for item in value]
-    return shlex.split(str(value))
+    """A command line as a person wrote it, split the way a shell splits it, so quoting works."""
+    return shlex.split(str(value)) if value is not None else []

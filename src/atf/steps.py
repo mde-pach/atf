@@ -32,6 +32,7 @@ import pytest
 from pytest_bdd import parsers, then, when
 
 from .adapters import Record, can_browse
+from .adapters.command import CommandAdapter
 from .catalog import Node, find_node, key_criteria, natural_keys
 from .compare import (
     MARKERS,
@@ -90,6 +91,12 @@ SLOT_SHAPE_IS = "the {slot:w} is:"
 ACT = 'I {action:w} the {resource_type} "{name}"'
 LIST_EVERY = "I list every {resource_type}"
 
+# Running a command, said the way a person writes one. The command line is the whole of it: a
+# reader knows what `atf seed local` means and would have to be taught what a program and a list of
+# arguments to append to it meant. What came back lands on `result`, so every claim already in this
+# module applies to it.
+RUN = 'I run "{command}"'
+
 # The four claims about what a step produced name the slot they are about, rather than assuming the
 # one called `result`. `Context` has always described every slot it holds; until these patterns
 # named one, a scenario with two actions could compare neither of them with the other.
@@ -110,7 +117,7 @@ SLOT_FIELD_NOT_EMPTY = 'the {slot:w} field "{field}" is not empty'
 # well have a parameter called `field` that means something else entirely, which is why only the
 # patterns in this table are read this way.
 TYPE, NAME, FIELD, VALUE, SLOT, COUNT_OF = "resource_type", "name", "field", "value", "slot", "count"
-ACTION = "action"
+ACTION, COMMAND = "action", "command"
 
 # How many records a count claim will read before it gives up. A listing that hits the cap is
 # reported rather than counted: a number that might be the cap is not an answer.
@@ -160,6 +167,13 @@ GENERIC_STEPS: tuple[GenericStep, ...] = (
         ACT,
         "Do to this resource what its type says that action means.",
         (ACTION, TYPE, NAME),
+        produces=(RESULT,),
+    ),
+    GenericStep(
+        "when",
+        RUN,
+        "Run a command line, and keep what it said.",
+        (COMMAND,),
         produces=(RESULT,),
     ),
     GenericStep(
@@ -400,6 +414,24 @@ def _(request: pytest.FixtureRequest, context: Any, action: str, resource_type: 
     # that says nothing useful leaves the record the action was performed on, so there is always
     # something to talk about — and the claims after it read the resource back anyway.
     context.result = produced if produced is not None else record
+
+
+@when(parsers.parse(RUN))
+def _(request: pytest.FixtureRequest, context: Any, command: str) -> None:
+    """Run a command line, and keep what it said."""
+    engine: Materializer = request.getfixturevalue("materializer")
+    runners = [one for one in engine.adapters.values() if isinstance(one, CommandAdapter)]
+    if not runners:
+        pytest.fail(
+            "this step runs a command, and this environment configures no `command` system. "
+            "Add one under `environments.<env>.adapters`."
+        )
+    if len(runners) > 1:
+        pytest.fail("more than one `command` system is configured here, so ATF cannot tell which to use.")
+    try:
+        context.result = runners[0].run(command)
+    except ValueError as exc:
+        pytest.fail(str(exc))
 
 
 @when(parsers.parse(LIST_EVERY))

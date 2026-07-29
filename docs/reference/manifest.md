@@ -167,49 +167,53 @@ anything is touched.
 
 ### `command` {#command-settings}
 
-A command-line program. Every suite testing a CLI was writing the same hundred lines — build an
-argv, put the right things in the environment, pick a working directory, run it, keep the exit code
-and both streams, decide what "it failed" means. That is the shape of a *class of system*, the same
-way a status code and a body are the shape of a JSON API.
+A command-line program. Every suite driving one was writing the same hundred lines — build an argv,
+put the right things in the environment, pick a working directory, run it, keep the exit code and
+both streams, decide what "it failed" means. That is the shape of a *class of system*, the same way
+a status code and a body are the shape of a JSON API.
+
+Configure it, and [`When I run "…"`](specs-and-fixtures.md#read-and-compare-steps) is the whole of
+the reading surface:
+
+```gherkin
+When I run "atf seed local"
+Then the result field "ok" is "true"
+```
+
+A command line is one string, because that is how a person writes one, and it is split the way a
+shell splits it — so quoting works.
 
 ```yaml
 environments:
   dev:
     adapters:
       command:
-        program: [atf]              # what `args` follows
-        cwd: ./                     # where to run, unless the node says otherwise
-        env: { ATF_ACTOR_env: TOKEN }
+        cwd: ./                     # where to run, unless the step says otherwise
+        env: { ATF_ACTOR: scaffold }
         timeout: 300
         inherit_env: true           # start from this process's environment
 ```
 
-A **command resource is one invocation**, so it is `lifecycle: ephemeral`: a command is never
-already run, `find` answers nothing, and `create` runs it.
+A **command resource is one invocation**, so a node of this system is `lifecycle: ephemeral`: a
+command is never already run, `find` answers nothing, and `create` runs it. Most suites need no such
+node — the step above says the whole thing in the sentence. A node is for a command some *other*
+resource depends on having been run.
 
 ```yaml
-atf:
+seed:
   system: command
   lifecycle: ephemeral
-  natural_key: args
+  body:
+    command: atf seed local
 ```
-
-```gherkin
-Given the command "atf" but:
-  | args | seed local |
-Then the command field "ok" is "true"
-```
-
-One node and a `but:` table, rather than a catalog entry per command line.
 
 | Node body | Meaning |
 |---|---|
-| `argv` | the whole command line — a list, or a string split the way a shell would |
-| `args` | appended to the `program` the environment configured |
+| `command` | the command line to run |
 | `cwd` | where to run it |
 | `env` | added to the environment for this invocation |
 
-The record carries `argv`, `exit_code`, `stdout`, `stderr`, `output` (both streams) and **`ok`**.
+The record carries `command`, `exit_code`, `stdout`, `stderr`, `output` (both streams) and **`ok`**.
 `ok` is the point: *"how do you know it failed?"* is a question about commands, not about any one
 project, so it is answered once here instead of in every suite's
 [phrasebook](phrasebook.md).

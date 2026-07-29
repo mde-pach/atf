@@ -1,0 +1,35 @@
+# ---- the suites a cockpit is kept alive over ---------------------------------
+#
+# One per template the page scenarios read, made once and served for the whole session, and taken
+# away when the run ends. The `workspace` nodes these are twins of stay ephemeral, because a scenario
+# that runs `atf` against a suite is entitled to a pristine one — these are only ever read.
+
+chained_served:
+  resource: shared_suite
+  represents: The chained suite, kept on disk for as long as a cockpit is serving it.
+  body:
+    suite: chained
+
+unmakeable_served:
+  resource: shared_suite
+  represents: The suite with a resource ATF can never make, kept for the pages about it.
+  body:
+    suite: unmakeable
+
+asked_served:
+  resource: shared_suite
+  represents: The suite whose rule carries questions, kept for the page that reads them.
+  body:
+    suite: chained
+    specs/steps/test_lists.py: "#absent"
+    specs/features/lists.feature: |
+      Feature: Paying
+        Money moves once, and only once.
+
+        Rule: A card is charged once per basket
+
+          # ? What happens if the card is declined after the basket was emptied?
+          # ? Who owns the refund when a partial capture times out?
+
+          Scenario: A basket is paid for
+            Given the owner "primary"

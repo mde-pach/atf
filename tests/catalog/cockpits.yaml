@@ -5,9 +5,9 @@ chained:
   resource: cockpit
   represents: A cockpit serving the two-resource chained suite — the interface under test.
   depends_on:
-    - workspaces.chained
+    - shared_suites.chained_served
   body:
-    workspace: ${workspaces.chained.id}
+    workspace: ${shared_suites.chained_served.id}
 
 # A second cockpit, over the suite whose catalog holds a resource ATF can never make. It exists so
 # that the pages saying *why* an action is not offered have something to say it about — `chained`
@@ -16,9 +16,9 @@ unmakeable:
   resource: cockpit
   represents: A cockpit serving a suite with a resource nothing can create.
   depends_on:
-    - workspaces.unmakeable
+    - shared_suites.unmakeable_served
   body:
-    workspace: ${workspaces.unmakeable.id}
+    workspace: ${shared_suites.unmakeable_served.id}
 
 # A third cockpit, over a suite whose feature carries unanswered questions. `chained` has none, and
 # a question written into it would show up in every other scenario that reads its pages.
@@ -26,6 +26,6 @@ asked:
   resource: cockpit
   represents: A cockpit serving a suite whose rule has questions nobody has answered.
   depends_on:
-    - workspaces.asked
+    - shared_suites.asked_served
   body:
-    workspace: ${workspaces.asked.id}
+    workspace: ${shared_suites.asked_served.id}

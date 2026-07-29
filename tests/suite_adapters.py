@@ -54,9 +54,23 @@ class WorkspaceAdapter:
     def __init__(self, settings: dict[str, Any]) -> None:
         suites = Path(settings.get("suites", "./suites"))
         self.suites = suites if suites.is_absolute() else (HERE / suites).resolve()
+        # The copies made for a *persistent* node, so a second scenario asking for one gets the
+        # same suite rather than another copy. Keyed by the whole body, because two nodes over one
+        # template with different varied files are two different suites.
+        self._kept: dict[str, Path] = {}
 
     def find(self, node: Node, ctx: Context) -> Record | None:
-        return None  # ephemeral: never reused between scenarios
+        """The copy already on disk for this node, where the node is one that is kept.
+
+        An ephemeral workspace is never reused — that is what ephemeral means, and it is what makes a
+        scenario running `atf` against a suite safe. A `shared_suite` is the other case: something a
+        cockpit is kept alive over, read by pages that only ever GET, and copying it per scenario was
+        paying for isolation nothing needed.
+        """
+        if node["lifecycle"] == "ephemeral":
+            return None
+        held = self._kept.get(_key(node))
+        return {"id": str(held), "suite": str(node["body"]["suite"])} if held and held.is_dir() else None
 
     def create(self, node: Node, body: Record, ctx: Context) -> Record:
         template = self.suites / str(body["suite"])
@@ -69,10 +83,23 @@ class WorkspaceAdapter:
             if where != "suite":
                 _vary(node, root, str(where), content)
         aim_the_command_at(root, ctx)
+        if node["lifecycle"] != "ephemeral":
+            self._kept[_key(node)] = root
         return {"id": str(root), "suite": str(body["suite"])}
 
     def delete(self, node: Node, record: Record, ctx: Context) -> None:
         shutil.rmtree(record["id"], ignore_errors=True)
+
+    def close(self) -> None:
+        """Take away what was kept for the session. Called once, when the run ends."""
+        for root in self._kept.values():
+            shutil.rmtree(root, ignore_errors=True)
+        self._kept.clear()
+
+
+def _key(node: Node) -> str:
+    """What makes two shared suites the same suite: everything the node says to write."""
+    return repr(sorted((str(field), str(value)) for field, value in node["body"].items()))
 
 
 def aim_the_command_at(root: Path | None, ctx: Any) -> None:

@@ -9,9 +9,29 @@ workspace:
   lifecycle: ephemeral      # every scenario gets a pristine one, torn down afterwards
   natural_key: suite
 
+# The same thing, made once and kept for the session. Reading a page needs a suite on disk and a
+# server over it, and starting that server costs the better part of a second — which twenty-eight
+# scenarios were each paying for a suite none of them wrote to.
+#
+# Safe because of what reads it, not because of what it promises: a `page` is `mode: data` served by
+# ATF's `html` system, which only ever GETs. Nothing that reads one of these can change it. The one
+# scenario that *presses* something in the interface has its own, below, and the day a second one
+# does it must too.
+shared_suite:
+  system: workspace
+  natural_key: suite
+
 cockpit:
   system: cockpit
-  lifecycle: ephemeral      # two scenarios sharing a server would share what the first provisioned
+  natural_key: workspace
+  id_field: url
+
+# A cockpit nobody else is looking at, for the one scenario that runs a scenario *from* the
+# interface. That writes run history into the suite it serves, and a scenario asserting how many
+# have never run would then be reading somebody else's work.
+private_cockpit:
+  system: cockpit
+  lifecycle: ephemeral
   natural_key: workspace
   id_field: url
 

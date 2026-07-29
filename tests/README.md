@@ -37,7 +37,7 @@ If the vocabulary below is unfamiliar, the
 |---|---|
 | **Resource** | a real consuming suite on disk (`workspace`), a running `atf serve` over one (`cockpit`), and what that cockpit shows (`page`, `screen`) |
 | **Adapter** | `suite_adapters.py` copies a suite template into a temp dir and points the command at it; `cockpit_adapters.py` starts and stops the server. A `page` is ATF's own `html` adapter, a `screen` its `browser` one, and running the CLI is its `command` one — this suite writes none of the three. |
-| **Lifecycle** | ephemeral for both: every scenario gets a pristine suite and its own server, torn down afterwards |
+| **Lifecycle** | ephemeral for a `workspace` and a `private_cockpit`: a scenario that runs `atf` against a suite, or presses a button in one, gets a pristine one. Shared for a `shared_suite` and the `cockpit` over it — starting a server costs the better part of a second, and a `page` is served by ATF's `html` system, which only ever GETs, so nothing that reads one can change it. |
 | **Mode** | `data` for a page, a screen, and the records a suite under test leaves behind — observations, never preconditions, which is what stops this suite changing the interface it is reading. |
 | **SUT client** | `specs/atf_backend.py` — reads the stub backend the suites under test provision into |
 | **Environment** | `stub_backend.py`, an in-process HTTP API the suites-under-test provision into |

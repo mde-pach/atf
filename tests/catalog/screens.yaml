@@ -21,13 +21,15 @@ groceries_node:
   body:
     at: ${cockpits.chained.id}/catalog/node/lists.groceries
 
+# The one screen on a cockpit of its own: pressing Run writes run history, and every other page
+# scenario reads a shared server.
 scenarios:
   resource: screen
   represents: Every behaviour the suite describes, and the button that runs one.
   depends_on:
-    - cockpits.chained
+    - private_cockpits.running
   body:
-    at: ${cockpits.chained.id}/scenarios
+    at: ${private_cockpits.running.id}/scenarios
 
 locked_scenarios:
   resource: screen

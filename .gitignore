@@ -12,3 +12,6 @@ site/
 .atf/
 .playwright-mcp/
 .claude/settings.local.json
+
+# Isolated worktrees for background agents. Never part of the repository.
+.claude/worktrees/

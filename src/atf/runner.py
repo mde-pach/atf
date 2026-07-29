@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -46,6 +47,7 @@ PROGRESS_PLUGIN = '''
 
 import json
 import os
+import re
 import time
 
 _PATH = os.environ["ATF_PROGRESS_OUT"]
@@ -243,8 +245,16 @@ def run(
     root: Path,
     specs_dir: Path | None = None,
     timeout: int = DEFAULT_TIMEOUT,
+    keyword: str = "",
+    tags: Sequence[str] = (),
 ) -> RunSummary:
-    """Run pytest in a subprocess with `ATF_ENV` set and parse its JSON report."""
+    """Run pytest in a subprocess with `ATF_ENV` set and parse its JSON report.
+
+    `keyword` and `tags` narrow what runs. They are separate arguments rather than one bag of
+    pytest flags because a caller of this function is choosing *which scenarios*, and that is a
+    thing ATF can describe; letting arbitrary flags through would make the command surface pytest's
+    entire interface by accident, which is the opposite of `atf run` becoming the only dev loop.
+    """
     targets = list(nodeids or [])
     with _LOCK, tempfile.TemporaryDirectory() as tmp:
         report = Path(tmp) / "report.json"
@@ -259,6 +269,8 @@ def run(
             "-q",
             "-p",
             PLUGIN_MODULE,
+            *(["-k", keyword_expression(keyword)] if keyword else []),
+            *(["-m", tag_expression(tags)] if tags else []),
             *(targets or ([str(specs_dir)] if specs_dir else [])),
         ]
         started = time.time()
@@ -277,6 +289,47 @@ def run(
         summary.finished_at = summary.finished_at or time.time()
         fold_events(summary.results, events)
         return summary
+
+
+# The words pytest reads as operators in a `-k` expression. Text containing one of them is an
+# expression somebody wrote on purpose and is passed through untouched.
+_OPERATORS = frozenset({"and", "or", "not"})
+_WORDS = re.compile(r"[^0-9a-z]+")
+
+
+def keyword_expression(text: str) -> str:
+    """What a person typed, as something pytest can match on.
+
+    A scenario in ATF has a *title* — `A list belongs to its owner` — and that is what a person will
+    type when they want to run it. pytest matches on the generated test name, so the words they
+    typed reach it as `on its own` and it answers with a parse error about column 4. For a command
+    meant to be the only dev loop, that is unusable.
+
+    So a plain phrase is read as a phrase: the same flattening pytest-bdd does to a title when it
+    makes a test name, which turns `belongs to its owner` into `belongs_to_its_owner` and matches.
+    Anything containing `and`, `or`, `not` or a bracket is left exactly as written, because that is
+    somebody deliberately writing an expression and ATF has no business rewriting it.
+    """
+    lowered = text.strip().lower()
+    if not lowered or "(" in lowered or _OPERATORS & set(lowered.split()):
+        return text.strip()
+    return _WORDS.sub("_", lowered).strip("_")
+
+
+def tag_expression(tags: Sequence[str]) -> str:
+    """Several tags, as the one expression pytest takes: any of them, not all of them.
+
+    `--tag smoke --tag api` reads as *"the smoke ones and the api ones"*, which is a union — a
+    scenario carrying both tags is not what anybody is asking for. The `@` is how a tag is written
+    on a scenario rather than part of its name, so it is accepted and dropped, exactly as the
+    manifest's `requires:` accepts it.
+    """
+    return " or ".join(tag.lstrip("@") for tag in tags if tag.lstrip("@"))
+
+
+def failed_ids(record: RunRecord) -> list[str]:
+    """What did not pass in a run, in the order a report lists them — what `--failed` runs again."""
+    return sorted(nodeid for nodeid, result in record.results.items() if result.outcome in {FAILED, ERROR})
 
 
 def pytest_command(nodeids: Sequence[str], specs_dir: Path | None) -> list[str]:

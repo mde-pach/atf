@@ -137,7 +137,7 @@ to ask about production.
 ## `atf run` {#atf-run}
 
 ```
-atf run [paths ...] [--env ENV]
+atf run [paths ...] [--env ENV] [-k EXPR] [--tag TAG] [--failed] [--json PATH]
 ```
 
 Runs the specs in a subprocess with the environment set, then prints one line per test with its
@@ -170,6 +170,56 @@ atf run 'specs/steps/test_checkout.py::test_a_basket_is_priced'
 
 The environment to run against. Defaults to [`ATF_ENV`](#atf_env), else the manifest's
 `default_env`.
+
+### `-k EXPR` {#run-k}
+
+Only scenarios whose name matches. **A plain phrase is read as a phrase** — the words a person would
+actually type, flattened the way a scenario's title becomes a test name:
+
+```sh
+atf run -k 'belongs to its owner'      # runs A list belongs to its owner
+```
+
+Text containing `and`, `or`, `not` or a bracket is passed to pytest untouched, because that is
+somebody deliberately writing an expression:
+
+```sh
+atf run -k 'lists and not slow'
+```
+
+### `--tag TAG` {#run-tag}
+
+Only scenarios carrying the tag. Repeatable, and several tags mean **any** of them — `--tag smoke
+--tag api` reads as *"the smoke ones and the api ones"*, which is a union. The `@` is how a tag is
+written on a scenario rather than part of its name, so both spellings work.
+
+```sh
+atf run --tag smoke --tag @api
+```
+
+A choice that matches nothing says so, rather than leaving an exit code to be interpreted.
+
+### `--failed` {#run-failed}
+
+Only what did not pass in the **last run against this environment**, read from the
+[run history](cockpit.md#run-history). The dev loop it exists for is: run everything, fix one thing,
+run only that.
+
+- Nothing failed last time → says so and exits `0`. A green suite must not look broken.
+- Nothing has ever run here → exits `2` saying to run once first. Silently running everything
+  would be a lie about what was asked for.
+- It takes no `paths`: it already says which tests to run.
+
+### `--json PATH` {#run-json}
+
+Also writes the run to `PATH` as [CTRF](https://ctrf.io) — the interchange format the tooling around
+test runs has settled on. A format nobody else reads is a format every consumer has to be taught, so
+a gate written for CTRF works against ATF without being taught anything.
+
+An `error` — a test that never got to run its body — is reported as `failed`, because a gate that
+treats *"it broke before it started"* as softer than a failure lets a broken suite through. The
+Gherkin step a scenario stopped on travels in each test's `message`, which is the useful unit of
+failure for a BDD suite and the first thing a person reading CI wants.
 
 ## `atf lint` {#atf-lint}
 

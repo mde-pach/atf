@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,8 @@ from .config import ConfigError, load_manifest, resolve_manifest
 from .lint import check as lint_specs
 from .lint import report as lint_report
 from .materializer import BLOCKED, CREATED, EPHEMERAL, PRESENT, REFERENCE
-from .runner import ERROR, FAILED
+from .report import as_ctrf
+from .runner import ERROR, FAILED, RunRecord, failed_ids
 from .runner import run as run_tests
 from .scaffold import scaffold
 from .store import ReportError, RunStore
@@ -71,6 +73,17 @@ def _parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="run specs; nonzero exit on failure")
     run.add_argument("paths", nargs="*")
     run.add_argument("--env")
+    run.add_argument("-k", dest="keyword", default="", metavar="EXPR", help="only scenarios whose name matches")
+    run.add_argument(
+        "--tag",
+        dest="tags",
+        action="append",
+        default=[],
+        metavar="TAG",
+        help="only scenarios carrying this tag; repeat for any of several",
+    )
+    run.add_argument("--failed", action="store_true", help="only what did not pass in the last run here")
+    run.add_argument("--json", dest="json_path", type=Path, metavar="PATH", help="also write a CTRF report here")
     run.set_defaults(handler=cmd_run)
 
     lint = sub.add_parser("lint", help="check that no spec line says something only the layer below should know")
@@ -205,10 +218,41 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     boot = bootstrap(args.env)
-    summary = run_tests(args.paths or None, boot.env, boot.manifest.root, boot.manifest.specs_dir)
+    store = RunStore(boot.manifest.root)
+
+    targets = list(args.paths)
+    if args.failed:
+        if targets:
+            print("--failed already says which tests to run, so it takes no paths.", file=sys.stderr)
+            return 2
+        previous = store.latest(boot.env)
+        if previous is None:
+            print(
+                f"nothing has run in {boot.env} yet, so there is nothing to run again. "
+                "Run `atf run` once first.",
+                file=sys.stderr,
+            )
+            return 2
+        targets = failed_ids(previous)
+        if not targets:
+            # Not a refusal and not an empty run: everything passed last time, which is the answer
+            # the question deserves. Exiting nonzero here would make a green suite look broken.
+            print(f"Nothing failed in the last run of {boot.env}.")
+            return 0
+        print(f"Running the {len(targets)} that did not pass last time in {boot.env}.\n")
+
+    summary = run_tests(
+        targets or None,
+        boot.env,
+        boot.manifest.root,
+        boot.manifest.specs_dir,
+        keyword=args.keyword,
+        tags=args.tags,
+    )
+    record = summary.as_record(boot.env)
     # History is a convenience, not the point of the command: a read-only checkout still runs.
     with contextlib.suppress(OSError):
-        RunStore(boot.manifest.root).save(summary.as_record(boot.env))
+        store.save(record)
 
     for nodeid, result in sorted(summary.results.items()):
         print(f"  [{result.outcome:>7}] {nodeid}  {result.duration:.2f}s")
@@ -225,9 +269,40 @@ def cmd_run(args: argparse.Namespace) -> int:
         f"\n{counts['passed']} passed, {counts['failed']} failed, "
         f"{counts['skipped']} skipped, {counts['error']} errored in {boot.env}"
     )
+    if args.json_path is not None and not _write_ctrf(args.json_path, record):
+        return 2
     if not summary.results and summary.returncode != 0:
-        print(summary.output, file=sys.stderr)
+        # A filter that matches nothing is the common case here, and pytest reports it as an exit
+        # code rather than as a sentence. Saying which filter found nothing is the difference
+        # between a usable dev loop and a person re-reading their own command line.
+        narrowed = _narrowing(args)
+        if narrowed:
+            print(f"Nothing matched {narrowed}.", file=sys.stderr)
+        else:
+            print(summary.output, file=sys.stderr)
     return 0 if summary.returncode == 0 else 1
+
+
+def _narrowing(args: argparse.Namespace) -> str:
+    """What the developer asked for, said back to them — for when it matched nothing."""
+    said = []
+    if args.keyword:
+        said.append(f"-k {args.keyword}")
+    if args.tags:
+        said.append("--tag " + " --tag ".join(args.tags))
+    return " ".join(said)
+
+
+def _write_ctrf(path: Path, record: RunRecord) -> bool:
+    """Write the run where CI will read it, or say why it could not. Never raises."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(as_ctrf(record), indent=2), encoding="utf-8")
+    except OSError as exc:
+        print(f"could not write the report to {path}: {exc}", file=sys.stderr)
+        return False
+    print(f"Wrote a CTRF report to {path}")
+    return True
 
 
 def cmd_lint(args: argparse.Namespace) -> int:

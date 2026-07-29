@@ -76,3 +76,61 @@ Feature: The command
       When I run "atf status local"
       Then it is refused because "SELFTEST_NOT_EXPORTED is not set"
       And the refusal names the client that wanted it
+
+  Rule: A run can be narrowed to the part of the suite being worked on
+
+    # The whole point of `atf run` becoming the only dev loop is that nobody has to fall back to
+    # pytest to run one scenario. Each of these says a way of choosing; the suite underneath has two
+    # scenarios so that choosing is observable at all.
+
+    Scenario: Running by wording runs the scenario that is being worked on, and no other
+      Given the workspace "chained" but:
+        | specs/steps/test_lists.py    | #absent |
+        | specs/features/lists.feature | Feature: Lists\n\n  @slow\n  Scenario: A list belongs to its owner\n    Given the owner "primary"\n\n  Scenario: An owner is there on its own\n    Given the owner "primary"\n |
+      When the developer runs only the scenarios worded "on its own"
+      Then the command succeeds
+      And the scenario ran once, not twice
+
+    Scenario: Running by tag runs what carries it
+      Given the workspace "chained" but:
+        | specs/steps/test_lists.py    | #absent |
+        | specs/features/lists.feature | Feature: Lists\n\n  @slow\n  Scenario: A list belongs to its owner\n    Given the owner "primary"\n\n  Scenario: An owner is there on its own\n    Given the owner "primary"\n |
+      When the developer runs only what is tagged "slow"
+      Then the command succeeds
+      And the scenario ran once, not twice
+
+    Scenario: A choice that matches nothing says so, rather than leaving an exit code to be read
+      Given the workspace "chained" but:
+        | specs/steps/test_lists.py    | #absent |
+        | specs/features/lists.feature | Feature: Lists\n\n  @slow\n  Scenario: A list belongs to its owner\n    Given the owner "primary"\n\n  Scenario: An owner is there on its own\n    Given the owner "primary"\n |
+      When the developer runs only the scenarios worded "nothing is worded like this"
+      Then the run says what it looked for and did not find
+
+  Rule: What failed last time is a thing the command already knows
+
+    Scenario: After a failure, the developer runs what failed and nothing else
+      # The dev loop this exists for: run everything, fix one thing, run only that.
+      Given the workspace "failing"
+      When I run "atf run"
+      And the developer runs what failed last time
+      Then the run says which of them it is running again
+
+    Scenario: With everything passing, running what failed is an answer, not an empty run
+      Given the workspace "chained"
+      When I run "atf run"
+      And the developer runs what failed last time
+      Then the command succeeds
+      And it says nothing failed
+
+    Scenario: With nothing ever run here, it says to run once first
+      Given the workspace "chained"
+      When the developer runs what failed last time
+      Then it is refused because "nothing has run in local yet"
+
+  Rule: A run is readable by software that has never heard of ATF
+
+    Scenario: A run can be written where a CI gate will read it
+      Given the workspace "chained"
+      When the developer runs the specs, writing a report for CI
+      Then the command succeeds
+      And it says where it wrote the report

@@ -312,3 +312,34 @@
 'it refuses what is not a report':
   - the result field "exit_code" is "2"
   - the result field "output" contains "no test results"
+
+# ---- choosing what to run ---------------------------------------------------
+#
+# Every flag `atf run` takes, named here rather than in a feature: what a scenario means is *which
+# scenarios ran*, and how the command spells that choice is exactly the vocabulary this file absorbs.
+
+'the developer runs only the scenarios worded "{words}"':
+  - I run "atf run -k '{words}'"
+
+'the developer runs only what is tagged "{tag}"':
+  - I run "atf run --tag {tag}"
+
+'the developer runs what failed last time':
+  - I run "atf run --failed"
+
+'the developer runs the specs, writing a report for CI':
+  - I run "atf run --json ci-report.json"
+
+'the run says what it looked for and did not find':
+  - the result field "exit_code" is "1"
+  - the result field "output" contains "Nothing matched"
+
+'the run says which of them it is running again':
+  - the result field "output" contains "did not pass last time"
+
+'it says nothing failed':
+  - the result field "output" contains "Nothing failed in the last run"
+
+# The format a CI gate reads. Naming it in a feature would put an acronym where a sentence belongs.
+'it says where it wrote the report':
+  - the result field "output" contains "Wrote a CTRF report to"

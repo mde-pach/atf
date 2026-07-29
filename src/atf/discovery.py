@@ -637,7 +637,7 @@ import os
 import re
 
 _PATH = os.environ["ATF_OBSERVE_OUT"]
-_DATA = {"items": {}, "fixtures": {}, "steps": []}
+_DATA = {"items": {}, "fixtures": {}, "steps": [], "described": {}}
 _CAPTURE = re.compile(r"\\{([A-Za-z_][A-Za-z0-9_]*)(?::[^{}]*)?\\}")
 
 
@@ -781,12 +781,40 @@ def pytest_collection_modifyitems(session, config, items):
         _DATA["fixtures"][item.nodeid] = sorted(fixtures)
 
 
+def _described(session):
+    """Every fixture this suite offers, with its docstring and its scope.
+
+    Read from the fixture manager rather than by running `pytest --fixtures` in a second process.
+    The manager is right here, holding the same objects that command formats — and that second
+    process was half the cost of a discovery pass, paid every time the cockpit reads a suite.
+
+    A fixture may be registered under one name several times (a plugin's, then a conftest's
+    overriding it); the last definition is the one that wins at run time, so it is the one described.
+    """
+    manager = getattr(session, "_fixturemanager", None)
+    found = {}
+    for name, definitions in getattr(manager, "_arg2fixturedefs", {}).items():
+        for definition in definitions:
+            function = getattr(definition, "func", None)
+            doc = (getattr(function, "__doc__", "") or "").strip()
+            found[name] = {
+                # One line, as the cockpit shows it: a fixture's first sentence is what it is for.
+                "doc": " ".join(doc.split()),
+                "scope": str(getattr(definition, "scope", "function") or "function"),
+            }
+    return found
+
+
 def pytest_sessionfinish(session, exitstatus):
     # Read after collection has finished, so every steps module has been imported and registered.
     try:
         _DATA["steps"] = _step_definitions(session)
     except Exception:
         _DATA["steps"] = []
+    try:
+        _DATA["described"] = _described(session)
+    except Exception:
+        _DATA["described"] = {}
     with open(_PATH, "w") as handle:
         json.dump(_DATA, handle)
 '''
@@ -889,7 +917,7 @@ def _fixtures(
             if nodeid not in used_by.setdefault(name, []):
                 used_by[name].append(nodeid)
 
-    described = _describe_fixtures(root, env, errors)
+    described = _describe_fixtures(observed)
     fixtures: list[Fixture] = []
     for name in sorted(used_by):
         if name.startswith("_"):
@@ -907,43 +935,18 @@ def _fixtures(
     return fixtures
 
 
-_FIXTURE_HEADER = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*(?:\[(?P<scope>[a-z]+) scope\])?\s*--")
+def _describe_fixtures(observed: dict[str, Any]) -> dict[str, tuple[str, str]]:
+    """What each fixture is for and how long it lives, from the collection pass.
 
-
-def _describe_fixtures(root: Path, env: str, errors: list[str]) -> dict[str, tuple[str, str]]:
-    completed = _run(
-        [sys.executable, "-m", "pytest", "--fixtures", "-v", "-q"],
-        root,
-        _child_env(root, env),
-    )
-    if completed is None or not completed.stdout:
-        return {}
-
+    This used to run `pytest --fixtures -v -q` in a second subprocess and parse its output, which
+    was half the cost of a discovery pass — and a discovery pass is what a cockpit does before it
+    can render its first page. The observer plugin is already inside a pytest that has the fixture
+    manager open; asking it there costs nothing and removes a whole interpreter.
+    """
     described: dict[str, tuple[str, str]] = {}
-    current: str | None = None
-    doc_lines: list[str] = []
-    scope = "function"
-
-    def flush() -> None:
-        if current:
-            doc = " ".join(line for line in doc_lines if line).strip()
-            described[current] = ("" if doc == "no docstring available" else doc, scope)
-
-    for raw in completed.stdout.splitlines():
-        header = _FIXTURE_HEADER.match(raw)
-        if header:
-            flush()
-            current = header.group("name")
-            scope = header.group("scope") or "function"
-            doc_lines = []
-        elif current and raw.startswith("    "):
-            doc_lines.append(raw.strip())
-        elif not raw.strip():
-            continue
-        elif current and not raw.startswith(" "):
-            flush()
-            current, doc_lines = None, []
-    flush()
+    for name, entry in (observed.get("described") or {}).items():
+        if isinstance(entry, dict):
+            described[str(name)] = (str(entry.get("doc") or ""), str(entry.get("scope") or "function"))
     return described
 
 

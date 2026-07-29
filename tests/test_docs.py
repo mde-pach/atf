@@ -49,3 +49,14 @@ def test_a_scenario_the_suite_skips_says_so_whatever_the_history_holds():
     """`@skip` is a decision in the file, and the file outranks a result from before it was made."""
     stale = [Result(nodeid="f::s", outcome=PASSED)]
     assert state_of(_spec(skipped=True), stale) == SKIPPED_STATE
+
+
+def test_the_default_output_directory_is_written_down_once():
+    """`cli.py` names it too, so that `atf docs` is the only command that imports discovery.
+
+    Two spellings of one default is how drift starts, and this is the whole of the guard against it.
+    """
+    from atf.cli import DEFAULT_DOCS_OUT
+    from atf.docs import DEFAULT_OUT
+
+    assert DEFAULT_DOCS_OUT == DEFAULT_OUT

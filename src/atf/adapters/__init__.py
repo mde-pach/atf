@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from functools import partial
+from importlib import import_module
 from typing import Any, Protocol
 
 from ..accessible import Control
@@ -201,23 +203,35 @@ class NoopDelete:
         return None
 
 
-def _register_builtins() -> None:
-    # `browser` imports no browser library until a page is actually opened, so a suite with no UI
-    # in it pays nothing for this being here.
-    from .browser import BrowserAdapter
-    from .command import CommandAdapter
-    from .html import HtmlAdapter
-    from .reference import ReferenceAdapter
-    from .rest import RestAdapter
+# Which module each built-in lives in, rather than the built-in itself. The registry needs to know
+# the *names* of the systems ATF ships — a catalog naming an unregistered one is refused by name, and
+# that check must not depend on anything being importable — but it does not need the code until
+# something asks for an adapter.
+#
+# The difference is not academic. `rest` and the two that build on it reach for `httpx`, which is
+# 80ms of an interpreter's life and, because httpx ships a command-line interface, brings `click` and
+# `pygments` with it. Registering eagerly meant `atf --help` — and `atf init`, and `atf lint`, and
+# `atf docs`, none of which speak HTTP — paid all of it before printing anything. A framework whose
+# every invocation costs a third of a second teaches people to reach for something else.
+_BUILT_IN = {
+    "rest": (".rest", "RestAdapter"),
+    "reference": (".reference", "ReferenceAdapter"),
+    "browser": (".browser", "BrowserAdapter"),
+    "html": (".html", "HtmlAdapter"),
+    "command": (".command", "CommandAdapter"),
+}
 
-    register("rest", RestAdapter.from_settings)
-    register("reference", ReferenceAdapter.from_settings)
-    register("browser", BrowserAdapter.from_settings)
-    register("html", HtmlAdapter.from_settings)
-    register("command", CommandAdapter.from_settings)
+
+def _built_in(system: str, settings: dict[str, Any]) -> Adapter:
+    """Import the module a built-in lives in, and build it. Called at most once per system per run."""
+    module, name = _BUILT_IN[system]
+    imported = import_module(module, __name__)
+    made: Adapter = getattr(imported, name).from_settings(settings)
+    return made
 
 
-_register_builtins()
+for _system in _BUILT_IN:
+    register(_system, partial(_built_in, _system))
 
 __all__ = [
     "Actionable",

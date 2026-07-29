@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import docs as living
 from . import openapi
 from .bootstrap import bootstrap
 from .catalog import DATA, CatalogError
@@ -22,6 +21,12 @@ from .runner import ERROR, FAILED, RunRecord, failed_ids
 from .runner import run as run_tests
 from .scaffold import MANIFEST_FILE, scaffold
 from .store import ReportError, RunStore
+
+# `atf docs` is the only command that needs [discovery](discovery.py), and discovery is the most
+# expensive module in the framework to import. So it is imported inside the handler that uses it,
+# and the one thing the *parser* needs from it — the default in a help string — is named here.
+# Every other command saves the whole of it.
+DEFAULT_DOCS_OUT = "docs/specs"
 
 BANNER = """\
 ATF cockpit — {url}
@@ -98,7 +103,7 @@ def _parser() -> argparse.ArgumentParser:
 
     docs = sub.add_parser("docs", help="write the features out as markdown, with the last run's verdict")
     docs.add_argument(
-        "--out", default=living.DEFAULT_OUT, help=f"where the pages go (default: {living.DEFAULT_OUT})"
+        "--out", default=DEFAULT_DOCS_OUT, help=f"where the pages go (default: {DEFAULT_DOCS_OUT})"
     )
     docs.add_argument("--env", help="whose run history the verdicts come from")
     docs.set_defaults(handler=cmd_docs)
@@ -413,6 +418,8 @@ def cmd_docs(args: argparse.Namespace) -> int:
     manifest = load_manifest(resolve_manifest())
     env = args.env or resolve_env(manifest)
     manifest.env(env)  # raises ConfigError, with the known environments, when it is not one
+
+    from . import docs as living
 
     specs = living.read(manifest.specs_dir)
     if not specs:

@@ -7,14 +7,32 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import __version__
-from .deps import Cockpit, set_cockpit
+from .deps import Cockpit, get_cockpit, set_cockpit
 from .routers import activity, authoring, catalog, compose, overview, scenarios, search
 from .view import STATIC_DIR, templates
 
 
-def create_app(env: str | None = None, cockpit: Cockpit | None = None) -> FastAPI:
+def create_app(
+    env: str | None = None, cockpit: Cockpit | None = None, mcp_host: str | None = None
+) -> FastAPI:
+    """The cockpit, and — when a host is given for it — the MCP endpoint beside it.
+
+    One server for both, because the two are views of one suite: the pages a person reads and the
+    same vocabulary offered to an agent. `mcp_host` rather than a flag because the endpoint has to
+    know which host it is reachable at; `None` means nobody asked, and nothing about MCP is even
+    imported.
+    """
     app = FastAPI(title="ATF Cockpit", version=__version__, docs_url=None, redoc_url=None)
     set_cockpit(cockpit or Cockpit(env))
+
+    if mcp_host is not None:
+        from ..mcp import MOUNT, endpoint
+
+        served, lifespan = endpoint(get_cockpit(), mcp_host)
+        # Assigned rather than passed to `FastAPI(...)`: the endpoint needs the cockpit, which is
+        # only settled above, and Starlette reads this when the server starts rather than here.
+        app.router.lifespan_context = lifespan
+        app.mount(MOUNT, served)
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     for router in (

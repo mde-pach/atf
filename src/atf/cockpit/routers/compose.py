@@ -10,14 +10,18 @@ Two invariants govern the write. Every path is derived from `manifest.specs_dir`
 form, so no wording can reach a file outside the suite. And the file is re-parsed after writing and
 restored byte-for-byte if it no longer reads, because a `.feature` that will not parse costs the
 whole suite its scenarios.
+
+**What can be said here is not decided in this file.** Which steps a feature can reach, what a claim
+means, what a resource's fields currently hold and what those choices compose into all live in
+[`introspect.py`](../../introspect.py), which knows nothing about the web. This router turns a form
+into those questions and the answers into a page — and everything below the form is shared with
+anything else that wants to compose a scenario without opening an editor.
 """
 
 from __future__ import annotations
 
 import difflib
-import os
 import re
-import secrets
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,48 +29,60 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from ...adapters import actions_of
 from ...catalog import Node, find_node
 from ...compare import MARKERS
-from ...context import RESULT
 from ...discovery import (
     CAPTURE_RE,
     GIVEN,
     PROVISION_RE,
-    THEN,
-    WHEN,
     Discovery,
     Spec,
     StepDef,
-    fill,
     matching_step,
     parse_feature,
     slug,
 )
-from ...runner import ERROR, PASSED
-from ...runner import run as run_tests
-from ...steps import (
-    ACTION,
-    FIELD,
-    NAME,
-    RESOURCE,
-    SLOT,
-    SLOT_OF,
-    TYPE,
-    TYPE_OF,
-    VALUE,
-    claim_of,
-    comparison,
-    comparisons_for,
-    generic,
+from ...introspect import (
+    KEYWORDS,
+    NODE_SUBJECT,
+    Outside,
+    Row,
+    Surface,
+    Trial,
+    action_options,
+    aspect_options,
+    comparison_options,
+    current_value,
+    elsewhere,
+    feature_options,
+    field_options,
+    gherkin,
+    held_fields,
+    instance_options,
+    instances_by_type,
+    make_row,
+    resolve,
+    resource_options,
+    row_problems,
+    step_options,
+    subject_options,
+    table_fields,
+    try_scenario,
+    type_options,
+    usable,
 )
+from ...introspect import binding_module as _binding_module
+from ...introspect import features as _features
+from ...introspect import features_dir as _features_dir
+from ...introspect import inside as _inside_of
+from ...introspect import offered_steps as _offered_steps
+from ...steps import ACTION, FIELD, NAME, TYPE, VALUE, comparison, generic
 from ..view import cockpit as app
-from ..view import current_env, field_choices, page, partial, plural, require_confirmation, require_mutable
+from ..view import current_env, page, partial, require_confirmation, require_mutable
 
 router = APIRouter()
 
 BUILD, TEXT = "build", "text"
-KEYWORDS = (GIVEN, WHEN, THEN)
 
 PURPOSE = "Name what a behaviour needs, then what it does and what must be true. Try it before you keep it."
 
@@ -79,61 +95,6 @@ _PATH_ISH = re.compile(r"[/\\]|\.\.")
 # Lines that sit at the scenario's own indentation rather than a step's. `Examples:` is deliberately
 # absent: it belongs with the steps, and its table rows deeper still.
 _HEADING_RE = re.compile(r"^(Scenario|Scenario Outline|Example|Background):")
-
-
-@dataclass
-class Row:
-    """One step under construction: a resource to name, or a step definition to instantiate."""
-
-    index: int
-    keyword: str
-    resource_type: str = ""
-    resource_name: str = ""
-    pattern: str = ""
-    values: dict[str, str] = field(default_factory=dict)
-    definition: StepDef | None = None
-    node_id: str = ""
-    # A Then said the way someone thinks it: what it is about, what of it, how, and against what.
-    # Kept beside `pattern`/`values`, never instead of them — the two are derived from each other,
-    # so a scenario written by hand reads back into the same four choices.
-    subject: str = ""
-    aspect: str = ""
-    compare: str = ""
-    target: str = ""
-    # What the context holds by the time this row runs, so the row can say whether its step fits.
-    held: set[str] = field(default_factory=set)
-    # The subset of that a *step* put there. A `Given` also holds its record, but a claim about a
-    # resource re-reads it live and a claim about a slot does not — so offering the slot would be
-    # offering the worse of two ways to say the same thing. See `steps.py`.
-    produced: set[str] = field(default_factory=set)
-    # The rows of a table, for the steps that take one. Held as pairs because that is what a table
-    # is; empty for every other step, which is most of them.
-    table: list[list[str]] = field(default_factory=list)
-    text: str = ""
-    shown_keyword: str = ""
-    problem: str = ""
-
-    @property
-    def takes_table(self) -> bool:
-        return self.definition is not None and self.definition.takes_table
-
-    @property
-    def given(self) -> bool:
-        return self.keyword == GIVEN
-
-
-@dataclass
-class Trial:
-    """What happened when a draft was run without being saved."""
-
-    outcome: str = ""
-    detail: str = ""
-    step: str = ""
-    duration: float = 0.0
-
-    @property
-    def passed(self) -> bool:
-        return self.outcome == PASSED
 
 
 @dataclass
@@ -164,6 +125,23 @@ class Draft:
     @property
     def where(self) -> str:
         return str(self.path) if self.path else ""
+
+
+def surface(env: str) -> Surface:
+    """This environment as everything that decides what can be said about it.
+
+    Assembled here rather than cached because each part of it is already cached one layer down: the
+    cockpit hands back the same materializer, discovery and status until something invalidates them.
+    """
+    cockpit = app()
+    return Surface(
+        env=env,
+        root=cockpit.manifest.root,
+        specs_dir=cockpit.manifest.specs_dir,
+        engine=cockpit.state(env).materializer,
+        found=cockpit.discovery(env),
+        status=cockpit.status(env),
+    )
 
 
 # ---- routes ----------------------------------------------------------------
@@ -219,11 +197,6 @@ async def apply(request: Request) -> Any:
 async def try_it(request: Request) -> Any:
     """Run the draft without saving it.
 
-    Composing a scenario and being told to go and run it somewhere else is the point at which the
-    interface stops being one. This writes the draft to a scratch feature, runs that one scenario,
-    reports what happened, and removes it again — so the answer arrives before the decision to keep
-    it does.
-
     This one *is* gated by `mutable_envs`: unlike writing, running provisions.
     """
     env = current_env(request)
@@ -235,7 +208,12 @@ async def try_it(request: Request) -> Any:
     if draft.problems:
         raise HTTPException(status_code=409, detail=f"not ready to run — {draft.problems[0]}")
 
-    draft.trial = _try(env, draft)
+    try:
+        draft.trial = try_scenario(
+            surface(env), draft.block, draft.feature, draft.feature or draft.feature_title
+        )
+    except Outside as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     return partial(request, "partials/compose_builder.html", **_context(env, draft))
 
 
@@ -253,31 +231,29 @@ def _starting_rows() -> list[Row]:
 
 
 def offered_steps(env: str, feature: str) -> dict[str, list[StepDef]]:
-    """The steps a scenario in `feature` can actually use, by keyword.
-
-    Everything the composer does with steps goes through here — what it offers, and what it
-    accepts. A step resolved from a wider set than it is offered from is a step someone can keep
-    by switching feature after choosing it, and then find missing only when it runs.
-    """
-    cockpit = app()
-    found = cockpit.discovery(env)
-    binding = _binding_module(found, feature) if feature else None
-    specs_dir = cockpit.manifest.specs_dir
-    return {
-        keyword: [step for step in found.steps_for(keyword) if reachable(step, binding, specs_dir)]
-        for keyword in KEYWORDS
-    }
+    """The steps a scenario in `feature` can actually use, by keyword."""
+    return _offered_steps(surface(env), feature)
 
 
 def _rows(env: str, fields: dict[str, str]) -> list[Row]:
+    """The form, read back as the rows it describes.
+
+    The one thing this file knows that the introspection layer does not is how a row is spelled in
+    a form. Everything after that — what the choices mean, whether the step exists, what it writes —
+    is the same question however it arrived.
+    """
     found = offered_steps(env, fields.get("feature", "").strip())
     prefix = "kw_"
     indices = sorted(
         int(key[len(prefix) :]) for key in fields if key.startswith(prefix) and key[len(prefix) :].isdigit()
     )
     nodes = app().state(env).materializer.nodes
-    rows = [_row(index, fields, found, nodes) for index in indices if str(index) != fields.get("remove", "")]
-    kept = [row for row in rows if row is not None]
+    kept = [
+        make_row(index, keyword, _chosen(index, fields), found, nodes)
+        for index in indices
+        if str(index) != fields.get("remove", "")
+        if (keyword := fields.get(f"kw_{index}", "")) in KEYWORDS
+    ]
 
     added = fields.get("add", "")
     if added in KEYWORDS:
@@ -285,40 +261,20 @@ def _rows(env: str, fields: dict[str, str]) -> list[Row]:
     return kept
 
 
-def _row(
-    index: int, fields: dict[str, str], found: dict[str, list[StepDef]], nodes: dict[str, Node]
-) -> Row | None:
-    keyword = fields.get(f"kw_{index}", "")
-    if keyword not in KEYWORDS:
-        return None
-    row = Row(index=index, keyword=keyword)
-    if row.given:
-        row.resource_type = fields.get(f"rtype_{index}", "").strip()
-        row.resource_name = fields.get(f"rname_{index}", "").strip()
-        return row
-
-    row.subject = fields.get(f"subject_{index}", "").strip()
-    row.aspect = fields.get(f"aspect_{index}", "").strip()
-    row.compare = fields.get(f"compare_{index}", "").strip()
-    # The resource picker posts `node:<id>`; a value posts itself. Stored bare either way.
-    row.target = fields.get(f"target_{index}", "").strip().removeprefix(NODE_SUBJECT)
-    row.pattern = fields.get(f"pattern_{index}", "")
-    row.table = _table(index, fields)
-
-    claimed = row.subject and not row.subject.startswith(STEP_SUBJECT)
-    if claimed:
-        _write_claim(row, nodes)
-    row.definition = next((step for step in found[keyword] if step.pattern == row.pattern), None)
-
-    if claimed:
-        return row
-    if row.definition is not None:
-        row.values = {name: fields.get(f"p_{index}_{name}", "").strip() for name in row.definition.params}
-    # A pattern that arrived without the four choices — from text mode, or from a scenario written
-    # by hand — is read back into them, so the row renders as one thing rather than two.
-    if not row.subject:
-        _read_claim(row, nodes)
-    return row
+def _chosen(index: int, fields: dict[str, str]) -> dict[str, Any]:
+    """One row's choices, lifted out of the form's flat namespace."""
+    prefix = f"p_{index}_"
+    return {
+        "resource_type": fields.get(f"rtype_{index}", ""),
+        "resource_name": fields.get(f"rname_{index}", ""),
+        "subject": fields.get(f"subject_{index}", ""),
+        "aspect": fields.get(f"aspect_{index}", ""),
+        "compare": fields.get(f"compare_{index}", ""),
+        "target": fields.get(f"target_{index}", ""),
+        "pattern": fields.get(f"pattern_{index}", ""),
+        "params": {key[len(prefix) :]: value for key, value in fields.items() if key.startswith(prefix)},
+        "table": _table(index, fields),
+    }
 
 
 def _table(index: int, fields: dict[str, str]) -> list[list[str]]:
@@ -336,74 +292,13 @@ def _table(index: int, fields: dict[str, str]) -> list[list[str]]:
     return [row for row in rows if row[0] or row[1]]
 
 
-# The three things a Then can be about. A project's own step is a subject too: choosing it is
-# choosing what the assertion is, which is the same question the other two answer. A slot carries
-# its name in the prefix, because *which* slot is half of what the choice says.
-NODE_SUBJECT, SLOT_SUBJECT, STEP_SUBJECT, TYPE_SUBJECT = "node:", "slot:", "step:", "type:"
-
-
-def _write_claim(row: Row, nodes: dict[str, Node]) -> None:
-    """Four choices, turned into the pattern and values ATF will actually write."""
-    claimed = comparison(row.compare)
-    if claimed is None:
-        row.pattern = ""
-        return
-    row.pattern = claimed.pattern
-    row.values = {}
-
-    # A claim about a resource names it; a claim about a slot names one only when the slot is being
-    # searched for it. A claim about a field of a slot names no resource at all, and a claim about a
-    # whole type names the type and no instance — there is nothing to name.
-    about = ""
-    if claimed.subject == SLOT_OF:
-        row.values[SLOT] = row.subject.removeprefix(SLOT_SUBJECT)
-        about = row.target if claimed.target == "resource" else ""
-    elif claimed.subject == TYPE_OF:
-        row.values[TYPE] = row.subject.removeprefix(TYPE_SUBJECT)
-    else:
-        about = row.subject.removeprefix(NODE_SUBJECT)
-    node = nodes.get(about)
-    if node is not None:
-        row.values.update({TYPE: node["resource"], NAME: node["name"]})
-    if claimed.field:
-        row.values[FIELD] = row.aspect
-    if claimed.target == "value":
-        row.values[claimed.value_capture] = row.target
-
-
-def _read_claim(row: Row, nodes: dict[str, Node]) -> None:
-    """The reverse: a pattern and its values, read back as what they claim."""
-    claimed = claim_of(row.pattern)
-    if claimed is None:
-        row.subject = f"{STEP_SUBJECT}{row.pattern}" if row.pattern else ""
-        return
-
-    row.compare = claimed.key
-    row.aspect = row.values.get(FIELD, "")
-    named = find_node(nodes, row.values.get(TYPE, ""), row.values.get(NAME, ""))
-    if claimed.subject == TYPE_OF:
-        row.subject = f"{TYPE_SUBJECT}{row.values.get(TYPE, '')}"
-        row.target = row.values.get(claimed.value_capture, "")
-    elif claimed.subject == SLOT_OF:
-        row.subject = f"{SLOT_SUBJECT}{row.values.get(SLOT, '')}"
-        row.target = (
-            (named["id"] if named else "")
-            if claimed.target == "resource"
-            else row.values.get(claimed.value_capture, "")
-        )
-    else:
-        row.subject = f"{NODE_SUBJECT}{named['id']}" if named else ""
-        row.target = row.values.get(claimed.value_capture, "")
-
-
 # ---- assembling the draft --------------------------------------------------
 
 
 def _build(env: str, fields: dict[str, str], rows: list[Row]) -> Draft:
-    cockpit = app()
-    engine = cockpit.state(env).materializer
-    found = cockpit.discovery(env)
-    nodes, types = engine.nodes, set(engine.types)
+    where = surface(env)
+    found = where.found
+    nodes, types = where.nodes, set(where.engine.types)
 
     draft = Draft(
         env=env,
@@ -427,186 +322,21 @@ def _build(env: str, fields: dict[str, str], rows: list[Row]) -> Draft:
         known = ", ".join(_features(found)) or "none"
         raise HTTPException(status_code=404, detail=f"no feature named {draft.feature!r} here (this suite has {known})")
 
-    _resolve(draft, nodes, found)
-    draft.block = _gherkin(draft.title, draft.rows)
+    resolve(draft.rows, where)
+    draft.block = gherkin(draft.title, draft.rows)
     # Entering text mode seeds the box from what the builder composed: taking the text over means
     # continuing from the same words, not starting again from nothing.
     if draft.mode == TEXT:
         draft.text = draft.text if draft.text.strip() else draft.block
         draft.block = _reindent(draft.text)
 
-    draft.path, draft.before, draft.after = _target(draft, found)
+    draft.path, draft.before, draft.after = _target(draft, where)
     if draft.mode == TEXT:
         _check_text(draft, nodes, types, found)
     _check(draft, nodes, types, found)
     if draft.path is not None:
         draft.diff = _diff(draft.before, draft.after, str(draft.path))
     return draft
-
-
-def _resolve(draft: Draft, nodes: dict[str, Node], found: Discovery) -> None:
-    """Turn every row into the words it will write, and say plainly where it cannot yet."""
-    for row in draft.rows:
-        row.held = held_before(draft.rows, row.index)
-        row.produced = produced_before(draft.rows, row.index)
-        if row.given:
-            _resolve_given(row, nodes)
-        else:
-            _resolve_step(row, found, nodes)
-
-    # Only a row that produced a line counts as something for the next one to continue, so an
-    # unfinished row in the middle can never leave an `And` with no keyword above it.
-    previous = ""
-    for row in draft.rows:
-        row.shown_keyword = "And" if row.keyword == previous else row.keyword.capitalize()
-        if row.text:
-            previous = row.keyword
-
-
-def _resolve_given(row: Row, nodes: dict[str, Node]) -> None:
-    if not row.resource_type or not row.resource_name:
-        row.problem = "pick a resource type and one of its instances"
-        return
-    row.text = f'the {row.resource_type} "{row.resource_name}"'
-    node = find_node(nodes, row.resource_type, row.resource_name)
-    if node is None:
-        row.problem = f"the catalog declares no {row.resource_type} called {row.resource_name!r}"
-        return
-    row.node_id = node["id"]
-
-
-def held_before(rows: list[Row], index: int) -> set[str]:
-    """What the context holds by the time row `index` runs.
-
-    A `Given` puts its record under the type's name; a `When` or `Then` puts whatever its own
-    source says it writes. This is the whole of what a step can read, so it is the whole of what
-    decides whether a step can be used here.
-    """
-    return _before(rows, index, givens=True)
-
-
-def produced_before(rows: list[Row], index: int) -> set[str]:
-    """The part of that a step put there, which is what a claim about a slot may be about.
-
-    A `Given`'s record is on the context too, but a claim about the *resource* re-reads it from the
-    environment and a claim about the slot reads the copy the `Given` made. Offering both is
-    offering the worse of two ways to say one thing, so only what a step produced is offered.
-    """
-    return _before(rows, index, givens=False)
-
-
-def _before(rows: list[Row], index: int, givens: bool) -> set[str]:
-    held: set[str] = set()
-    for row in rows:
-        if row.index == index:
-            break
-        if row.given and row.resource_type:
-            if givens:
-                held.add(row.resource_type)
-        elif row.definition is not None:
-            held.update(row.definition.produces)
-    return held
-
-
-def usable(step: StepDef, row: Row) -> bool:
-    """Whether the scenario, as far as this row, can use this step at all.
-
-    A step reading a fixed slot needs that one held. A step reading the slot its own wording names
-    needs there to be *some* slot worth naming — which one it names is a choice, and it is checked
-    when the row is resolved rather than when the step is offered.
-    """
-    if not set(step.needs) <= row.held:
-        return False
-    return bool(row.produced) if step.needs_slot else True
-
-
-def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
-    if not row.pattern:
-        # A Then is chosen by what it is about; a When by what it does. Say the one that applies.
-        row.problem = (
-            "pick what this is about" if row.keyword == THEN else "choose the when step this scenario uses"
-        )
-        return
-    if row.definition is None:
-        row.problem = (
-            f"no {row.keyword} step this feature can reach is worded {row.pattern!r}"
-        )
-        row.text = row.pattern
-        return
-
-    row.text = fill(row.definition.pattern, row.values)
-    missing = [name for name in row.definition.params if not row.values.get(name)]
-    if missing:
-        row.problem = f"give {'a value' if len(missing) == 1 else 'values'} for {', '.join(missing)}"
-        return
-
-    if row.takes_table:
-        if not row.table:
-            row.problem = "say what this must hold — add a field and what it holds, below"
-            return
-        half = next((pair for pair in row.table if not pair[0] or not pair[1]), None)
-        if half is not None:
-            written = half[0] or half[1]
-            row.problem = f"the row for {written!r} needs both a field and what it holds"
-            return
-
-    absent = [name for name in row.definition.needs if name not in row.held]
-    # A step that names its own slot is held to the slot it named, not to a fixed one.
-    if row.definition.needs_slot:
-        named = row.values.get(SLOT, "")
-        if named and named not in row.held:
-            absent = [named]
-    if absent:
-        row.problem = (
-            f"nothing above this puts {' or '.join(absent)} on the context — "
-            f"add a row that does, above it"
-        )
-        return
-
-    # A step ATF defines names a catalog resource, so the composer can hold it to the catalog
-    # exactly as it holds a Given row — rather than writing a line that only fails when it runs.
-    if generic(row.definition.pattern) is not None and NAME in row.definition.params:
-        resource_type, name = row.values.get(TYPE, ""), row.values.get(NAME, "")
-        node = find_node(nodes, resource_type, name)
-        if node is None:
-            row.problem = (
-                f"the catalog declares no {resource_type} called {name!r}"
-                if resource_type
-                else "pick what this is about"
-            )
-            return
-        row.node_id = node["id"]
-
-
-def _gherkin(title: str, rows: list[Row]) -> str:
-    """The scenario block exactly as it will be written: two spaces in, its steps four.
-
-    A repeated keyword becomes `And`, which is what someone writing this by hand would do and what
-    the file has to look like for the diff to be worth reading. An untitled scenario is written
-    untitled rather than given a placeholder name, so nothing invented here can end up on disk.
-    """
-    lines = [f"  Scenario: {title}".rstrip()]
-    # A row with nothing chosen yet contributes no line: a bare `Given` is not something that would
-    # ever be written, and the preview is only worth trusting if it is exactly what will be.
-    for row in rows:
-        if not row.text:
-            continue
-        lines.append(f"    {row.shown_keyword} {row.text}")
-        lines += _table_lines(row)
-    return "\n".join(lines) + "\n"
-
-
-def _table_lines(row: Row) -> list[str]:
-    """A table under its step, its columns padded so a reader can follow a row across.
-
-    Aligned because every table written by hand in this project is, and a generated one that is not
-    would be the single ragged block in the file — which is how a tool teaches people to stop using
-    it for anything they care about.
-    """
-    if not row.takes_table or not row.table:
-        return []
-    widest = [max(len(pair[column]) for pair in row.table) for column in (0, 1)]
-    return [f"      | {pair[0].ljust(widest[0])} | {pair[1].ljust(widest[1])} |" for pair in row.table]
 
 
 def _reindent(text: str) -> str:
@@ -634,28 +364,18 @@ def _reindent(text: str) -> str:
 # ---- where it goes ---------------------------------------------------------
 
 
-def _features(found: Discovery) -> list[str]:
-    return sorted({spec.feature for spec in found.specs if spec.feature})
-
-
 def _feature_file(found: Discovery, feature: str) -> Path | None:
     return next((Path(spec.file) for spec in found.specs if spec.feature == feature and spec.file), None)
 
 
-def _features_dir(found: Discovery) -> Path:
-    """Where a new feature file belongs: beside the ones already there, else the specs root."""
-    existing = sorted({Path(spec.file).parent for spec in found.specs if spec.file})
-    return existing[0] if existing else app().manifest.specs_dir
-
-
-def _target(draft: Draft, found: Discovery) -> tuple[Path | None, str, str]:
+def _target(draft: Draft, where: Surface) -> tuple[Path | None, str, str]:
     """The file this scenario lands in, its bytes now, and its bytes afterwards.
 
     Appending keeps every existing byte and adds the block after a blank line; a new feature is a
     whole file. Either way the path comes from the manifest and a slug, never from the form.
     """
     if draft.feature:
-        path = _feature_file(found, draft.feature)
+        path = _feature_file(where.found, draft.feature)
         if path is None:
             return None, "", ""
         before = path.read_text(encoding="utf-8")
@@ -673,16 +393,15 @@ def _target(draft: Draft, found: Discovery) -> tuple[Path | None, str, str]:
     head = f"Feature: {draft.feature_title}\n"
     if draft.narrative:
         head += f"  {draft.narrative}\n"
-    return _inside(_features_dir(found) / f"{slug(draft.feature_title)}.feature"), "", head + "\n" + draft.block
+    return _inside(_features_dir(where) / f"{slug(draft.feature_title)}.feature"), "", head + "\n" + draft.block
 
 
 def _inside(path: Path) -> Path:
     """Every write goes through here: a path outside `specs_dir` is refused, never clamped."""
-    specs_dir = app().manifest.specs_dir.resolve()
-    resolved = path.resolve()
-    if specs_dir not in resolved.parents:
-        raise HTTPException(status_code=409, detail=f"refusing to write outside {specs_dir}")
-    return resolved
+    try:
+        return _inside_of(path, app().manifest.specs_dir)
+    except Outside as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 # ---- validation ------------------------------------------------------------
@@ -698,7 +417,7 @@ def _check(draft: Draft, nodes: dict[str, Node], types: set[str], found: Discove
         draft.problems.append("Name the new feature, or add this scenario to one that already exists.")
 
     if draft.mode == BUILD:
-        _check_rows(draft)
+        draft.problems.extend(row_problems(draft.rows))
 
     if draft.path is None:
         return
@@ -714,21 +433,6 @@ def _check(draft: Draft, nodes: dict[str, Node], types: set[str], found: Discove
             "What would be written does not read back as a new scenario. A scenario line starts "
             "with `Scenario:` and its steps are indented under it."
         )
-
-
-def _check_rows(draft: Draft) -> None:
-    if not draft.rows:
-        draft.problems.append("A scenario with no steps asserts nothing. Add a When and a Then.")
-        return
-    unresolved = [row for row in draft.rows if row.problem]
-    if unresolved:
-        draft.problems.append(
-            f"{plural(len(unresolved), 'step')} {'does' if len(unresolved) == 1 else 'do'} not resolve yet — "
-            + "; ".join(row.problem for row in unresolved)
-            + "."
-        )
-    if not any(row.keyword == THEN for row in draft.rows):
-        draft.problems.append("Nothing is asserted — a scenario needs at least one Then.")
 
 
 def _check_text(draft: Draft, nodes: dict[str, Node], types: set[str], found: Discovery) -> None:
@@ -832,123 +536,6 @@ def _write(draft: Draft) -> None:
     draft.written = True
 
 
-def _steps_dir(found: Discovery) -> Path:
-    """Where the modules that bind features to pytest live — beside the ones already there."""
-    existing = sorted({Path(test.file).parent for test in found.tests if test.file})
-    return existing[0] if existing else app().manifest.specs_dir / "steps"
-
-
-# What a scratch module for a trial holds when the feature is new: nothing but the binding, which
-# is also the truth about what such a scenario can reach. Nothing writes one of these to keep —
-# ATF collects a `.feature` nobody bound, so a composed scenario needs no Python beside it.
-BINDING = '''"""Binds {name} for one trial run. Written and removed by the composer."""
-
-from pytest_bdd import scenarios
-
-scenarios("{path}")
-'''
-
-# A `scenarios(...)` call on its own line — what binds a feature to pytest.
-_SCENARIOS_CALL = re.compile(r"^[ \t]*scenarios\((?:[^()]|\([^()]*\))*\)[ \t]*$", re.MULTILINE)
-
-
-def _binding_module(found: Discovery, feature: str) -> Path | None:
-    """The module that hands this feature to pytest, if one does.
-
-    It matters far beyond collection: pytest-bdd registers every step as a fixture in the module
-    that declares it, so *which* module binds a feature decides which steps that feature can use.
-    """
-    for test in found.tests:
-        spec = found.spec(test.covers) if test.covers else None
-        if spec is not None and spec.feature == feature and test.file:
-            return Path(test.file)
-    return None
-
-
-def _rebound(source: str, feature: Path, module_dir: Path) -> str:
-    """A steps module, rewritten to bind `feature` instead of whatever it bound before.
-
-    Copying the module rather than writing a bare one is what makes a trial faithful: a step is
-    only visible to the module that declares it, so a scenario tried anywhere else would report
-    steps missing that will resolve perfectly well once it is saved.
-    """
-    call = f'scenarios("{Path(os.path.relpath(feature, module_dir)).as_posix()}")'
-    seen = False
-
-    def swap(match: re.Match[str]) -> str:
-        nonlocal seen
-        if seen:
-            return ""  # one feature per scratch module: the rest would collect twice
-        seen = True
-        return call
-
-    rewritten = _SCENARIOS_CALL.sub(swap, source)
-    return rewritten if seen else f"{rewritten}\n\n{call}\n"
-
-
-def reachable(step: StepDef, module: Path | None, specs_dir: Path) -> bool:
-    """Whether a step definition is visible from the module that will bind a feature.
-
-    pytest's fixture rules, which is what step lookup really is: a step declared in a module is
-    visible in that module, one declared in a `conftest.py` is visible below it, and one a plugin
-    registered — every step ATF itself defines — is visible everywhere.
-    """
-    if not step.file:
-        return True
-    path = Path(step.file)
-    try:
-        path.relative_to(specs_dir)
-    except ValueError:
-        return True
-    if path.name == "conftest.py":
-        return module is None or path.parent in module.parents
-    return module is not None and path == module
-
-
-def _try(env: str, draft: Draft) -> Trial:
-    """Run this scenario from a scratch file, then take the file away again."""
-    cockpit = app()
-    specs_dir = cockpit.manifest.specs_dir
-    found = cockpit.discovery(env)
-
-    name = f"atf_trying_{secrets.token_hex(4)}"
-    binding = _binding_module(found, draft.feature) if draft.feature else None
-    feature = _inside(_features_dir(found) / f"{name}.feature")
-    module = _inside((binding.parent if binding else _steps_dir(found)) / f"test_{name}.py")
-    heading = draft.feature or draft.feature_title or "Trying a scenario"
-
-    try:
-        feature.parent.mkdir(parents=True, exist_ok=True)
-        module.parent.mkdir(parents=True, exist_ok=True)
-        feature.write_text(f"Feature: {heading}\n\n{draft.block}", encoding="utf-8")
-        # A copy of the module that will bind this scenario, so the trial sees the steps the real
-        # run will. Bare, when the feature is new and no module binds it yet — which is also the
-        # truth about what such a scenario would be able to reach.
-        module.write_text(
-            _rebound(binding.read_text(encoding="utf-8"), feature, module.parent)
-            if binding
-            else BINDING.format(
-                name=feature.name, path=Path(os.path.relpath(feature, module.parent)).as_posix()
-            ),
-            encoding="utf-8",
-        )
-        summary = run_tests([str(module)], env, cockpit.manifest.root, specs_dir)
-    finally:
-        feature.unlink(missing_ok=True)
-        module.unlink(missing_ok=True)
-
-    result = next(iter(summary.results.values()), None)
-    if result is None:
-        return Trial(outcome=ERROR, detail=summary.output[-600:] or "the run produced no result")
-    failed = result.failed_step
-    return Trial(
-        outcome=result.outcome,
-        detail=(failed.error if failed else "") or result.detail,
-        step=f"{failed.keyword} {failed.text}".strip() if failed else "",
-        duration=result.duration,
-    )
-
-
 def _after_writing(env: str, draft: Draft) -> None:
     """The honest next step. A written scenario is not yet a running one.
 
@@ -1041,21 +628,14 @@ def _diff(before: str, after: str, label: str) -> list[tuple[str, str]]:
 
 def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
     cockpit = app()
-    engine = cockpit.state(env).materializer
-    found = cockpit.discovery(env)
-
-    instances: dict[str, list[Node]] = {}
-    for node in sorted(engine.nodes.values(), key=lambda item: item["name"]):
-        instances.setdefault(node["resource"], []).append(node)
-
-    status = cockpit.status(env)
+    where = surface(env)
+    instances = instances_by_type(where)
 
     # Only the steps this scenario will actually be able to use. Offering one it cannot reach is
     # offering a scenario that composes cleanly and then fails to run for a reason nothing on the
     # page explains — pytest-bdd scopes a step to the module that declares it.
-    binding = _binding_module(found, draft.feature) if draft.feature else None
-    specs_dir = cockpit.manifest.specs_dir
-    offered = offered_steps(env, draft.feature)
+    binding = _binding_module(where.found, draft.feature) if draft.feature else None
+    offered = _offered_steps(where, draft.feature)
 
     return {
         "env": env,
@@ -1063,60 +643,46 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         "purpose": PURPOSE,
         "draft": draft,
         "validated": validated,
-        "features": _features(found),
-        "types": sorted(engine.types),
+        "features": _features(where.found),
+        "types": sorted(where.engine.types),
         "instances": instances,
-        "status": status,
+        "status": where.status,
         "offered": offered,
-        "elsewhere": _elsewhere(found, offered, binding, specs_dir),
+        "elsewhere": elsewhere(where.found, offered, binding, where.specs_dir),
         "keywords": KEYWORDS,
-        "specs_dir": cockpit.manifest.specs_dir,
+        "specs_dir": where.specs_dir,
         # Choices carry what is needed to make them: a list of names tells you nothing about which
         # name you want.
-        "feature_options": _feature_options(found),
-        "type_options": _type_options(engine, instances, status),
-        "instance_options": lambda resource_type: _instance_options(instances.get(resource_type, []), status),
+        "feature_options": feature_options(where.found),
+        "type_options": type_options(where),
+        "instance_options": lambda resource_type: instance_options(
+            instances.get(resource_type, []), where.status
+        ),
         # Per row, not per keyword: what a step can read depends on what the rows above it put
         # there, so the same picker two rows apart honestly offers different things.
         # A step carrying a table is left out of both pickers: the builder has no way to write the
         # table under it, and offering a line it cannot finish is worse than not offering it. Those
         # are written by hand, or in text mode, which is held to exactly the same checks.
-        "step_options": lambda row: _step_options(
+        "step_options": lambda row: step_options(
             [step for step in offered[row.keyword] if usable(step, row)]
         ),
         # A Then said as a claim: what it is about, what of it, how, and against what.
-        "subject_options": lambda row: _subject_options(
-            engine,
-            status,
-            [step for step in offered[row.keyword] if usable(step, row)],
-            row,
+        "subject_options": lambda row: subject_options(
+            where, [step for step in offered[row.keyword] if usable(step, row)], row
         ),
         # What a table's rows can be about: the fields this row's resource is known to have, with
         # what each holds right now. The composer already reads these for the single-field claim —
         # a whole-shape claim is the same question asked about several fields at once, and the
         # tedium it replaces is exactly why it was worth teaching the builder to write one.
-        "table_fields": lambda row: _table_fields(engine, status, row),
+        "table_fields": lambda row: table_fields(where, row),
         # What a cell may say instead of a value, offered rather than remembered.
         "markers": MARKERS,
-        "aspect_options": lambda row: _aspect_options(
-            engine, status, row.subject.removeprefix(NODE_SUBJECT)
-        ),
-        # Completions for a field of a slot, gathered from what the last run saw every slot hold.
-        # Across all of them rather than per slot: it is a hint while typing, and a slot the run
-        # has never seen is exactly the case where a hint is worth having.
-        "held_fields": lambda: sorted(
-            {field for result in cockpit.results(env).values() for slot in result.held
-             for field in slot.fields}
-        ),
-        "comparison_options": lambda subject, aspect: [
-            {"value": item.key, "label": item.label, "meta": "", "desc": ""}
-            for item in comparisons_for(_subject_kind(subject), bool(aspect))
-        ],
-        "resource_options": _resource_options(engine, status),
+        "aspect_options": lambda row: aspect_options(where, row.subject.removeprefix(NODE_SUBJECT)),
+        "held_fields": lambda: held_fields(cockpit.results(env)),
+        "comparison_options": comparison_options,
+        "resource_options": resource_options(where),
         "claim": comparison,
-        "unusable": lambda row: [
-            step for step in offered[row.keyword] if not usable(step, row)
-        ],
+        "unusable": lambda row: [step for step in offered[row.keyword] if not usable(step, row)],
         # Only the steps ATF itself defines get a picker per parameter: they are the only ones
         # whose parameters ATF chose, so the only ones whose meaning it can know. A project's
         # step keeps a text box, because `{expected}` could be anything at all.
@@ -1124,289 +690,10 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         # What can be *done* to a resource of this type. Data in the catalog, so it is enumerable —
         # which is the same property that made assertions composable, and the reason `actions:` is
         # declared rather than written as a step.
-        "action_options": lambda resource_type: _action_options(engine, resource_type),
-        "field_options": lambda resource_type, name: _field_options(engine, status, resource_type, name),
-        "current_value": lambda resource_type, name, field: _current_value(
-            engine, status, resource_type, name, field
+        "action_options": lambda resource_type: action_options(where, resource_type),
+        "field_options": lambda resource_type, name: field_options(where, resource_type, name),
+        "current_value": lambda resource_type, name, of_field: current_value(
+            where, resource_type, name, of_field
         ),
         "capture_kinds": (TYPE, NAME, FIELD, VALUE, ACTION),
     }
-
-
-def _elsewhere(
-    found: Discovery, offered: dict[str, list[StepDef]], binding: Path | None, specs_dir: Path
-) -> list[str]:
-    """Modules holding steps this feature cannot use, so the reason can be said rather than felt.
-
-    The fix is one a person has to choose between — put the scenario in the feature whose module
-    already has the step, or move the step into a `conftest.py` where every feature can see it —
-    so the interface names both and picks neither.
-    """
-    shown = {step.pattern for steps in offered.values() for step in steps}
-    files = {
-        Path(step.file).name
-        for keyword in KEYWORDS
-        for step in found.steps_for(keyword)
-        if step.pattern not in shown and step.file and not reachable(step, binding, specs_dir)
-    }
-    return sorted(files)
-
-
-def _subject_kind(subject: str) -> str:
-    """Which of the three things a chosen subject is, in the terms `COMPARISONS` is written in."""
-    if subject.startswith(TYPE_SUBJECT):
-        return TYPE_OF
-    if subject.startswith(SLOT_SUBJECT):
-        return SLOT_OF
-    return RESOURCE
-
-
-def _subject_options(
-    engine: Any, status: dict[str, Any], steps: list[StepDef], row: Row
-) -> list[dict[str, str]]:
-    """What a Then can be about: a resource, a whole type of them, a slot, or a step of your own.
-
-    One question first — *what are you asserting about?* — because it is the one anybody actually
-    starts from, and because answering it is what decides the shape of everything after it.
-    """
-    options = _resource_options(engine, status, group="A resource")
-    # A whole type, for the one claim that is about a population rather than about a resource:
-    # "nothing was created the second time" names nothing, because there is nothing to name.
-    for resource_type in engine.resource_types():
-        options.append(
-            {
-                "value": f"{TYPE_SUBJECT}{resource_type}",
-                "label": f"every {resource_type}",
-                "meta": resource_type,
-                "desc": f"how many {resource_type} records this environment holds",
-                "group": "All of a type",
-            }
-        )
-    # One option per slot the rows above actually put there, rather than the single `result` this
-    # offered while that was the only slot an assertion could name. A scenario with two actions has
-    # two things to be about, and the picker is where that has to be visible.
-    for name in sorted(row.produced):
-        # `result` is the name ATF suggests, so it keeps the wording it always had. A slot a suite
-        # named itself is said by that name, because the name is the whole point of having chosen it.
-        conventional = name == RESULT
-        options.append(
-            {
-                "value": f"{SLOT_SUBJECT}{name}",
-                "label": "what the step before produced" if conventional else f"what {name} holds",
-                "meta": "" if conventional else name,
-                "desc": (
-                    "the records a When put on the context"
-                    if conventional
-                    else f"what a step above put on the context as {name}"
-                ),
-                "group": "A resource",
-            }
-        )
-    for step in steps:
-        # A step ATF defines is normally reached through the four choices rather than by its
-        # wording — that is what the claim row is. The exception is a step that takes a table:
-        # there is no comparison to pick, because the table *is* the comparison, so it is offered
-        # here by name and the rows are filled in underneath.
-        if generic(step.pattern) is not None and not step.takes_table:
-            continue
-        options.append(
-            {
-                "value": f"{STEP_SUBJECT}{step.pattern}",
-                "label": step.pattern,
-                "meta": Path(step.file).name if step.file else "",
-                "desc": step.docstring,
-                # A phrase is not a step this suite defines — it is this suite's wording over
-                # steps that needed no code, and saying so is what keeps someone from going
-                # looking for the Python behind it.
-                "group": _subject_group(step),
-            }
-        )
-    return options
-
-
-def _subject_group(step: StepDef) -> str:
-    """Which heading a Then's subject picker files a step under.
-
-    Not `_group`, which names the same steps for the *When* picker. Two pickers, two questions —
-    a When asks what the scenario does and a Then asks what it is about — and a step means a
-    different thing under each, so it is filed differently.
-    """
-    if step.takes_table and generic(step.pattern) is not None:
-        return "A whole shape, said as a table"
-    return "A phrase this suite writes" if step.phrase else "A step this suite defines"
-
-
-def _resource_options(engine: Any, status: dict[str, Any], group: str = "") -> list[dict[str, str]]:
-    return [
-        {
-            "value": f"node:{node['id']}",
-            "label": node["name"],
-            "meta": node["resource"],
-            "desc": node["represents"] or str(status.get(node["id"], {}).get("status", "")),
-            "group": group,
-        }
-        for node in sorted(engine.nodes.values(), key=lambda item: (item["resource"], item["name"]))
-    ]
-
-
-def _table_fields(engine: Any, status: dict[str, Any], row: Row) -> list[dict[str, str]]:
-    """The fields a table row may name, and what each holds — empty where the row names no resource.
-
-    A slot's shape has nothing to offer: the slot is filled by a step that has not run yet, so there
-    is no record to read. Those rows are typed, and that is honest rather than a gap.
-    """
-    node = engine.nodes.get(row.node_id) if row.node_id else None
-    if node is None:
-        return []
-    return [
-        {"name": choice.name, "current": choice.current, "source": choice.source}
-        for choice in field_choices(node, status.get(row.node_id))
-    ]
-
-
-def _aspect_options(engine: Any, status: dict[str, Any], node_id: str) -> list[dict[str, str]]:
-    """The thing itself, or one of its fields. Which of the two decides what can be claimed."""
-    options = [
-        {"value": "", "label": "the resource itself", "meta": "", "desc": "whether it is there at all"}
-    ]
-    node = engine.nodes.get(node_id)
-    if node is None:
-        return options
-    return options + [
-        {"value": choice.name, "label": choice.name, "meta": choice.current, "desc": choice.source}
-        for choice in field_choices(node, status.get(node_id))
-    ]
-
-
-def _feature_options(found: Discovery) -> list[dict[str, str]]:
-    counts: dict[str, int] = {}
-    for spec in found.specs:
-        counts[spec.feature] = counts.get(spec.feature, 0) + 1
-    return [
-        {
-            "value": name,
-            "label": name,
-            "meta": f"{counts.get(name, 0)} scenario" + ("" if counts.get(name) == 1 else "s"),
-            "desc": "",
-        }
-        for name in sorted(counts)
-    ]
-
-
-def _type_options(engine: Any, instances: dict[str, list[Node]], status: dict[str, Any]) -> list[dict[str, str]]:
-    options: list[dict[str, str]] = []
-    for name in sorted(engine.types):
-        members = instances.get(name, [])
-        present = sum(1 for node in members if status.get(node["id"], {}).get("status") == "present")
-        entry = engine.types[name]
-        lifecycle = str(entry.get("lifecycle", "persistent"))
-        mode = str(entry.get("mode", "create"))
-        note = " · built fresh per run" if lifecycle == "ephemeral" else ""
-        note += " · must already exist here" if mode == "reference" else ""
-        note += " · observed, never created" if mode == "data" else ""
-        options.append(
-            {
-                "value": name,
-                "label": name,
-                "meta": str(entry.get("system", "")),
-                "desc": f"{len(members)} in the catalog, {present} present in this environment{note}",
-            }
-        )
-    return options
-
-
-def _instance_options(members: list[Node], status: dict[str, Any]) -> list[dict[str, str]]:
-    """The resources of one type, each with where it stands and what it is for.
-
-    Choosing between `primary` and `secondary` is impossible from the names alone, which is exactly
-    what `represents` was written to answer.
-    """
-    return [
-        {
-            "value": node["name"],
-            "label": node["name"],
-            "meta": str(status.get(node["id"], {}).get("status", "unknown")),
-            "desc": node["represents"] or node["id"],
-        }
-        for node in members
-    ]
-
-
-def _step_options(steps: list[StepDef]) -> list[dict[str, str]]:
-    """Every step of one keyword, the ones needing no code first.
-
-    Order is the whole point here. An author looking for "check this field" will take the first
-    plausible thing they see, and if that is a step the project had to write, they conclude that
-    assertions are something you write. They are not, for anything in the catalog — and a phrase
-    sits between the two, because it is this suite's own wording over steps that needed no code.
-    """
-    options: list[dict[str, str]] = []
-    for step in steps:
-        options.append(
-            {
-                "value": step.pattern,
-                "label": step.pattern,
-                "meta": Path(step.file).name if step.file else "",
-                "desc": step.docstring,
-                "group": _group(step),
-                "rank": _rank(step),
-            }
-        )
-    return sorted(options, key=lambda option: (option["rank"], option["label"]))
-
-
-def _group(step: StepDef) -> str:
-    if step.phrase:
-        return "This suite's wording"
-    return "Ready to use" if generic(step.pattern) is not None else "This suite's own"
-
-
-def _rank(step: StepDef) -> str:
-    if step.phrase:
-        return "1"
-    return "0" if generic(step.pattern) is not None else "2"
-
-
-def _action_options(engine: Any, resource_type: str) -> list[dict[str, str]]:
-    """Everything this type says can be done to one of its resources, and what ATF can always do."""
-    declared = set(actions_of(engine.types.get(resource_type) or {}))
-    return [
-        {
-            "value": action,
-            "label": action,
-            "meta": "" if action in declared else "always",
-            "desc": (
-                f"declared on the {resource_type} type"
-                if action in declared
-                else "ATF's own — every adapter can remove a resource"
-            ),
-        }
-        for action in engine.actions(resource_type)
-    ]
-
-
-def _field_options(
-    engine: Any, status: dict[str, Any], resource_type: str, name: str
-) -> list[dict[str, str]]:
-    """The fields of one resource, each carrying what it holds right now.
-
-    Choosing a field from a list of bare names is guessing. Choosing `done` while the interface
-    says it is currently `false` is writing an assertion with the answer in front of you.
-    """
-    node = find_node(engine.nodes, resource_type, name)
-    if node is None:
-        return []
-    return [
-        {"value": choice.name, "label": choice.name, "meta": choice.current, "desc": choice.source}
-        for choice in field_choices(node, status.get(node["id"]))
-    ]
-
-
-def _current_value(engine: Any, status: dict[str, Any], resource_type: str, name: str, field: str) -> str:
-    node = find_node(engine.nodes, resource_type, name)
-    if node is None:
-        return ""
-    return next(
-        (choice.current for choice in field_choices(node, status.get(node["id"])) if choice.name == field),
-        "",
-    )

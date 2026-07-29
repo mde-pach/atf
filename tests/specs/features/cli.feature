@@ -216,3 +216,20 @@ Feature: The command
       When the developer runs the specs, writing a report for CI
       Then the command succeeds
       And it says where it wrote the report
+
+  Rule: A capability the suite asked for and has not got is named, not worked around
+
+    # `atf serve --mcp` answers agents as well as people, and the MCP SDK it needs is not a
+    # dependency of ATF — a framework should not decide that every suite serves agents. So the
+    # interesting case is the one where somebody asks for it without having installed it, and the
+    # only acceptable answer is the command saying so before it starts anything.
+    #
+    # Deterministic here because this repository's own checks deliberately do not install the SDK:
+    # a suite that asserts what a missing dependency says cannot be a suite that has it.
+
+    Scenario: Asked to answer agents without the SDK for it, the command says what to install
+      Given the workspace "chained"
+      When the developer serves this suite to agents
+      Then it is refused because "MCP SDK is not installed"
+      And it says what to install for it
+      And nothing was created

@@ -40,7 +40,7 @@ becomes the suite name in the generated `README.md`.
 ## `atf serve` {#atf-serve}
 
 ```
-atf serve [--env ENV] [--host HOST] [--port PORT]
+atf serve [--env ENV] [--host HOST] [--port PORT] [--mcp]
 ```
 
 Runs the [cockpit](cockpit.md) under uvicorn, printing a banner that names the URL, the absence of
@@ -59,6 +59,21 @@ The interface to bind. Defaults to `127.0.0.1`. Any value other than `127.0.0.1`
 ### `--port` {#serve-port}
 
 The port to bind. Defaults to `8000`.
+
+### `--mcp` {#serve-mcp}
+
+Also answer [MCP](https://modelcontextprotocol.io), at `/mcp/` on the same host and port, so an
+agent can compose scenarios from this suite's own vocabulary — the
+[introspection surface](cockpit.md#introspection). Off by default.
+
+The SDK it needs is **not a dependency of ATF**: a framework should not decide that every suite
+serves agents. Install it with `uv sync --group mcp`. Asked for `--mcp` without it, the command
+prints what to install, exits 2, and starts nothing — a cockpit quietly missing the endpoint
+somebody asked for would be found out by a client that could not connect, which says nothing about
+why.
+
+`run` over MCP is gated by [`mutable_envs`](manifest.md#mutable_envs), because running provisions.
+Everything else the endpoint offers only reads.
 
 ## `atf seed` {#atf-seed}
 

@@ -105,6 +105,14 @@ Feature: The cockpit
     Given the page "compose"
     Then the button "Save" is showing
 
+  Scenario: What nobody could answer is kept beside the rule it is about
+    # Example Mapping produces three kinds of card. Gherkin has a keyword for the rule and one for
+    # the example, and nothing at all for the question — so ATF reads it from a comment, which
+    # leaves the file ordinary Gherkin that every other tool can still read.
+    Given the page "questions"
+    Then the words "What happens if the card is declined" are showing
+    And the words "Who owns the refund" are showing
+
   Scenario: The composer is reachable from the page that lists what there is to compose
     Given the page "scenarios"
     Then the link "Compose a scenario ＋" is showing

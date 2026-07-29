@@ -51,7 +51,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .discovery import Spec, Step, parse_specs
+from .discovery import Question, Spec, Step, parse_questions, parse_specs
 from .runner import ERROR, FAILED, PASSED, SKIPPED, TestResult
 
 # Where the pages land when nobody says otherwise: inside the docs tree, in a directory of their
@@ -90,6 +90,16 @@ def read(specs_dir: Path) -> list[Spec]:
     catalog it was never asked about.
     """
     return parse_specs(Path(specs_dir), {}, set())
+
+
+def read_questions(specs_dir: Path) -> list[Question]:
+    """What nobody could answer, from the same files.
+
+    On the page for the same reason the scenarios are: a question is a thing the reader of this
+    documentation may well be able to answer, and it will never reach them from a photograph of a
+    workshop table.
+    """
+    return parse_questions(Path(specs_dir))
 
 
 # ---- what the last runs said ------------------------------------------------
@@ -174,17 +184,27 @@ def _last_run_at(results: dict[str, TestResult]) -> float:
 # ---- rendering --------------------------------------------------------------
 
 
-def render(specs: list[Spec], results: dict[str, TestResult], env: str, specs_dir: Path) -> list[Page]:
+def render(
+    specs: list[Spec],
+    results: dict[str, TestResult],
+    env: str,
+    specs_dir: Path,
+    questions: list[Question] | None = None,
+) -> list[Page]:
     """Every page this suite produces: one per feature file, and an index over them."""
     grouped: dict[str, list[Spec]] = {}
     for spec in specs:
         grouped.setdefault(spec.file, []).append(spec)
 
+    asked: dict[str, list[Question]] = {}
+    for question in questions or []:
+        asked.setdefault(question.file, []).append(question)
+
     pages = [
-        _feature_page(path, members, results, env, specs_dir)
+        _feature_page(path, members, results, env, specs_dir, asked.get(path, []))
         for path, members in sorted(grouped.items())
     ]
-    return [_index_page(pages, grouped, results, env), *pages]
+    return [_index_page(pages, grouped, results, env, questions or []), *pages]
 
 
 def _page_path(feature_file: str, specs_dir: Path) -> str:
@@ -207,6 +227,7 @@ def _feature_page(
     results: dict[str, TestResult],
     env: str,
     specs_dir: Path,
+    questions: list[Question],
 ) -> Page:
     title = specs[0].feature or Path(feature_file).stem
     lines = [f"# {title}", ""]
@@ -215,15 +236,29 @@ def _feature_page(
     if narrative:
         lines += [narrative, ""]
     lines += [f"*{_summary(specs, results, env)}*", ""]
+    lines += _question_lines([one for one in questions if not one.rule])
 
     rule = ""
     for spec in specs:
         if spec.rule and spec.rule != rule:
             lines += [f"## Rule: {spec.rule}", ""]
+            lines += _question_lines([one for one in questions if one.rule == spec.rule])
         rule = spec.rule
         lines += _scenario_lines(spec, results)
 
     return Page(path=_page_path(feature_file, specs_dir), title=title, text="\n".join(lines).rstrip() + "\n")
+
+
+def _question_lines(questions: list[Question]) -> list[str]:
+    """What nobody could answer, under the rule it is about.
+
+    On the page rather than only in the file, because the reader of a documentation site is often
+    exactly the person who can answer one — and a question they never see is a question that becomes
+    a bug instead.
+    """
+    if not questions:
+        return []
+    return ["**Still unanswered:**", "", *[f"- {one.ask}" for one in questions], ""]
 
 
 def _scenario_lines(spec: Spec, results: dict[str, TestResult]) -> list[str]:
@@ -301,6 +336,7 @@ def _index_page(
     grouped: dict[str, list[Spec]],
     results: dict[str, TestResult],
     env: str,
+    questions: list[Question],
 ) -> Page:
     specs = [spec for members in grouped.values() for spec in members]
     lines = [
@@ -316,6 +352,8 @@ def _index_page(
     when = _last_run_at(results)
     if when:
         lines += [f"Newest run: {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(when))}.", ""]
+    if questions:
+        lines += [f"{_plural(len(questions), 'question')} nobody has answered yet.", ""]
 
     lines += ["| Feature | Scenarios | State |", "|---|---|---|"]
     for page, members in zip(pages, [grouped[path] for path in sorted(grouped)], strict=True):

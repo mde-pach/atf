@@ -19,3 +19,13 @@ unmakeable:
     - workspaces.unmakeable
   body:
     workspace: ${workspaces.unmakeable.id}
+
+# A third cockpit, over a suite whose feature carries unanswered questions. `chained` has none, and
+# a question written into it would show up in every other scenario that reads its pages.
+asked:
+  resource: cockpit
+  represents: A cockpit serving a suite whose rule has questions nobody has answered.
+  depends_on:
+    - workspaces.asked
+  body:
+    workspace: ${workspaces.asked.id}

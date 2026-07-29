@@ -112,6 +112,9 @@
 'the developer reads the page written for the lists feature':
   - I run "cat docs/specs/features/lists.md"
 
+'the developer reads the page written for the paying feature':
+  - I run "cat docs/specs/features/lists.md"
+
 # Whatever was last printed, claimed about as prose. `output` is the command's word; a page is what
 # a reader thinks they are looking at.
 'the page mentions "{words}"':

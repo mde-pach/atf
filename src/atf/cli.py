@@ -380,11 +380,12 @@ def cmd_docs(args: argparse.Namespace) -> int:
         print(f"No scenarios under {manifest.specs_dir} — nothing to write.")
         return 0
 
+    questions = living.read_questions(manifest.specs_dir)
     results = RunStore(manifest.root).merged_results(env)
     out = Path(args.out)
     out = out if out.is_absolute() else manifest.root / out
     try:
-        written = living.write(living.render(specs, results, env, manifest.specs_dir), out)
+        written = living.write(living.render(specs, results, env, manifest.specs_dir, questions), out)
     except OSError as exc:
         print(f"atf: nothing written — {exc}", file=sys.stderr)
         return 2

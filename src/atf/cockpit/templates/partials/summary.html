@@ -223,7 +223,19 @@
       </div>
     {% endif %}
 
-    {% if not unexercised and not never_run and not skipped %}
+    {% if questions %}
+      <div class="stack">
+        <h3>Nobody has answered these</h3>
+        {% for question in questions %}
+          <p class="question small">
+            {{ question.ask }}
+            {% if question.rule %}<span class="muted">— {{ question.rule }}</span>{% endif %}
+          </p>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if not unexercised and not never_run and not skipped and not questions %}
       {{ ui.empty("Every resource type is exercised and every scenario has run. Nothing to chase.") }}
     {% endif %}
   </div>

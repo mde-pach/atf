@@ -66,8 +66,18 @@ def _context(env: str, spec_id: str, prefer: str = "") -> dict[str, Any]:
         "busy": _busy(env),
         "failed_index": _failed_index(view) if view else None,
         "tally": {state: sum(1 for item in views if item.state == state) for state in FILTERS},
+        # The red cards of an Example Mapping session, kept where they were written. Handed over
+        # keyed by the rule they sit under, because that is where the list renders them.
+        "questions": _questions(env),
         "preset": "",
     }
+
+
+def _questions(env: str) -> dict[tuple[str, str], list[Any]]:
+    asked: dict[tuple[str, str], list[Any]] = {}
+    for question in app().discovery(env).questions:
+        asked.setdefault((question.feature, question.rule), []).append(question)
+    return asked
 
 
 def _busy(env: str) -> set[str]:

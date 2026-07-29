@@ -73,6 +73,29 @@ class Spec:
 
 
 @dataclass
+class Question:
+    """Something nobody could answer, written down beside the rule it is about.
+
+    Example Mapping produces three kinds of card: a **rule**, the **examples** that show it, and the
+    **questions** nobody in the room could answer. Gherkin has `Rule:` and `Scenario:` for the first
+    two and nothing at all for the third, so the red cards end up in a photograph of a table and are
+    never seen again — which is a shame, because they are precisely the things that become bugs.
+
+    A question is written as a comment, `# ? …`, and that choice is the whole design. Gherkin
+    already ignores comments, so a feature carrying questions is still a feature every other tool
+    can read; ATF adds meaning on top rather than a keyword nothing else knows. And a question's
+    whole life is to stop being one — it gets answered and becomes a rule or a scenario — so it has
+    to sit where that answer will be written, which is here, two characters from being deleted.
+    """
+
+    ask: str
+    feature: str = ""
+    rule: str = ""
+    file: str = ""
+    line: int = 0
+
+
+@dataclass
 class Test:
     id: str
     nodeid: str
@@ -130,6 +153,7 @@ class StepDef:
 @dataclass
 class Discovery:
     specs: list[Spec] = field(default_factory=list)
+    questions: list[Question] = field(default_factory=list)
     tests: list[Test] = field(default_factory=list)
     fixtures: list[Fixture] = field(default_factory=list)
     steps: list[StepDef] = field(default_factory=list)
@@ -167,6 +191,10 @@ class Discovery:
     def specs_for_resource(self, node_id: str) -> list[Spec]:
         return [spec for spec in self.specs if node_id in spec.resources]
 
+    def questions_under(self, feature: str, rule: str) -> list[Question]:
+        """What nobody could answer about this rule — the red cards, where they were written."""
+        return [one for one in self.questions if one.feature == feature and one.rule == rule]
+
 
 def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-") or "untitled"
@@ -180,7 +208,7 @@ def discover(
     project_root: Path | None = None,
 ) -> Discovery:
     specs = parse_specs(specs_dir, nodes, resource_types)
-    result = Discovery(specs=specs)
+    result = Discovery(specs=specs, questions=parse_questions(specs_dir))
 
     root = project_root or specs_dir.parent
     observed, errors = observe_pytest(root, specs_dir, env)
@@ -413,6 +441,57 @@ def parse_specs(specs_dir: Path, nodes: dict[str, Node], resource_types: set[str
     for path in sorted(specs_dir.rglob("*.feature")):
         specs.extend(parse_feature(path, nodes, resource_types))
     return specs
+
+
+# A question, written where Gherkin lets you write anything: a comment. `# ?` rather than a bare
+# comment, because a feature file's comments are full of asides that are not questions.
+_QUESTION_RE = re.compile(r"^\s*#\s*\?\s*(?P<ask>\S.*?)\s*$")
+_RULE_RE = re.compile(r"^\s*Rule:\s*(?P<rule>.*)$")
+_FEATURE_LINE_RE = re.compile(r"^\s*Feature:\s*(?P<feature>.*)$")
+
+
+def parse_questions(specs_dir: Path) -> list[Question]:
+    """Every `# ? …` line under `specs_dir`, with the feature and rule it sits under.
+
+    Read separately from the scenarios rather than in the same pass, because the two answer
+    different questions and are wanted in different places: `atf docs` wants both, the cockpit's
+    scenario list wants both, and neither wants to pay for the other. Reading a comment costs one
+    regular expression per line.
+    """
+    found: list[Question] = []
+    if not specs_dir.is_dir():
+        return found
+    for path in sorted(specs_dir.rglob("*.feature")):
+        found.extend(questions_in(path))
+    return found
+
+
+def questions_in(path: Path) -> list[Question]:
+    """The questions in one feature file, each attached to the rule above it."""
+    feature, rule = "", ""
+    found: list[Question] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return found
+
+    for number, raw in enumerate(lines, start=1):
+        if (asked := _QUESTION_RE.match(raw)) is not None:
+            found.append(
+                Question(
+                    ask=asked.group("ask"),
+                    feature=feature,
+                    rule=rule,
+                    file=str(path),
+                    line=number,
+                )
+            )
+            continue
+        if (named := _FEATURE_LINE_RE.match(raw)) is not None:
+            feature, rule = named.group("feature").strip(), ""
+        elif (grouped := _RULE_RE.match(raw)) is not None:
+            rule = grouped.group("rule").strip()
+    return found
 
 
 def parse_feature(path: Path, nodes: dict[str, Node], resource_types: set[str]) -> list[Spec]:

@@ -30,6 +30,12 @@
          before, because their scenarios all share one empty rule. #}
       {% for rule, under in members | groupby("spec.rule") %}
       {% if rule %}<div class="list-group-label sub-label">{{ rule }}</div>{% endif %}
+      {# Example Mapping's red cards: what nobody in the room could answer, kept beside the rule it
+         is about. A question is written as a `# ?` comment, so the file is still ordinary Gherkin
+         and answering one is deleting two characters. #}
+      {% for question in questions.get((feature, rule), []) %}
+        <p class="question small">{{ question.ask }}</p>
+      {% endfor %}
       {% for item in under %}
         {% set link = u('/scenarios/' ~ item.id) %}
         <a href="{{ link }}"

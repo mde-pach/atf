@@ -86,6 +86,10 @@ def _context(env: str) -> dict[str, Any]:
         "runs": cockpit.recent_runs(env, RUNS),
         "flaky": _flaky(env, found),
         "unexercised": [name for name, view in type_views(env).items() if not view.specs],
+        # The red cards of an Example Mapping session. A gap in the *description* rather than in the
+        # coverage, which is why they belong on this page: an unanswered question is the earliest
+        # form of a bug, and the cheapest place to catch one.
+        "questions": found.questions,
         "never_run": buckets[NEVER_RUN],
         "skipped": buckets[SKIPPED_STATE],
         "errors": found.errors,

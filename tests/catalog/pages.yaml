@@ -103,3 +103,11 @@ badge_type:
     - cockpits.unmakeable
   body:
     at: ${cockpits.unmakeable.id}/catalog/type/badge
+
+questions:
+  resource: page
+  represents: The scenarios page of a suite whose rule has unanswered questions under it.
+  depends_on:
+    - cockpits.asked
+  body:
+    at: ${cockpits.asked.id}/scenarios

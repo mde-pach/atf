@@ -130,6 +130,15 @@ Feature: The command
       When the developer reads the index from there
       Then the page mentions "Lists"
 
+    Scenario: What nobody could answer reaches the page, where somebody might
+      # A question in a repository is read by the people who wrote it. On a documentation page it
+      # is read by the people who can answer it, which is the whole reason to render one.
+      Given the workspace "asked"
+      When I run "atf docs"
+      And the developer reads the page written for the paying feature
+      Then the page mentions "Still unanswered"
+      And the page mentions "Who owns the refund"
+
     Scenario: A suite with nothing written yet is told so, not handed an empty page
       Given the workspace "bare"
       When I run "atf docs"

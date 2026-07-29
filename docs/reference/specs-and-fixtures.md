@@ -134,6 +134,36 @@ def pytest_collection_modifyitems(items):
             item.add_marker(pytest.mark.skip(reason="work in progress"))
 ```
 
+### Questions {#questions}
+
+Example Mapping — the discovery practice `Rule:` exists to carry into a file — produces three kinds
+of card: a **rule**, the **examples** that show it, and the **questions** nobody in the room could
+answer. Gherkin has a keyword for the first two and none for the third, so the red cards end up in a
+photograph of a table and are never seen again.
+
+Write one as a comment beginning `# ?`:
+
+```gherkin
+  Rule: A card is charged once per basket
+
+    # ? What happens if the card is declined after the basket was emptied?
+    # ? Who owns the refund when a partial capture times out?
+
+    Scenario: A basket is paid for
+      ...
+```
+
+It belongs to the `Rule:` above it, or to the feature where there is none. ATF shows them under that
+rule in [the cockpit](cockpit.md), counts them on the overview beside the other gaps, and renders
+them on the page [`atf docs`](cli.md#atf-docs) writes — which is the point: a question read by the
+people who wrote it is a question nobody can answer, and a documentation site is read by the people
+who can.
+
+**A comment, deliberately.** Gherkin already ignores them, so a feature carrying questions is still
+a feature every other tool can read — ATF adds meaning on top rather than a keyword nothing else
+knows. And a question's whole life is to stop being one: it gets answered and becomes a rule or a
+scenario, so it has to sit where that answer will be written, two characters from being deleted.
+
 ## Collecting a feature {#collecting}
 
 A `.feature` is normally handed to pytest by a module that calls `scenarios("…")`. For a feature

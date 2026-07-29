@@ -46,3 +46,24 @@ unmakeable:
   represents: A suite holding one resource ATF can never make, and one that depends on it.
   body:
     suite: unmakeable
+
+# The chained suite with one feature rewritten to carry `# ?` questions under its rule. A workspace
+# varies by file, so this needs no template of its own — and the feature is written as a block
+# rather than with `\n` escapes, because a feature file that a reader can read is the point.
+asked:
+  resource: workspace
+  represents: A suite whose rule has questions nobody could answer written under it.
+  body:
+    suite: chained
+    specs/steps/test_lists.py: "#absent"
+    specs/features/lists.feature: |
+      Feature: Paying
+        Money moves once, and only once.
+
+        Rule: A card is charged once per basket
+
+          # ? What happens if the card is declined after the basket was emptied?
+          # ? Who owns the refund when a partial capture times out?
+
+          Scenario: A basket is paid for
+            Given the owner "primary"

@@ -1,11 +1,22 @@
 # ATF's tests, written in ATF
 
-ATF's test suite is an ATF suite whose system under test is ATF. Running it is running ATF:
+ATF's test suite is an ATF suite whose system under test is ATF, and this repository is set up the
+way any project using ATF is: **one `atf.yaml` at the root**, found by walking up from wherever you
+are. So the command works on it with nothing to export first.
 
 ```sh
-uv run pytest -q               # everything, in one go — about eighteen minutes
-uv run pytest -q tests/specs   # the scenarios alone — about ninety seconds
+uv run pytest -q                     # everything — about four minutes
+uv run pytest -q tests/specs         # the scenarios alone — about a minute
+
+uv run python -m tests.backend       # the environment, in another terminal…
+uv run atf status local              # …and then any of these
+uv run atf serve                     # ATF, browsing the suite that tests it
 ```
+
+`atf lint` and `atf docs` need no environment at all and work on their own. Everything that reaches
+a resource needs the environment running, which is the same thing that is true of any suite: start
+what you are testing, then point ATF at it. The scenarios start it themselves, because a test run
+should need one command.
 
 **Three invocations are four times faster than one**, and CI uses them:
 
@@ -39,8 +50,8 @@ If the vocabulary below is unfamiliar, the
 | **Adapter** | `suite_adapters.py` copies a suite template into a temp dir and points the command at it; `cockpit_adapters.py` starts and stops the server. A `page` is ATF's own `html` adapter, a `screen` its `browser` one, and running the CLI is its `command` one — this suite writes none of the three. |
 | **Lifecycle** | ephemeral for a `workspace` and a `private_cockpit`: a scenario that runs `atf` against a suite, or presses a button in one, gets a pristine one. Shared for a `shared_suite` and the `cockpit` over it — starting a server costs the better part of a second, and a `page` is served by ATF's `html` system, which only ever GETs, so nothing that reads one can change it. |
 | **Mode** | `data` for a page, a screen, and the records a suite under test leaves behind — observations, never preconditions, which is what stops this suite changing the interface it is reading. |
-| **SUT client** | `specs/atf_backend.py` — reads the stub backend the suites under test provision into |
-| **Environment** | `stub_backend.py`, an in-process HTTP API the suites-under-test provision into |
+| **SUT client** | `specs/atf_backend.py` — reads the environment the suites under test provision into |
+| **Environment** | [`backend.py`](backend.py), serving `stub_backend.py` on the loopback address the manifest names. Three JSON collections, because the suite templates declare `rest` resources — **not** because ATF is about HTTP. This catalog is mostly not: a workspace is a directory, a cockpit a subprocess, a page a response. |
 | **Phrasebook** | `specs/phrasebook.yaml` — every exit code, field name and CLI flag this suite needs, kept out of the features |
 
 So `Given the workspace "chained"` builds a genuine consuming project, and

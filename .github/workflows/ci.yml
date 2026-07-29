@@ -60,10 +60,10 @@ jobs:
       - name: The suite can still go red
         run: uv run pytest -q tests/test_mutations.py
 
+      # No `ATF_MANIFEST` anywhere: `atf.yaml` is at the root of this repository, so the command
+      # finds it the way it finds any project's.
       - name: The feature files are well formed
-        run: uv run python -m atf.cli lint
-        env:
-          ATF_MANIFEST: tests/atf.yaml
+        run: uv run atf lint
 
       # Run the way a user would, which catches anything the harness papers over: scaffold a suite
       # with the command, then run it with nothing else set up. There is no example checked in — the

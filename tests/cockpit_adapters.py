@@ -54,7 +54,11 @@ class CockpitAdapter:
         # Which copy of ATF the served cockpit runs, same override the CLI-under-test honours. The
         # mutation tests point it at a deliberately broken copy; if this ignored them, the scenarios
         # below would be testing the working tree while claiming to test that copy.
-        self.source = Path(settings.get("atf_src") or os.environ.get("ATF_TESTS_SRC") or REPO / "src")
+        # Which copy of ATF the served cockpit runs. Inherited from `PYTHONPATH` rather than named
+        # by a variable of this suite's own: the mutation guard runs the whole suite with it pointing
+        # at a deliberately broken tree, and inheriting is what carries that through to the server.
+        inherited = next(filter(None, os.environ.get("PYTHONPATH", "").split(os.pathsep)), "")
+        self.source = Path(settings.get("atf_src") or inherited or REPO / "src")
         self._running: dict[str, subprocess.Popen[bytes]] = {}
         # Which workspace each kept server is serving, so a second scenario over the same suite is
         # handed the one already up rather than starting another.

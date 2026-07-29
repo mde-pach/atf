@@ -131,6 +131,15 @@ uv run ty check             # strict, zero suppressions
 uv run pytest -q            # the framework's own tests; no network
 ```
 
+**ATF is set up on itself.** `atf.yaml` is at the root of this repository, where a project's config
+belongs, so the command works here as it would anywhere:
+
+```sh
+uv run atf lint                   # needs nothing running
+uv run python -m tests.backend    # the environment, in another terminal…
+uv run atf serve                  # …then ATF, browsing the suite that tests it
+```
+
 `tests/` is one directory holding both layers, and one `pytest` run covers them together:
 
 - **An ATF suite whose system under test is ATF** — its resources are real consuming suites on

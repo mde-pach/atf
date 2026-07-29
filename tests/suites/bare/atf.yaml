@@ -16,6 +16,6 @@ environments:
   local:
     adapters:
       rest:
-        base_url_env: ATF_TESTS_BACKEND
-        auth: { header: X-Actor, value_env: ATF_TESTS_ACTOR }
+        base_url: http://127.0.0.1:8765
+        auth: { header: X-Actor, value: atf-tests }
         pagination: { results_key: results, count_key: count }

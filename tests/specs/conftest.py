@@ -20,13 +20,30 @@ from pathlib import Path
 
 import pytest
 from atf_backend import Backend
+from backend import start_if_absent
 from pytest_bdd import parsers, when
 from suite_adapters import aim_the_command_at
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _environment():
+    """The environment these scenarios run against, started if it is not already up.
+
+    An ordinary session fixture, which is what the manifest naming its address rather than a `*_env`
+    pointer buys: the server has to be answering by the time a scenario asks for a resource, not by
+    the time the plugin imports. A run needs one command, and somebody who left
+    `python -m tests.backend` running in another terminal keeps their server — see
+    [`backend.py`](../backend.py).
+    """
+    started = start_if_absent()
+    yield
+    if started is not None:
+        started.stop()
+
+
 @pytest.fixture
 def atf(client_config):
-    """The stub backend the suites-under-test provision into, for resetting between scenarios."""
+    """The environment the suites-under-test provision into, for resetting between scenarios."""
     return Backend(**client_config["atf"])
 
 

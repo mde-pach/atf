@@ -1,13 +1,16 @@
 """ATF's own test suite — an ATF suite, plus the Python tests that could not be one.
 
-`tests/` *is* a consuming project: `atf.yaml`, a catalog, `specs/`, and suite templates under
-`suites/`. Running `pytest` from the repository root runs ATF's scenarios against a stub backend
-and a real cockpit, through the same plugin any other suite uses. If that is awkward, the framework
-is awkward.
+This repository *is* a consuming project. `atf.yaml` is at the root, where a project's config
+belongs and where ATF finds it by walking up, so `atf status local`, `atf run`, `atf lint` and
+`atf serve` all work with nothing exported first. `pytest` from the root runs the scenarios through
+the same plugin any other suite uses. If that is awkward, the framework is awkward.
 
-This file does two jobs. It starts the stub environment *before* `atf.plugin` bootstraps — the
-plugin builds its adapters at import, so the backend has to be answering by then — and it holds the
-fixtures the remaining Python tests share.
+**Nothing is set up here any more, and that is the point.** This file used to start an HTTP server
+as an import side effect and write three variables into the environment, so that `*_env` pointers in
+the manifest would resolve by the time the plugin imported. The manifest writes its address down
+instead; the environment is [started like a dev server](backend.py), by the session fixture in
+`specs/conftest.py` or by you in another terminal. What is left here is the fixtures the Python tests
+share, and one line of registration.
 
 `suites/` is excluded from collection. Those are complete suites-under-test, copied into a temp
 directory per scenario; collecting them here would run them in this process, against this manifest.
@@ -15,7 +18,6 @@ directory per scenario; collecting them here would run them in this process, aga
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -24,29 +26,12 @@ import pytest
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
-# Where the suites under test provision into. Started here rather than in a fixture because the
-# plugin resolves `${env:...}` settings when it imports, which is before any fixture runs.
-if not os.environ.get("ATF_TESTS_BACKEND"):
-    from stub_backend import StubBackend
-
-    os.environ.setdefault("ATF_TESTS_ACTOR", "atf-tests")
-    _backend = StubBackend(actor=os.environ["ATF_TESTS_ACTOR"])
-    os.environ["ATF_TESTS_BACKEND"] = _backend.start()
-
-# Which manifest this suite is. Set here because pytest runs from the repository root, and ATF
-# would otherwise walk up from there and find no suite at all.
-os.environ.setdefault("ATF_MANIFEST", str(HERE / "atf.yaml"))
-
-# Which copy of ATF the command under test runs. The mutation guard overrides it to aim a scenario
-# at a deliberately broken one; left alone it is the working tree.
-os.environ.setdefault("ATF_TESTS_SRC", str(HERE.parent / "src"))
-
 pytest_plugins = ["atf.plugin", "pytester"]
 
 # Complete suites on disk, for the `workspace` adapter to copy. Not this suite's tests.
 collect_ignore_glob = ["suites/*"]
 
-from atf.adapters import unregister  # noqa: E402 - after the environment above is in place
+from atf.adapters import unregister  # noqa: E402 - after this directory is on the path
 from atf.materializer import Materializer  # noqa: E402
 from tests.fake_adapter import register_fake  # noqa: E402
 from tests.sample_project import write_sample_project  # noqa: E402

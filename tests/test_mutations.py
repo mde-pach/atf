@@ -42,9 +42,9 @@ def run_suite(
         cwd=SUITE,
         env={
             **os.environ,
+            # The copy of ATF everything under this run uses: the suite itself, the `atf` it shells
+            # out to, and the cockpits it serves. One variable, inherited all the way down.
             "PYTHONPATH": str(src or REPO / "src"),
-            # the suite shells out to `atf`; point that copy at the same source
-            "ATF_TESTS_SRC": str(src or REPO / "src"),
             **(env or {}),
         },
         capture_output=True,
@@ -81,8 +81,16 @@ def test_the_suite_is_still_a_meaningful_self_test_without_a_browser():
 
 
 def test_the_self_hosted_suite_uses_atf_rather_than_reimplementing_it():
-    """Guard the dogfood: if this stops being an ATF suite, it stops proving anything."""
-    assert (SUITE / "atf.yaml").is_file()
+    """Guard the dogfood: if this stops being an ATF suite, it stops proving anything.
+
+    The manifest is asserted to be at the *repository root*, not in `tests/`. That is the difference
+    between a suite ATF can be pointed at and a suite only pytest can run: a project's config lives
+    where the project does, and ATF finds it by walking up. Move it back under `tests/` and every
+    `atf` command needs a variable exported first, which is how this stopped demonstrating anything
+    the first time.
+    """
+    assert (REPO / "atf.yaml").is_file(), "the manifest belongs at the root, as in any project"
+    assert not (SUITE / "atf.yaml").exists(), "two manifests is two sources of truth"
     assert (SUITE / "catalog" / "resources.yaml").is_file()
     assert '"atf.plugin"' in (SUITE / "conftest.py").read_text()
 

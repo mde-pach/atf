@@ -38,6 +38,7 @@ from atf.adapters import Context, Record, register
 from atf.catalog import Node
 
 HERE = Path(__file__).parent
+ROOT = HERE.parent
 
 # Where a command runs when the scenario built no suite for it to run in: an empty directory, made
 # once, holding nothing an `atf` walking upwards could mistake for a project.
@@ -52,8 +53,11 @@ KEPT, MEANT = "@{", "${"
 
 class WorkspaceAdapter:
     def __init__(self, settings: dict[str, Any]) -> None:
-        suites = Path(settings.get("suites", "./suites"))
-        self.suites = suites if suites.is_absolute() else (HERE / suites).resolve()
+        # Relative to the manifest, which is this repository's root — the directory above this
+        # module. Read relative to the module it used to be resolved against, which was the same
+        # place only while the manifest lived in `tests/` too.
+        suites = Path(settings.get("suites", "./tests/suites"))
+        self.suites = suites if suites.is_absolute() else (ROOT / suites).resolve()
         # The copies made for a *persistent* node, so a second scenario asking for one gets the
         # same suite rather than another copy. Keyed by the whole body, because two nodes over one
         # template with different varied files are two different suites.
@@ -119,10 +123,16 @@ def aim_the_command_at(root: Path | None, ctx: Any) -> None:
         return
     command.cwd = str(root or NOWHERE)
     command.env = {
+        # Which manifest the command under test reads. Not this repository's — the suite the scenario
+        # just built, which is the whole point of building one.
         "ATF_MANIFEST": str(root / "atf.yaml") if root else "",
-        # The copy of ATF the command runs, ahead of the installed one. Which copy that is, the
-        # mutation guard overrides to aim a scenario at a deliberately broken tree.
-        "PYTHONPATH": os.pathsep.join([os.environ.get("ATF_TESTS_SRC", ""), *([str(root)] if root else [])]),
+        # The copy of ATF the command runs, inherited rather than named by a variable of this
+        # suite's own. The mutation guard runs the whole suite with `PYTHONPATH` pointing at a
+        # deliberately broken tree, and inheriting it is what carries that through to the command —
+        # a private `ATF_TESTS_SRC` said the same thing twice.
+        "PYTHONPATH": os.pathsep.join(
+            filter(None, [os.environ.get("PYTHONPATH", ""), str(root) if root else ""])
+        ),
         # `atf` on the path is the one belonging to the interpreter this suite was started with,
         # whatever else the machine has installed. A scenario that runs a different ATF is not
         # testing this one.

@@ -24,7 +24,8 @@ and fixtures follow automatically.
 - **Specs** — pytest-bdd scenarios. Each resource type becomes a generated pytest fixture; one
   generic step provisions any resource named in a scenario.
 - **Cockpit** — a FastAPI + htmx web app that renders the catalog, the scenarios and the run
-  history, provisions what is missing, runs tests with live progress, and answers *"can I ship?"*
+  history, provisions what is missing, runs tests with live progress, composes a new scenario from
+  what the catalog already knows, and answers *"can I ship?"*
 
 The engine, spec plumbing, discovery and cockpit are generic. A project supplies only content
 (catalog + specs), adapters (how to talk to its systems), and a manifest.
@@ -47,6 +48,21 @@ To read them as a site, with navigation and search:
 ```sh
 uv run --group docs mkdocs serve      # http://127.0.0.1:8000/atf/
 ```
+
+## The command
+
+```sh
+atf init                     # scaffold a suite where there is nothing
+atf status <env>             # what exists in an environment, resource by resource
+atf seed <env>               # make it exist
+atf run                      # run the specs; -k by title, --tag, --failed, --json as CTRF
+atf lint                     # are the feature files well formed?
+atf docs                     # the features as markdown, carrying the last run's verdict
+atf serve                    # the cockpit
+atf import-run <env> <file>  # file a CI report as a run
+```
+
+Every flag and exit code is in the [CLI reference](docs/reference/cli.md).
 
 ## Install
 

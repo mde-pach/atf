@@ -102,11 +102,22 @@ since they are deliberately swallowed rather than raised.
 ## When the spec fails but the resource is fine
 
 If `atf status` shows everything present and the spec still fails, the provisioning half is done and
-the problem is in your vocabulary or your client. Run just that test with pytest's output:
+the problem is in your vocabulary or your client. Run just that scenario, by the words in its title:
 
 ```sh
-uv run pytest specs/steps/test_accounts.py -k a_project_belongs -x -vv
+atf run -k 'a project belongs to its account'
 ```
+
+[`-k`](../reference/cli.md#run-k) takes what a person would type — a scenario has a title, and the
+words of it are flattened the way pytest-bdd flattens one into a test name. Then, once you have
+fixed something:
+
+```sh
+atf run --failed
+```
+
+which runs only what did not pass in the last run against this environment, and says so if nothing
+did.
 
 `context` holds whatever the steps put there; print it in the failing step to see the record the
 adapter actually returned.
@@ -114,7 +125,15 @@ adapter actually returned.
 ## When it only fails the second time
 
 A suite that passes once and fails on a re-run is almost always a scenario mutating a persistent
-resource another scenario asserts on. Give the mutating scenario its own instance — see
+resource another scenario asserts on. Give the mutating scenario its own instance, either by
+declaring a second node or with one line in the spec:
+
+```gherkin
+Given a fresh account "primary"
+```
+
+which builds an instance that belongs to that scenario and is taken away with it, leaving the shared
+one untouched. See [One to yourself](../reference/specs-and-fixtures.md#fresh) and
 [About lifecycles](../explanation/lifecycles.md#a-scenario-that-mutates-a-persistent-resource-must-own-it).
 
 ## When the catalog will not load at all

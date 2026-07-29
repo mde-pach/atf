@@ -148,6 +148,28 @@ happened on a build machine rather than on your laptop. See
 
 `.atf/` is a local cache. Keep it out of version control.
 
+## Write one without opening an editor
+
+Go back to Scenarios and press **Compose a scenario**.
+
+There is no text box for the Gherkin. There are four questions, and the answers come from what ATF
+already knows: pick a resource type and one of its instances for the `Given`; pick what the `Then`
+is *about*, then which of its fields, then how to compare, then against what. The field picker shows
+what each field **currently holds in this environment**, so the last box is usually one click.
+
+The Gherkin appears beside the choices as you make them. That preview is exactly what will be
+written — not an approximation of it.
+
+Press **Try it** to run the draft without saving. Then **Save**, and look at your feature file: the
+scenario is there and **nothing else changed**. No Python was written, because every step the
+composer offered is one a feature can already reach on its own.
+
+Two things worth trying while you are here. Choose a `Then` about a resource and pick
+*the resource itself* — the compare box now offers a whole shape, and you get a small table where
+each field of the resource is offered with its current value. And notice which steps are *not*
+offered, with a count and the reason: a claim about what a step produced cannot be made before a
+step that produces one.
+
 ## When you are done
 
 Press `Ctrl-C` in the terminal.
@@ -159,11 +181,13 @@ Press `Ctrl-C` in the terminal.
 - Told a scenario that cannot run apart from one that simply has work to do first.
 - Provisioned a missing resource and its dependencies from the browser.
 - Watched a job while navigating elsewhere, and found the result still there after a restart.
+- Written a scenario from four choices, and had it land in the file with nothing else touched.
 
 ## Where to go next
 
 - [How to find out why an environment is red](../how-to/find-out-why-an-environment-is-red.md) —
   this tour, applied to an actual bad day.
-- [Cockpit reference](../reference/cockpit.md) — every vertical, control and state.
+- [Cockpit reference](../reference/cockpit.md) — every vertical, control and state, including
+  [the composer](../reference/cockpit.md#composer).
 - [About the model](../explanation/the-model.md) — why the cockpit can answer questions an ordinary
   suite cannot.

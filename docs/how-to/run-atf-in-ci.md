@@ -75,11 +75,7 @@ jobs:
         run: uv run atf seed staging
 
       - name: Run the specs
-        run: uv run pytest --json-report --json-report-file=report.json -q
-
-      - name: Record the run
-        if: always()
-        run: uv run atf import-run staging report.json
+        run: uv run atf run --json report.json
 
       - name: Keep the report
         if: always()
@@ -99,11 +95,31 @@ For `seed` to work, the environment must be listed in
 [`mutable_envs`](../reference/manifest.md#mutable_envs). If it is not, the command exits `2` and
 changes nothing.
 
+## A report other tools can read
+
+[`--json`](../reference/cli.md#run-json) writes the run as **CTRF**, the interchange format the
+tooling around test runs has settled on. A dashboard, a PR-comment bot or a flaky-test tracker
+written for CTRF works against ATF without being taught anything, which is the whole reason not to
+invent a shape of ATF's own.
+
+```sh
+atf run --json report.json
+```
+
+One thing to know before you gate on it: an `error` — a test that never got to run its body, because
+a fixture raised or a resource could not be provisioned — is reported as `failed`. A gate that
+treats *"it broke before it started"* as softer than a failure lets a broken suite through.
+
+The Gherkin step a scenario stopped on travels in each test's `message`, which is the useful unit of
+failure for a BDD suite and the first thing a person reading CI wants.
+
 ## Feed the result back to the cockpit
 
-The job above runs pytest directly rather than `atf run`, for one reason: it wants the JSON report.
-`atf import-run` then files that report in the [run history](../reference/cockpit.md#run-history) as
-a run against the named environment.
+`atf run` files its own result in the [run history](../reference/cockpit.md#run-history), so a job
+using it contributes history for free — as long as `.atf/runs/` survives the job.
+
+For a build that runs pytest directly, [`atf import-run`](../reference/cli.md#atf-import-run) files
+a pytest JSON report as a run against a named environment:
 
 ```sh
 pytest --json-report --json-report-file=report.json -q
@@ -117,9 +133,6 @@ exactly the thing you want flagged, and neither half of that pattern is visible 
 `import-run` writes to `.atf/runs/` under the suite root. It does not touch the environment, so it
 is not gated by `mutable_envs`, and it is safe in `if: always()`.
 
-`atf run` writes to the same store, so a job that does not need the artifact can keep using it and
-still contribute history — as long as `.atf/runs/` survives the job.
-
 ### Getting the history back to a human
 
 `.atf/` is a local cache, gitignored by design, and a CI runner is thrown away. Two ways to make the
@@ -128,6 +141,25 @@ history useful:
 - **Upload it as an artifact**, as above, and unpack it into a suite root when you want to look.
 - **Import on the machine that will read it**: download the build's `report.json` and run
   `atf import-run staging report.json` locally. The cockpit picks it up on the next page load.
+
+## Publish the specs as documentation
+
+[`atf docs`](../reference/cli.md#atf-docs) writes the features out as markdown — narrative, `Rule:`
+headings, the steps as they were written, the questions nobody has answered, and what the last run
+said about each scenario. Run it after the specs, in the job that has the run history:
+
+```sh
+atf run --json report.json
+atf docs --out docs/specs
+```
+
+Carrying the verdict is the difference between a prettier feature file and documentation somebody
+trusts, and it is the reason this belongs in CI rather than in a developer's working copy: CI is
+where a run against the real environment happens.
+
+There is deliberately no `--check` flag. The verdicts come from a run history on the machine that
+ran the tests, so pages generated locally are ones CI cannot reproduce — a staleness gate would fail
+for the one reason that is not the author's fault.
 
 ## Keep it to one worker
 

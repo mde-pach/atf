@@ -112,18 +112,52 @@ copying the scenario:
 
 Each row becomes its own test, and each row's resources are provisioned for that row only.
 
+## When your scenario changes something others read
+
+A scenario that completes a task another scenario asserts is open makes the suite depend on the
+order it ran in, which is the failure mode end-to-end suites are known for. Ask for your own:
+
+```gherkin
+Given a fresh account "primary"
+```
+
+That builds an instance of the same catalog node that belongs to this scenario and is taken away
+with it — the shared one is untouched, and no other scenario notices. The catalog does not change,
+because wanting one to yourself is a fact about a *scenario* and the type is usually one everybody
+else is happy to share. See [One to yourself](../reference/specs-and-fixtures.md#fresh).
+
+## Write down what you could not answer
+
+Half of what comes out of talking through a behaviour is questions nobody in the room could settle.
+Write them where the answer will go:
+
+```gherkin
+  Rule: A closed account cannot be billed
+
+    # ? What happens to an invoice already in flight when the account closes?
+
+    Scenario: A closed account cannot be billed
+      ...
+```
+
+ATF shows these under the rule in the cockpit, counts them on the overview, and puts them on the
+page [`atf docs`](../reference/cli.md#atf-docs) writes — which is how they reach somebody who can
+answer one. It is a comment, so the file is still ordinary Gherkin, and answering one is deleting
+two characters. See [Questions](../reference/specs-and-fixtures.md#questions).
+
 ## Run just what you added
 
 ```sh
-atf run 'specs/steps/test_accounts.py::test_a_closed_account_cannot_be_billed'
+atf run -k 'a closed account cannot be billed'
 ```
 
-pytest-bdd names the test after the scenario, lower-cased with underscores. Running the file alone
-also works while you iterate:
+[`-k`](../reference/cli.md#run-k) takes the words of the title. A tag works too, if you tagged it:
 
 ```sh
-atf run specs/steps/test_accounts.py
+atf run --tag wip
 ```
+
+And after you have fixed something, `atf run --failed` runs only what did not pass last time.
 
 Then run the whole suite once before you push. A new scenario that mutates something is exactly the
 kind of change that only shows up in the scenario *after* it.

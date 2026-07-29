@@ -148,6 +148,54 @@ green.
 [Provision](#provision) clears the second list, and the first where the cause was `error`. An
 `unsupported` blocker is fixed in the manifest, not in the environment.
 
+## The composer {#composer}
+
+`GET /compose` — *write a scenario without opening an editor.* Reachable from the Scenarios page and
+from any scenario, which starts a new one in the same feature.
+
+The premise is that a scenario is a choice from a closed list rather than a piece of writing. ATF
+knows every resource the catalog declares, every step this suite can reach and every field a
+resource is known to have, so the page asks four questions and writes the Gherkin:
+
+| Row | Chosen by |
+|---|---|
+| `Given` | a resource type, then one of its instances |
+| `When` | a step's wording — an action is a thing a suite defines or a catalog names |
+| `Then` | **what it is about**, then what of it, then how, then against what |
+
+A `Then` starts from the subject because that is what a person starts from: a resource, a whole type
+of them, a [slot](specs-and-fixtures.md#slots) a step above produced, or a step of the suite's own.
+Choosing a resource then offers its fields *with what each currently holds in this environment*, so
+the value is usually one click rather than a guess.
+
+### What it will not offer {#composer-refuses}
+
+A step whose `needs` nothing above it has produced. The count and the reason are shown rather than
+the option being silently missing — *"3 more steps are not offered here: nothing above this row puts
+`result` on the context"* — because a hidden option is a mystery and a count is an instruction.
+
+### Tables {#composer-tables}
+
+A step ending in a colon takes [a table](specs-and-fixtures.md#tables), and the composer builds one:
+each field the resource is known to have is offered with its current value, and
+[`#markers`](specs-and-fixtures.md#markers) are offered beside the value box for the fields whose
+exact contents are not the point. A half-filled row is reported; a row nobody filled in is not
+written, because the page always offers a spare one and an offer is not a line.
+
+### Trying it, and writing it {#composer-write}
+
+**Try it** runs the draft without saving it, and reports the Gherkin step it reached. **Save**
+appends it to the feature file — and writes no Python at all, because every step the composer offers
+is one an [auto-collected feature](specs-and-fixtures.md#collecting) can already reach.
+
+Writing is **not gated by `mutable_envs`** and needs a confirmation token instead: it changes files
+in your repository and touches no environment. Conflating *may write to production* with *may
+describe production* would make the catalog uneditable from the one place that can see what
+production actually holds.
+
+**Edit as text** switches to the Gherkin itself, held to exactly the same checks. A draft that would
+not parse is never written, and a new file that would not parse is not left behind.
+
 ## Resources {#catalog}
 
 `GET /catalog` — *everything a scenario can ask for, whether it exists in this environment, and what

@@ -66,10 +66,14 @@ Facts to look up while you work. Dry by design, and every key has its own anchor
   the auth schemes.
 - **[Catalog](reference/catalog.md)** — the type registry, instance files, placeholders, validation
   rules, node structure.
-- **[Specs and fixtures](reference/specs-and-fixtures.md)** — the provisioning step, the fixtures,
-  the `Materializer`, the exceptions.
+- **[Specs and fixtures](reference/specs-and-fixtures.md)** — the provisioning step, the claims,
+  acting on a system and on an interface, tables and markers, questions, the fixtures.
+- **[Phrasebook](reference/phrasebook.md)** — one sentence, and the claims it stands for.
 - **[CLI](reference/cli.md)** — every command, flag, exit code and environment variable.
-- **[Cockpit](reference/cockpit.md)** — the three verticals, readiness, provisioning, run history.
+- **[Cockpit](reference/cockpit.md)** — the three verticals, readiness, provisioning, the composer,
+  run history.
+- **[Providers](reference/providers.md)** — the `${...}` sources: generated values, the environment,
+  now.
 - **[Adapter SPI](reference/adapter-spi.md)** — the protocol, the registry, the HTTP helpers.
 
 ## Explanation

@@ -1,5 +1,8 @@
-# The cockpit's own pages, declared the way any resource is. Provisioning one starts the server
-# it is served by, because that is what it depends on.
+# The cockpit's own pages, declared the way any resource is. Provisioning one starts the server it
+# is served by, because that is what it depends on.
+#
+# A page says where to go and nothing else. What is *on* it is named in the scenario, by role and
+# accessible name — see `specs/features/cockpit.feature`.
 
 overview:
   resource: page
@@ -7,8 +10,7 @@ overview:
   depends_on:
     - cockpits.chained
   body:
-    cockpit: ${cockpits.chained.id}
-    path: /
+    at: ${cockpits.chained.id}
 
 catalog:
   resource: page
@@ -16,8 +18,7 @@ catalog:
   depends_on:
     - cockpits.chained
   body:
-    cockpit: ${cockpits.chained.id}
-    path: /catalog
+    at: ${cockpits.chained.id}/catalog
 
 owner_type:
   resource: page
@@ -25,8 +26,7 @@ owner_type:
   depends_on:
     - cockpits.chained
   body:
-    cockpit: ${cockpits.chained.id}
-    path: /catalog/type/owner
+    at: ${cockpits.chained.id}/catalog/type/owner
 
 groceries_node:
   resource: page
@@ -34,8 +34,7 @@ groceries_node:
   depends_on:
     - cockpits.chained
   body:
-    cockpit: ${cockpits.chained.id}
-    path: /catalog/node/lists.groceries
+    at: ${cockpits.chained.id}/catalog/node/lists.groceries
 
 scenarios:
   resource: page
@@ -43,8 +42,7 @@ scenarios:
   depends_on:
     - cockpits.chained
   body:
-    cockpit: ${cockpits.chained.id}
-    path: /scenarios
+    at: ${cockpits.chained.id}/scenarios
 
 compose:
   resource: page
@@ -52,8 +50,7 @@ compose:
   depends_on:
     - cockpits.chained
   body:
-    cockpit: ${cockpits.chained.id}
-    path: /compose
+    at: ${cockpits.chained.id}/compose
 
 primary_node:
   resource: page
@@ -61,5 +58,4 @@ primary_node:
   depends_on:
     - cockpits.chained
   body:
-    cockpit: ${cockpits.chained.id}
-    path: /catalog/node/owners.primary
+    at: ${cockpits.chained.id}/catalog/node/owners.primary

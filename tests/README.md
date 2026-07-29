@@ -17,21 +17,21 @@ If the vocabulary below is unfamiliar, the
 
 | ATF concept | What it is here |
 |---|---|
-| **Resource** | a real consuming suite on disk (`workspace`), a running `atf serve` over one (`cockpit`), and what that cockpit shows (`page`, `element`) |
-| **Adapter** | `suite_adapters.py` copies a suite template into a temp dir; `cockpit_adapters.py` starts and stops the server and reads what it sent; `screen` is ATF's own browser adapter |
+| **Resource** | a real consuming suite on disk (`workspace`), a running `atf serve` over one (`cockpit`), and what that cockpit shows (`page`, `screen`) |
+| **Adapter** | `suite_adapters.py` copies a suite template into a temp dir and points the command at it; `cockpit_adapters.py` starts and stops the server. A `page` is ATF's own `html` adapter, a `screen` its `browser` one, and running the CLI is its `command` one — this suite writes none of the three. |
 | **Lifecycle** | ephemeral for both: every scenario gets a pristine suite and its own server, torn down afterwards |
-| **Mode** | `reference` for pages and elements — observed, never created, which is what stops this suite changing the interface it is reading. `data` for the records a suite under test leaves behind, and for a `screen`. |
-| **SUT client** | `specs/atf_cli.py` — runs `atf …` inside that suite and reads the stub backend |
+| **Mode** | `data` for a page, a screen, and the records a suite under test leaves behind — observations, never preconditions, which is what stops this suite changing the interface it is reading. |
+| **SUT client** | `specs/atf_backend.py` — reads the stub backend the suites under test provision into |
 | **Environment** | `stub_backend.py`, an in-process HTTP API the suites-under-test provision into |
 | **Phrasebook** | `specs/phrasebook.yaml` — every exit code, field name and CLI flag this suite needs, kept out of the features |
 
 So `Given the workspace "chained"` builds a genuine consuming project, and
-`When I run "atf seed local"` runs the real CLI against it. The provisioning step is ATF's own —
-this suite defines no `@given` and no `@then` anywhere. Its entire vocabulary is four `@when`s in
-`specs/conftest.py`, all of them "run the command", because running a command is the one thing a
-framework has no generic way to do. They live in a `conftest.py` rather than beside a feature
-because every `.feature` here is collected by ATF with no binding module of its own, and a step
-declared in a module is visible only inside it.
+`When I run "atf seed local"` runs the real CLI against it — and both of those steps are ATF's own.
+This suite defines no `@given` and no `@then` anywhere, and its entire vocabulary is three `@when`s
+in `specs/conftest.py` saying where the command was standing or what the developer had exported,
+which is the one thing a suite testing a *test framework* knows that ATF cannot. They live in a
+`conftest.py` rather than beside a feature because every `.feature` here is collected by ATF with no
+binding module of its own, and a step declared in a module is visible only inside it.
 
 ## One template, many variations
 
@@ -61,50 +61,31 @@ arrives without the two real nodes of `chained` for company. **Five templates, n
 ## Testing the front end the same way
 
 `specs/features/cockpit.feature` has **no step code at all** — one `scenarios(…)` line and nothing
-else. Every assertion in it is one of the
-[read-and-compare steps](https://mde-pach.github.io/atf/reference/specs-and-fixtures/#read-and-compare-steps)
-ATF gives every suite:
+else. Every claim in it names a control by what it *is* and what it is *called*:
 
 ```gherkin
-  Scenario: A type page lists its instances and the environment's records in one table
-    Given the element "instances_table"
-    Then the element "instances_table" exists
-    And the element "instance_rows" field "count" is "1"
+  Scenario: A type page lists its instances and what the environment holds, in one table
+    Given the page "owner_type"
+    Then the cell "primary" is showing
+    And the cell "The owner the list hangs off." is showing
 ```
 
-The dependency chain does the work. An element declares the page it is on, the page declares the
-cockpit serving it, the cockpit declares the workspace it serves — so provisioning that one element
-scaffolds a suite, starts a server over it, fetches the page, and tears both down afterwards.
+There is not one selector in this suite. A page says where to go and nothing else; what is on it is
+named inline, by role and accessible name, which is what a screen reader announces. `elements.yaml`
+used to be eleven nodes each carrying a CSS selector — a Page Object with a YAML file for a class —
+and a rename in a template made a scenario wrong about a page that still worked.
 
-An element that matches nothing is *absent*, which is what makes `Then the element "…" is gone` say
-what it means: it is how this suite proves a piece of interface was removed and stayed removed.
+The dependency chain does the work: a page declares the cockpit serving it, the cockpit declares
+the workspace it serves — so provisioning one page scaffolds a suite, starts a server over it,
+fetches the page, and tears both down afterwards.
 
-The cockpit is server-rendered, so most of this needs no browser: `html_select.py` is a small
-CSS-subset selector over the standard library's HTML parser, and it is unit-tested in
-`tests/test_html_select.py` because the cockpit feature only exercises it as deep as its own
-assertions go.
+### The scenarios that need a browser
 
-### The four scenarios that do need one
-
-An `element` is what the server *sent*. A `view` is what is *there* — after the stylesheet applied,
-htmx swapped and a combobox decided what to show. `visible` is the field no amount of HTML parsing
-can give you, and it is the only reason this suite pays for a browser.
-
-A view may declare what to do before looking, which turns "the options a step picker shows once you
-have typed `belongs`" into a resource with a name and a description:
-
-```yaml
-then_picker_filtered:
-  resource: view
-  body:
-    selector: "#compose-form .builder-step:last-of-type .combo-list li[role=option]:not([hidden])"
-    after:
-      - { do: click, at: "#compose-form .builder-step:last-of-type .combo-input" }
-      - { do: type, at: "#compose-form .builder-step:last-of-type .combo-input", text: "belongs" }
-```
-
-(`at`, not the more natural `on`: YAML 1.1 reads a bare `on` as the boolean true, so the key would
-arrive as `True` with an empty selector at the far end of it.)
+A `page` is what the server *sent*, read by ATF's `html` system, which costs nothing. A `screen` is
+what is *there* — after the stylesheet applied, htmx swapped and a combobox decided what to show —
+read by ATF's `browser` system. **They answer the same sentences.** `the option "groceries" is not
+showing` is one claim, and the only reason it lives below the line is that nothing in the HTML says
+which options a person can currently see.
 
 Those scenarios are tagged `@browser` and skipped where Playwright or its browser is missing, so a
 plain checkout still runs everything else and still goes green. To run them:

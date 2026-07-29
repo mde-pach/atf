@@ -17,7 +17,7 @@ from pytest_bdd import given, parsers
 from pytest_bdd import step as register_step
 
 from . import collect, phrasebook
-from .adapters import Record, why_unavailable
+from .adapters import Record, can_show, why_unavailable
 from .bootstrap import Boot, bootstrap
 from .catalog import natural_keys
 from .context import EPHEMERAL_ATTR, Context, Recogniser
@@ -171,7 +171,24 @@ def _make(
     # that knows. Everything downstream reads it from the slot rather than guessing at it.
     if isinstance(context, Context):
         context.note(resource_type, resource_type=resource_type, node_id=engine.resolve_id(resource_type, name))
+    _note_what_is_showing(context, engine, resource_type)
     return record
+
+
+def _note_what_is_showing(context: Context, engine: Materializer, resource_type: str) -> None:
+    """Remember the system this scenario is now looking at, for the steps that claim about a page.
+
+    A suite may configure more than one — `html` reads what a server sent and `browser` reads what
+    a browser ran, and a suite is entitled to both. `the button "Save" is showing` must not have to
+    say which, so the `Given` that opened a page settles it: the resource the scenario named already
+    said which system it belongs to.
+
+    Underscored, so it is ATF's bookkeeping rather than a slot a scenario can make a claim about.
+    """
+    system = str(engine.types.get(resource_type, {}).get("system", ""))
+    adapter = engine.adapters.get(system)
+    if adapter is not None and can_show(adapter):
+        context._showing = adapter  # noqa: SLF001 - `context` is ATF's own object, and this is ATF
 
 
 # ---- the phrasebook --------------------------------------------------------

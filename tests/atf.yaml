@@ -27,8 +27,9 @@ environments:
       workspace:
         suites: ./suites
       cockpit: {}
-      page: {}
-      element: {}
+      # What a cockpit page sent, read by role and accessible name. No browser, no selectors —
+      # which is why most of this suite's interface scenarios run on any checkout.
+      html: {}
       browser: {}
       # The command under test, run by ATF's own adapter. Which copy of ATF it runs, and which
       # manifest it sees, are decided per invocation in `specs/conftest.py` — they are the two
@@ -50,7 +51,6 @@ display:
   systems:
     workspace: { label: Workspace, color: "#7857d8" }
     cockpit: { label: Cockpit, color: "#2f6be0" }
-    page: { label: Page, color: "#0f8f6f" }
-    element: { label: Element, color: "#b8860b" }
+    html: { label: Page, color: "#0f8f6f" }
     browser: { label: Browser, color: "#c2410c" }
     rest: { label: Backend, color: "#475569" }

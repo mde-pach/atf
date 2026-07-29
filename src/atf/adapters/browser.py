@@ -32,6 +32,7 @@ import contextlib
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..accessible import Control
 from ..catalog import Node
 from . import Context, NoopDelete, Record
 
@@ -138,6 +139,43 @@ class BrowserAdapter(NoopDelete):
                 'with `Given the <page type> "<name>"`'
             )
         return self._page
+
+    # ---- what is on it ------------------------------------------------------
+    #
+    # The same three questions ATF's `html` system answers about a response, asked of a page that
+    # has actually run. That is what lets one sentence mean one thing in both places: which system
+    # a suite configures decides what a claim costs, never what it says.
+
+    def controls(self, role: str = "", name: str = "", *, wait: float = 0.0) -> list[Control]:
+        """Everything visible with this role, and this accessible name where one is given."""
+        page = self.showing()
+        found = page.get_by_role(role, name=name) if name else page.get_by_role(role)
+        # Not arriving is an outcome this returns, never an error: the step above decides what an
+        # empty list means, and for a negative claim an empty list is the answer it wants.
+        with contextlib.suppress(Exception):
+            found.first.wait_for(state="visible", timeout=wait or self.timeout)
+        controls = []
+        for index in range(found.count()):
+            one = found.nth(index)
+            if not one.is_visible():
+                continue
+            text = " ".join((one.text_content() or "").split())
+            controls.append(
+                Control(role=role, name=name or text, text=text, disabled=one.is_disabled())
+            )
+        return controls
+
+    def says(self, text: str, *, wait: float = 0.0) -> bool:
+        """Whether these words are readable somewhere on the page."""
+        found = self.showing().get_by_text(text)
+        try:
+            found.first.wait_for(state="visible", timeout=wait or self.timeout)
+        except Exception:  # noqa: BLE001 - not appearing is the answer, not a failure
+            return False
+        return True
+
+    def looking_at(self) -> str:
+        return self._page.url if self._page is not None else ""
 
 
 def _short(exc: BaseException) -> str:

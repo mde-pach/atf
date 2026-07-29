@@ -11,11 +11,11 @@ and coverage may be lost where losing it makes the suite better.
 
 ## Where things stand
 
-**Branch `readable-specs`, 23 commits.** All gates green: `uv run ruff check`, `uv run ty check`,
+**Branch `readable-specs`, 24 commits.** All gates green: `uv run ruff check`, `uv run ty check`,
 `uv run pytest -q`, `uv run mkdocs build --strict`, `examples/todo`, and
 `ATF_MANIFEST=tests/atf.yaml uv run python -m atf.cli lint`.
 
-**115 scenarios, 452 Python tests.** Started at 21 scenarios and 573 Python tests.
+**115 scenarios, ~465 Python tests.** Started at 21 scenarios and 573 Python tests.
 
 `selftest/` is deleted. `tests/` is a consuming project — `atf.yaml`, `catalog/`, `specs/`,
 templates under `suites/` — and one `pytest` run covers the scenarios and the Python tests together.
@@ -33,6 +33,7 @@ templates under `suites/` — and one `pytest` run covers the scenarios and the 
 | C7 `mode: data` | an observation is not a precondition |
 | C8 catalog `actions:` | **§3.1 answered** — a scenario can act on a system, not only read one |
 | C9 browser adapter | role and accessible name, inline; no selector in any catalog |
+| **O16 `html` adapter** | the same claims, read from the response — no browser, no selectors anywhere |
 | C10 `Rule:` | Example Mapping's middle card, in the file |
 | C11 auto-collection | a feature needing no code needs no file beside it |
 | C12 skip-when-unavailable | a system this machine has not got skips, saying what is missing |
@@ -53,6 +54,7 @@ better description. Each residue module's docstring says which it is and why.
 | Module | n | Verdict |
 |---|---:|---|
 | `test_cockpit.py` | 60 | convert the behavioural half; **lose the markup assertions** |
+| `test_accessible.py` | 42 | **new, keep.** Markup in, role and name out — a decision procedure |
 | `test_compose.py` | 60 | same |
 | `test_authoring.py` | 27 | same |
 | `test_discovery.py` | 42 | mostly convert — the cockpit's pages *are* discovery's output |
@@ -63,7 +65,6 @@ better description. Each residue module's docstring says which it is and why.
 | `test_context.py` | 21 | partly — held slots reach the run report |
 | `test_engine.py` | 17 | **keep.** A graph, a memo, a registry, an adapter told to misbehave |
 | `test_store.py` | 16 | **trimmed.** Keeps pruning, flakiness, streaks |
-| `test_html_select.py` | 16 | **keep.** This suite's own helper, not ATF |
 | `test_compare.py` | 15 | convert as a Scenario Outline truth table |
 | `test_acceptance.py` | 12 | keep, or convert with a source-rule adapter (grep as a data source) |
 | `test_providers.py` | 10 | **trimmed.** Keeps the registry |
@@ -91,7 +92,6 @@ acting through the UI and claiming a *domain* outcome, which loses markup-level 
 | O10 | Should `atf lint` check scenario titles? It checks step lines only | any time |
 | O12 | A phrase cannot stand for a step that takes a table — the executor passes no `datatable` | when someone asks |
 | O13 | Should the composer learn to build a table, so shape claims stop being hand-written? | C15 |
-| O16 | An HTML-parsing adapter that queries by role and accessible name — no browser, no selectors. Would let `element` drop its selectors without making the suite browser-dependent | before the cockpit trio |
 
 ---
 
@@ -169,9 +169,17 @@ Things a future change would be wrong to undo.
 
 **The suite**
 
-- **`element` keeps its selectors.** It reads the HTML a page *sent*, which costs no browser;
-  a `screen` needs one, and `README.md` promises a checkout without one is still meaningful.
-  Revisit only via O16.
+- **No selector survives anywhere.** O16 shipped: `atf.accessible` reads role and accessible name
+  out of the HTML a server sent, and the `html` adapter serves the same `Showing` protocol the
+  `browser` adapter does. `element` and its eleven selector-carrying nodes are gone, as is the
+  suite's own CSS engine. A claim now means one thing and costs two different amounts.
+- **Reading is generic; acting needs a browser.** `controls`/`says` are on the protocol; click and
+  type are not, because reading a response can never do them and pretending otherwise would make a
+  suite quietly weaker on a machine with no browser.
+- **Which system a claim is about is settled by the `Given` that opened a page**, noted on
+  `context._showing` by the plugin. A suite may configure both, and no sentence has to say which.
+- **A landmark is not named by what is inside it.** `nav` wrapping the menu is called nothing, not
+  "Catalog Compose Runs" — otherwise `the region "…"` matches whatever happens to be in one today.
 - **A scenario may never depend on an ambient variable.** Two scaffolded-suite scenarios passed
   alone and failed under the full suite because they inherited an `ATF_ACTOR` the unit test they
   replaced had set explicitly.
@@ -192,6 +200,11 @@ Things a future change would be wrong to undo.
   design. A scenario wanting more of a traceback has nowhere to read it from.
 - **Prose has no accessible name.** ARIA computes one for things you can act on; `the words "…"` is
   the claim about what a page says.
+- **There is no count claim about an interface.** Converting the cockpit's element assertions cost
+  two of them: "the composer offers Save and never a badge" lost its negative half (a decorative
+  `span` has no role to name), and "three steps shown as Gherkin" became a claim about the keyword
+  and the line rather than a count of three. Both were markup assertions, and that was the forecast
+  price. Add `there are {count:d} …` only when a real scenario needs it, not on speculation.
 
 ---
 

@@ -1,59 +1,61 @@
 Feature: The cockpit
-  ATF's own interface, read as resources: a page is a resource, an element on it is a resource,
-  and the server showing them is a resource that gets started and torn down. Not one line of step
-  code below — every assertion is one ATF gives every suite.
+  ATF's own interface, read as resources: a page is a resource and the server showing it is a
+  resource that gets started and torn down. Not one line of step code below — every assertion is
+  one ATF gives every suite.
 
-  This feature used to carry a lint waiver for twelve field claims and a status code, and it was
-  the target document's own evidence that generic vocabulary is not the same as readable
-  vocabulary. The waiver is gone: what those lines said now lives in `specs/phrasebook.yaml`, and
-  the sentences below say what a person would say about a page.
+  Every claim names a control by what it *is* and what it is *called*, which is what a screen
+  reader announces. There is no selector in this file and none in the catalog behind it: a selector
+  describes today's markup, and a rename would make a scenario wrong about a page that still works.
+
+  The scenarios above the line read the HTML the cockpit sent, which costs nothing and runs on any
+  checkout. The ones below need the page to have *run*. They are the same sentences.
 
   Scenario: A cockpit comes up over a real suite
     Given the page "overview"
     Then the page "overview" was served
     And the page "overview" is titled "Overview · ATF"
+    And the heading "Can I ship?" is showing
 
-  Scenario: A type page lists its instances and the environment's records in one table
-    Given the element "instances_table"
-    Then the element "instances_table" exists
-    And the table lists 1 instance
+  Scenario: A type page lists its instances and what the environment holds, in one table
+    Given the page "owner_type"
+    Then the cell "primary" is showing
+    And the cell "The owner the list hangs off." is showing
 
   Scenario: The list that duplicated the nav and the table is gone
     Given the page "owner_type"
-    Then the element "declared_heading" is gone
+    Then the heading "Declared in the catalog" is not showing
 
   Scenario: A resource that depends on something is drawn as well as described
     Given the page "groceries_node"
-    Then the lineage is drawn as well as described
-    And the element "node_payload" exists
+    Then the heading "Lineage" is showing
+    And the heading "Payload" is showing
 
   Scenario: A resource that depends on nothing has no lineage to draw
     Given the page "primary_node"
-    Then the element "standalone_lineage_graph" is gone
+    Then the heading "Lineage" is not showing
 
-  Scenario: A payload shows the placeholder that resolves at provisioning time
-    Given the element "node_payload"
-    Then the payload is shown once
+  Scenario: A payload shows the reference it will resolve at provisioning time
+    Given the page "groceries_node"
+    Then the payload shows the reference rather than a value
 
   Scenario: A scenario is rendered as the Gherkin it was written in
     Given the page "scenarios"
-    Then all three of its steps are shown as Gherkin
+    Then its steps read as the lines they were written as
 
   Scenario: The composer offers the steps ATF provides as well as the suite's own
     Given the page "compose"
-    Then the element "compose_step_options" exists
+    Then the steps ATF gives every suite are offered
 
-  Scenario: Writing a scenario is a button, never a badge
+  Scenario: Writing a scenario is offered as something you press
     Given the page "compose"
-    Then writing it is offered as a button
-    And writing it is not offered as a badge
+    Then the button "Save" is showing
 
   # Everything below needs the page to have *run*, not merely been served, so it needs a real
   # browser. Without one these skip and the rest of the suite still passes — see the README.
   #
-  # Not one selector between them. A control is named by what it *is* and what it is *called*,
-  # which is what a screen reader announces and what an accessibility tree exposes — so a scenario
-  # about the interface is a scenario about what a person can perceive.
+  # They say nothing different from the ones above. `the option "groceries" is not showing` is one
+  # claim, and a combobox that hides its options until it is opened is the reason it can only be
+  # answered here: nothing in the HTML says which of them a person can currently see.
 
   @browser
   Scenario: A step picker keeps its options hidden until it is opened
@@ -79,10 +81,9 @@ Feature: The cockpit
     Given the screen "groceries_node"
     Then the words "A list under the primary owner." are showing
 
-  # Running a scenario from the interface is a *mutation*, and the `page` and `element` types
-  # cannot express one: they only ever GET, deliberately — nothing that reads the cockpit can
-  # change it. So the one place a scenario can press a button is here, through a real browser,
-  # which is what the browser adapter is for.
+  # Running a scenario from the interface is a *mutation*, and reading a page can never be one: the
+  # `html` system only ever GETs, deliberately, so nothing that reads the cockpit can change it. So
+  # the one place a scenario can press a button is here, through a real browser.
 
   @browser
   Scenario: A scenario can be run from the interface that describes it

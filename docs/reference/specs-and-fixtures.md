@@ -145,17 +145,33 @@ performed on, so there is always something there.
 
 ## Acting on an interface {#ui}
 
-A page in a browser is a resource like any other, and the controls on it are named **inline**, by
-**role** and **accessible name** — never in the catalog, and never with a selector.
+A page is a resource like any other, and the controls on it are named **inline**, by **role** and
+**accessible name** — never in the catalog, and never with a selector.
 
 ```yaml
-# The only thing a catalog says about a screen is where it is.
+# The only thing a catalog says about a page is where it is.
+page:
+  system: html          # what the server sent — no browser
+  mode: data
+  natural_key: at
+  id_field: at
+
 screen:
-  system: browser
+  system: browser       # the same page, after it has run
   mode: data
   natural_key: at
   id_field: at
 ```
+
+**Two systems, one vocabulary.** [`html`](manifest.md#html-settings) reads the page a server sent
+and [`browser`](manifest.md#browser-settings) reads the page a browser ran. They answer the same
+claims, so which one a suite configures decides what a claim *costs*, never what it says — and most
+of what there is to say about a server-rendered interface is true of the response, which needs
+nothing installed.
+
+Where they differ is honest and narrow. Only a browser can see a stylesheet apply, a fragment swap
+in or a combobox open — and only a browser can be *acted* on, because reading a response can never
+click anything. The acting steps say so where there is no browser rather than quietly doing less.
 
 ```gherkin
 Given the screen "compose"
@@ -192,15 +208,24 @@ what a reader reads and still not a selector.
 interface that hides what you may not do teaches nothing, and one that offers it and then refuses
 is worse. Disabled, with the reason beside it, is the third option.
 
-**A claim waits.** `is showing` and `the words …` wait for what they name to arrive, because an
-interface that swaps a fragment in after a request has settled is asynchronous, not broken.
+**A claim waits, where waiting means anything.** In a browser, `is showing` and `the words …` wait
+for what they name to arrive, because an interface that swaps a fragment in after a request has
+settled is asynchronous, not broken. A response is finished when it arrives, so `html` answers at
+once.
 
 **A failure says what is there.** Naming a control that is not on the page lists the ones that are,
 with that role, so a wrong name is one line to fix rather than a hunt.
 
-Playwright is an optional dependency (`uv sync --group browser`). Without it the adapter reports
+**What `html` reads is a documented subset of ARIA**: the implicit role HTML gives an element, with
+an explicit `role=` winning, and the accessible name computed in the specification's order —
+`aria-labelledby`, `aria-label`, what HTML names it natively (a label, an `alt`, a caption, what is
+written on it), then `title`. It cannot see layout or a stylesheet, so only an inline
+`display: none`, a `hidden` or an `aria-hidden` hides something from it. A page whose naming it
+cannot follow is a page to look at with `browser`.
+
+Playwright is an optional dependency (`uv sync --group browser`). Without it that adapter reports
 itself [unavailable](adapter-spi.md#unavailable) and scenarios tagged as needing it
-[skip with the reason](manifest.md#requires).
+[skip with the reason](manifest.md#requires) — while everything `html` can answer still runs.
 
 ## Read-and-compare steps {#read-and-compare-steps}
 

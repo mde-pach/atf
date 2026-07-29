@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import Any, Protocol
 
+from ..accessible import Control
 from ..catalog import Node
 
 Record = dict[str, Any]
@@ -86,6 +87,42 @@ def actions_of(entry: dict[str, Any]) -> list[str]:
     """The domain actions a resource type declares, in the order the catalog wrote them."""
     declared = entry.get("actions")
     return [str(name) for name in declared] if isinstance(declared, dict) else []
+
+
+class Showing(Protocol):
+    """Optional: an adapter whose resources are things to *look at*, which can say what is on one.
+
+    The reading surface for an interface is a **role** and an **accessible name** — `the button
+    "Save"` — and never a selector, because a selector describes today's markup and a role and a
+    name describe the thing. This is the seam that makes those claims mean one thing whichever
+    adapter answers them: ATF's `html` system reads the page a server sent, its `browser` system
+    reads the page after it has run, and a scenario says the same sentence to both.
+
+    Acting on a control — clicking it, typing into it — is not here. Reading a response can never
+    do it, and pretending otherwise would make a suite silently weaker on the machines that have no
+    browser. Those steps ask for a driver and say so when there is none.
+
+    `wait` is how long to keep looking, in milliseconds, where **0 means as long as this system
+    usually would**. An interface that swaps a fragment in after a request has settled is
+    asynchronous, not broken — and a claim that only ever looks at the first instant fails for a
+    reason the scenario is not about. A negative claim passes a smaller number of its own, because
+    waiting the full timeout for every "is not showing" would make a suite of them unusable.
+    Something that cannot change while a scenario looks at it ignores the whole question.
+    """
+
+    def controls(self, role: str = "", name: str = "", *, wait: float = 0.0) -> list[Control]: ...
+
+    def says(self, text: str, *, wait: float = 0.0) -> bool:
+        """Whether these words are readable somewhere a person can see them."""
+        ...
+
+    def looking_at(self) -> str:
+        """What is open, for a message to name — or `""` when nothing is."""
+        ...
+
+
+def can_show(adapter: Adapter) -> bool:
+    return callable(getattr(adapter, "controls", None))
 
 
 class Available(Protocol):
@@ -169,12 +206,14 @@ def _register_builtins() -> None:
     # in it pays nothing for this being here.
     from .browser import BrowserAdapter
     from .command import CommandAdapter
+    from .html import HtmlAdapter
     from .reference import ReferenceAdapter
     from .rest import RestAdapter
 
     register("rest", RestAdapter.from_settings)
     register("reference", ReferenceAdapter.from_settings)
     register("browser", BrowserAdapter.from_settings)
+    register("html", HtmlAdapter.from_settings)
     register("command", CommandAdapter.from_settings)
 
 
@@ -188,12 +227,15 @@ __all__ = [
     "Closeable",
     "AdapterFactory",
     "Context",
+    "Control",
     "NoopDelete",
     "Record",
     "actions_of",
     "build",
+    "Showing",
     "can_act",
     "can_browse",
+    "can_show",
     "close_adapter",
     "register",
     "registered_systems",

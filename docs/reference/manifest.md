@@ -163,7 +163,8 @@ anything is touched.
 | [`rest`](#base_url) | a JSON API |
 | `reference` | the same, find-only: `create` raises |
 | [`command`](#command-settings) | a command-line program |
-| [`browser`](#browser-settings) | pages in a real browser |
+| [`html`](#html-settings) | pages as a server sent them |
+| [`browser`](#browser-settings) | the same pages, in a real browser |
 
 ### `command` {#command-settings}
 
@@ -218,9 +219,48 @@ The record carries `command`, `exit_code`, `stdout`, `stderr`, `output` (both st
 project, so it is answered once here instead of in every suite's
 [phrasebook](phrasebook.md).
 
+### `html` {#html-settings}
+
+Pages as a server sent them, asked what is on them by **role and accessible name** — no browser, no
+selectors. See [acting on an interface](specs-and-fixtures.md#ui).
+
+```yaml
+environments:
+  dev:
+    adapters:
+      html:
+        base_url: https://app.dev.example.com
+        headers: { Cookie: "session=${env:DEV_SESSION}" }
+        timeout: 10
+        follow_redirects: true
+```
+
+A page is `mode: data` — somewhere to look, never something ATF makes — and says where to go and
+nothing else:
+
+```yaml
+catalog:
+  system: html
+  mode: data
+  body:
+    at: /catalog
+```
+
+```gherkin
+Given the page "catalog"
+Then the heading "Catalog" is showing
+And the link "Compose" is showing
+```
+
+The record carries `at`, `url`, `status` and `title`. Everything else worth claiming is a control,
+and a control is named in the scenario.
+
 ### `browser` {#browser-settings}
 
-Pages in a real browser. See [acting on an interface](specs-and-fixtures.md#ui).
+The same pages, in a real browser — for the claims no amount of reading can make: a stylesheet
+applied, a fragment swapped in, a combobox opened. It answers exactly the same sentences `html`
+does, so which one a suite configures decides what a claim *costs*, never what it says. Acting on a
+control needs this one. See [acting on an interface](specs-and-fixtures.md#ui).
 
 | Setting | Meaning |
 |---|---|

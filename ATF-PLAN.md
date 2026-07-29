@@ -11,11 +11,11 @@ and coverage may be lost where losing it makes the suite better.
 
 ## Where things stand
 
-**Branch `readable-specs`, 25 commits.** All gates green: `uv run ruff check`, `uv run ty check`,
+**Branch `readable-specs`, 29 commits.** All gates green: `uv run ruff check`, `uv run ty check`,
 `uv run pytest -q`, `uv run mkdocs build --strict`, `examples/todo`, and
 `ATF_MANIFEST=tests/atf.yaml uv run python -m atf.cli lint`.
 
-**129 scenarios, ~450 Python tests.** Started at 21 scenarios and 573 Python tests.
+**151 scenarios, ~465 Python tests.** Started at 21 scenarios and 573 Python tests.
 
 `selftest/` is deleted. `tests/` is a consuming project — `atf.yaml`, `catalog/`, `specs/`,
 templates under `suites/` — and one `pytest` run covers the scenarios and the Python tests together.
@@ -38,8 +38,11 @@ templates under `suites/` — and one `pytest` run covers the scenarios and the 
 | C11 auto-collection | a feature needing no code needs no file beside it |
 | C12 skip-when-unavailable | a system this machine has not got skips, saying what is missing |
 
-**Not started:** C13 `atf run -k/--tag/--failed/--json`, C14 `atf docs`, C15 introspection + MCP,
-C16 `Given a fresh <resource>`, C17 `atf import openapi`. C18 is parked by the target itself.
+| C13 `atf run -k/--tag/--failed/--json` | the dev loop: narrow it, repeat what failed, hand it to CI as CTRF |
+| C14 `atf docs` | the features as pages, carrying what the last run said — the thing Pickles cannot do |
+| C16 `Given a fresh <resource>` | **O2 answered**: the spec says isolation, the catalog stays quiet |
+
+**Not started:** C15 introspection + MCP, C17 `atf import openapi`. C18 is parked by the target.
 
 **Both findings the target opens with are closed.** §3.1 by C8. §3.2 by C4 and C5 — and
 `cockpit.feature`'s lint waiver, which the target called its best evidence that generic vocabulary
@@ -90,7 +93,7 @@ test in them posts a draft or writes a file. Both docstrings now say so.
 | # | Question | Needed by |
 |---|---|---|
 | ~~O1~~ | ~~Phrasebook as YAML, or a `Phrase:` block?~~ | **settled — YAML stays**, see below |
-| O2 | Should a spec *say* isolation (`Given a clean suite`), or is it a lifecycle policy it never mentions? | C16 |
+| ~~O2~~ | ~~Should a spec *say* isolation?~~ | **settled by C16 — the spec says it**, see below |
 | O3 | Do `Question` cards (Example Mapping's red cards) belong in ATF, or is that product scope creep? | C15 |
 | O10 | Should `atf lint` check scenario titles? It checks step lines only | any time |
 | O12 | A phrase cannot stand for a step that takes a table — the executor passes no `datatable` | when someone asks |
@@ -153,6 +156,35 @@ Things a future change would be wrong to undo.
 - **A shape says what must *match*, not what may exist.** `#absent` recovers the only case the
   looser reading loses.
 
+**The dev loop and the documentation**
+
+- **`-k` matches what a person types.** A scenario has a title, so someone wanting to run "A list
+  belongs to its owner" types its words — which reach pytest as `on its own` and come back as a
+  parse error about column 4. A plain phrase is flattened the way pytest-bdd flattens a title; an
+  expression (`and`/`or`/`not`/brackets) passes through untouched.
+- **Several `--tag`s mean any of them**, and `@` is dropped, as `requires:` already has it.
+- **`--failed` with nothing failed exits 0; with nothing ever run it exits 2.** A green suite must
+  not look broken, and silently running everything would misrepresent what was asked.
+- **`--json` is CTRF, not a shape of ATF's own.** A format nobody else reads has to be taught to
+  every consumer. An `error` is reported as `failed`: a gate treating "it broke before it started"
+  as softer lets a broken suite through.
+- **`atf docs` reads the feature files and the run store, and nothing else** — the same seam
+  `atf lint` holds. Documentation you cannot build in a checkout with no backend near it stops
+  being built. Plain CommonMark, no admonitions, so a page renders in four places. **No `--check`**:
+  the verdicts come from history on the machine that ran the tests, so a staleness gate would fail
+  for the one reason that is not the author's fault.
+
+**Having one to yourself**
+
+- **O2 is settled: the spec says isolation and the catalog stays quiet.** `lifecycle: ephemeral` is
+  a fact about a resource *nobody* can share; wanting one to yourself is a fact about a *scenario*,
+  and the type is usually one other scenarios happily share.
+- **Identity comes from the natural key**, with a discriminator appended to each key field written
+  as text of its own. A key field holding a reference is the link to the parent and is left alone.
+  Because the key is genuinely unique, a fresh instance is **read back live** like anything else.
+- **No cascade** — that is the all-or-nothing model this exists to escape — but a node a scenario
+  already has its own of is handed back to a later dependent, so a chain reads a line per link.
+
 **`atf lint`**
 
 - **Step lines only** — not narrative, not comments, and **not tables**, deliberately: the rule is
@@ -184,6 +216,10 @@ Things a future change would be wrong to undo.
 - **An `aria-hidden` subtree is not part of an accessible name.** Found by dogfooding: the cockpit's
   rail marks its glyphs hidden and ATF read them anyway, so every link was called `◎ Overview`. A
   name is computed from what a person can *read*, not from the raw text.
+- **`plugin.py` may not import `atf.steps`.** It registers it as a pytest plugin, and pytest rewrites
+  a plugin's assertions only if it gets there before the module is imported — so importing it warns
+  every consuming suite on every run. The provisioning steps write their patterns out as literals
+  for exactly this reason; `steps.py` keeps the constants for the composer.
 - **A landmark is not named by what is inside it.** `nav` wrapping the menu is called nothing, not
   "Catalog Compose Runs" — otherwise `the region "…"` matches whatever happens to be in one today.
 - **A scenario may never depend on an ambient variable.** Two scaffolded-suite scenarios passed

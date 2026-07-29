@@ -94,6 +94,51 @@
 'the scaffolded suite passes':
   - the result field "output" contains "2 passed"
 
+# ---- what `atf docs` writes --------------------------------------------------
+#
+# The pages land under a path, and a path is exactly what a feature file must not carry. So the
+# scenarios say *which* page they are reading and this file knows where it is — and a page is read
+# by printing it, which is the only reading surface a suite driving a command line has.
+
+'the developer reads the page written for that feature':
+  - I run "cat docs/specs/features/a.md"
+
+'the developer reads the page written for the lists feature':
+  - I run "cat docs/specs/features/lists.md"
+
+# Whatever was last printed, claimed about as prose. `output` is the command's word; a page is what
+# a reader thinks they are looking at.
+'the page mentions "{words}"':
+  - the result field "output" contains "{words}"
+
+# The verdict a page carries under one scenario's own heading, which is written on a line of its
+# own — not the count in the summary above it, which would be true whatever that scenario did.
+'the page says that scenario is passing':
+  - the result field "output" contains "*passing*"
+
+'it says it wrote an index beside the pages':
+  - the result field "output" contains "index.md"
+
+'it says how the suite last did':
+  - the result field "output" contains "1 passing"
+
+'it says nothing has run there yet':
+  - the result field "output" contains "Nothing has run against local yet"
+
+'it says there is nothing to write':
+  - the result field "output" contains "nothing to write"
+
+# Where the pages go, and which environment's history the verdicts come from. Both are flags, so
+# both are said here rather than in a sentence.
+'the developer writes the pages somewhere else':
+  - I run "atf docs --out handbook"
+
+'the developer reads the index from there':
+  - I run "cat handbook/index.md"
+
+'the developer asks for the documentation of an environment nobody configured':
+  - I run "atf docs --env nowhere"
+
 # ---- what `atf status` says --------------------------------------------------
 
 # Status names the environment it looked in, which is the only way a scenario can tell *which* of

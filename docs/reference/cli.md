@@ -1,7 +1,7 @@
 # CLI reference
 
 ```
-atf [-h] {init,serve,seed,status,run,lint,import-run} ...
+atf [-h] {init,serve,seed,status,run,lint,docs,import-run} ...
 ```
 
 Every command except `init` locates the manifest as described in the
@@ -268,6 +268,62 @@ further, so it can never quietly cover something added later.
 A waiver is a decision someone wrote down, which is the point: the rule is still there, and so is
 the reason.
 
+## `atf docs` {#atf-docs}
+
+```
+atf docs [--out DIRECTORY] [--env ENV]
+```
+
+Writes the suite's features out as markdown: one page per `.feature` file, plus an index over them.
+Each page carries the feature's narrative, its `Rule:` headings, every
+scenario as the lines it was written as, and what the [run history](cockpit.md#run-history) says
+about it — `passing`, `failing`, `skipped` or `never run`, and for a failing one the step the run
+reached and what it said there.
+
+```
+Wrote 3 pages under /path/to/suite/docs/specs:
+  index.md
+  features/checkout.md
+  features/lists.md
+
+2 features, 9 scenarios — 7 passing, 1 failing, 1 never run, as of the runs recorded against dev.
+```
+
+Read-only, and not gated by `mutable_envs`: it reads the feature files and the run history, runs
+nothing, provisions nothing, and writes only under `--out`. Like [`atf lint`](#atf-lint) it never
+collects the suite, so it works in a checkout with no backend anywhere near it — and for the same
+reason it does not read the catalog, so a page about what the specs say cannot fail because of a
+resource type it was never asked about.
+
+Exits `0` when there is nothing to write, saying so — a suite with no scenarios yet is not an error.
+
+### `--out` {#docs-out}
+
+Where the pages go. Defaults to `docs/specs`, relative to the suite root; an absolute path is used
+as given. Each page sits at the same place in the tree its feature does under
+[`specs`](manifest.md), so `specs/features/checkout.feature` becomes `features/checkout.md`.
+
+Files are overwritten and never deleted: a feature that was renamed leaves its old page behind, for
+you to remove.
+
+### `--env` {#docs-env}
+
+Whose run history the verdicts come from. Defaults to [`ATF_ENV`](#atf_env), else the manifest's
+`default_env`; an unknown name exits 2, listing the environments that exist.
+
+A verdict is only ever a verdict *somewhere* — a scenario that passes against `dev` and fails
+against `staging` is the normal case — so every page names the environment it is reporting.
+
+### Committing the output {#docs-committing}
+
+The pages are ordinary files, so they can be generated into a docs site and committed. There is
+deliberately **no `--check`**: the verdicts come from a run history that lives on the machine that
+ran the tests, so a staleness gate in CI would fail for the one reason that is not the author's
+fault. Regenerate after a run, and review the diff like any other.
+
+If the site is mkdocs with `--strict`, add the generated pages to `nav` — or point `--out` at a
+directory a nav-generating plugin covers.
+
 ## `atf import-run` {#atf-import-run}
 
 ```
@@ -313,7 +369,7 @@ at a path that does not exist is an error.
 
 ### `ATF_ENV` {#atf_env}
 
-The active environment, unless `--env` is given. Read by `serve` and `run`.
+The active environment, unless `--env` is given. Read by `serve`, `run` and `docs`.
 
 `seed`, `status` and `import-run` take the environment as a required positional argument and ignore
 this variable — a command that changes an environment, or files a result against one, should say

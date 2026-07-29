@@ -4,6 +4,11 @@ Two invariants are load-bearing here and each has its own test: a change is neve
 the whole catalog still loads afterwards, and a path is never taken from the form. The rest of the
 file is about the feature the authoring UI exists for — turning records an environment already has
 into the catalog that declares them.
+
+None of it converts to a scenario, and the reason is the same one that makes it worth testing: every
+line here is a *write*, or a write being refused. What it is about is the bytes in a catalog file
+afterwards, not anything a page shows — and a page resource only ever GETs, so that nothing which
+reads the interface can change it.
 """
 
 from __future__ import annotations

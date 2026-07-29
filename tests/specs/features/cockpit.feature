@@ -16,6 +16,41 @@ Feature: The cockpit
     And the page "overview" is titled "Overview · ATF"
     And the heading "Can I ship?" is showing
 
+  Scenario Outline: Every vertical is a whole page with the same way around it
+    Given the page "<page>"
+    Then the page "<page>" was served
+    And the navigation "Sections" is showing
+
+    Examples:
+      | page      |
+      | overview  |
+      | scenarios |
+      | catalog   |
+
+  Scenario: The rail offers three verticals, and nothing the interface used to have
+    Given the page "overview"
+    Then the link "Overview" is showing
+    And the link "Scenarios 1" is showing
+    And the link "Resources 2" is showing
+    And the words "Fixtures" are not showing
+
+  Scenario: A path the interface used to answer on is not quietly served as something else
+    Given the page "retired_path"
+    Then the page "retired_path" was not found
+
+  Scenario: A resource nobody declared is a refusal, not an empty page
+    Given the page "unknown_node"
+    Then the page "unknown_node" was not found
+
+  Scenario: The catalog is navigated by resource type, with how many of each are there
+    Given the page "catalog"
+    Then the link "owner 0/1 present" is showing
+    And the link "todo_list 0/1 present" is showing
+
+  Scenario: A resource ATF can never make says so, rather than offering a button that will not work
+    Given the page "badge_node"
+    Then the words "looks it up but never creates it" are showing
+
   Scenario: A type page lists its instances and what the environment holds, in one table
     Given the page "owner_type"
     Then the cell "primary" is showing
@@ -42,6 +77,26 @@ Feature: The cockpit
     Given the page "scenarios"
     Then its steps read as the lines they were written as
 
+  Scenario: A scenario is named by what it describes, never by its pytest identifier
+    Given the page "scenarios"
+    Then the heading "A list belongs to its owner" is showing
+    And the words "test_a_list_belongs_to_its_owner" are not showing
+
+  Scenario: A scenario links every resource it names to the catalog entry that declares it
+    Given the page "scenario_detail"
+    Then the link "primary" is showing
+    And the link "groceries" is showing
+
+  Scenario: A scenario says what running it would create, and where it is written
+    Given the page "scenario_detail"
+    Then the words "Running this will create" are showing
+    And the words "lists.feature" are showing
+
+  Scenario: Scenarios can be narrowed to the ones in a state worth acting on
+    Given the page "scenarios"
+    Then the button "Never run (1)" is showing
+    And the button "Failing (0)" is showing
+
   Scenario: The composer offers the steps ATF provides as well as the suite's own
     Given the page "compose"
     Then the steps ATF gives every suite are offered
@@ -49,6 +104,14 @@ Feature: The cockpit
   Scenario: Writing a scenario is offered as something you press
     Given the page "compose"
     Then the button "Save" is showing
+
+  Scenario: The composer is reachable from the page that lists what there is to compose
+    Given the page "scenarios"
+    Then the link "Compose a scenario ＋" is showing
+
+  Scenario: A scenario offers writing another one beside it, in the same feature
+    Given the page "scenario_detail"
+    Then the link "Add another to Lists ＋" is showing
 
   # Everything below needs the page to have *run*, not merely been served, so it needs a real
   # browser. Without one these skip and the rest of the suite still passes — see the README.

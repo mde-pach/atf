@@ -1,4 +1,15 @@
-"""The guided scenario composer: what it offers, what it refuses, and what it writes."""
+"""The guided scenario composer: what it offers, what it refuses, and what it writes.
+
+Nearly all of this is driven by *posting a draft* and reading back what came of it — which step the
+picker offers once the context holds what it reads, what Gherkin four choices compose into, what
+lands in the feature file, and what is rolled back when it would not parse. None of that is
+something a page shows: it is a request, a decision and a file on disk.
+
+So the split with `specs/features/cockpit.feature` is not one of taste. A scenario claims what the
+composer *shows* — that it is reachable, that it offers ATF's own steps as well as the suite's, that
+writing is a button. Everything below needs a POST, and a page resource only ever GETs, deliberately,
+so that nothing which reads the interface can change it.
+"""
 
 from __future__ import annotations
 
@@ -629,15 +640,10 @@ def test_writing_invalidates_the_cached_discovery(client):
 
 
 # ---- entry points -----------------------------------------------------------
-
-
-def test_the_scenarios_page_offers_the_composer(client):
-    assert 'href="/compose?env=dev"' in client.get("/scenarios").text
-
-
-def test_a_scenario_offers_adding_another_to_the_same_feature(client):
-    body = client.get("/scenarios/accounts::a-standard-account-reports-its-plan").text
-    assert "/compose?env=dev&amp;feature=Accounts" in body
+#
+# That the composer is *reachable* — from the scenarios page, and from a scenario, into the same
+# feature — is `specs/features/cockpit.feature`, where it is a claim about a link a person can see.
+# What is left here is the one thing no reading surface has a word for.
 
 
 def test_the_composer_renders_a_whole_document_and_no_new_css(client):

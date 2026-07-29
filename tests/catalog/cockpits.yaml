@@ -8,3 +8,14 @@ chained:
     - workspaces.chained
   body:
     workspace: ${workspaces.chained.id}
+
+# A second cockpit, over the suite whose catalog holds a resource ATF can never make. It exists so
+# that the pages saying *why* an action is not offered have something to say it about — `chained`
+# declares nothing of the kind, and a claim about a disabled button needs a reason for it to exist.
+unmakeable:
+  resource: cockpit
+  represents: A cockpit serving a suite with a resource nothing can create.
+  depends_on:
+    - workspaces.unmakeable
+  body:
+    workspace: ${workspaces.unmakeable.id}

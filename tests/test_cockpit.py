@@ -1,3 +1,27 @@
+"""The cockpit, where a scenario cannot watch it.
+
+What the interface *shows* is now `specs/features/cockpit.feature`, read through ATF's own `html`
+and `browser` systems — the rail, the verticals, what a type page lists, what a scenario page says
+and links to. Those are claims about what a person can perceive, and a scenario says them better
+than an assertion on a substring of HTML ever did.
+
+Three kinds of thing are left here, and none of them is a page:
+
+**Decision procedures over data.** `readiness`, `closure_of`, `lineage_sentence`, `neighbourhood`
+and `build_graph` are pure functions — is this blocked, what does it pull in, where do the boxes go.
+A truth table is the right description of those, and running a server to reach one would say less.
+
+**Contracts a reading surface has no words for.** An htmx request gets a fragment and a full request
+gets a document; a mutation without its confirmation token is refused; a run only accepts test ids
+this suite discovered. Those are about the HTTP the interface speaks, not about what it shows, and
+`the button "…" is showing` cannot express any of them.
+
+**States that need a run to have happened.** A scenario turning failing, a verdict going negative, a
+job reporting progress and settling. The cockpit's mutating routes are POSTs, and a `page` only ever
+GETs — deliberately, so nothing that reads the interface can change it. The one scenario that does
+press a button is tagged `@browser`.
+"""
+
 from __future__ import annotations
 
 import os
@@ -63,33 +87,6 @@ def run_everything(client, env: str = "dev") -> None:
 def break_a_step(project) -> None:
     steps = project / "specs" / "steps" / "test_accounts.py"
     steps.write_text(steps.read_text().replace("assert context.result == expected", "assert False, 'boom'"))
-
-
-# ---- the three verticals render -------------------------------------------
-
-
-@pytest.mark.parametrize("path", ["/", "/scenarios", "/catalog"])
-def test_every_vertical_renders_a_whole_document(client, path):
-    response = client.get(path)
-    assert response.status_code == 200
-    assert "<!doctype html>" in response.text.lower()
-    assert 'class="rail"' in response.text
-
-
-@pytest.mark.parametrize("path", ["/specs", "/tests", "/fixtures", "/overview/meters"])
-def test_the_old_information_architecture_is_gone(client, path):
-    assert client.get(path).status_code == 404
-
-
-def test_the_rail_offers_three_verticals(client):
-    body = client.get("/").text
-    assert ">Scenarios<" in body and ">Resources<" in body and ">Overview<" in body
-    assert "Fixtures" not in body
-
-
-def test_every_page_states_what_it_answers(client):
-    for path in ("/", "/scenarios", "/catalog"):
-        assert 'class="purpose"' in client.get(path).text
 
 
 # ---- readiness: absent is not blocked --------------------------------------
@@ -361,12 +358,6 @@ def test_links_never_drop_the_environment(client):
 # ---- catalog: navigated by resource type ------------------------------------
 
 
-def test_the_catalog_is_navigated_by_resource_type(client):
-    body = client.get("/catalog").text
-    for resource_type in ("account", "project", "badge", "visitor", "external_widget"):
-        assert f">{resource_type}<" in body
-
-
 def test_a_type_page_teaches_how_to_use_the_type(client):
     body = client.get("/catalog/type/account").text
     assert 'Given the account "primary"' in body  # the Gherkin line that provisions one
@@ -409,15 +400,6 @@ def test_the_inspector_states_the_closure_the_action_will_create(client):
     assert "Provision alpha + 1 dependency" in client.get("/catalog/node/projects.alpha").text
 
 
-def test_a_resource_atf_can_never_create_says_so_instead_of_offering_a_button(client):
-    reference = client.get("/catalog/node/widgets.imported").text
-    assert "disabled" in reference
-    assert "never creates" in reference or "already exist" in reference
-
-    ephemeral = client.get("/catalog/node/visitors.walkin").text
-    assert "disabled" in ephemeral and "every run" in ephemeral
-
-
 def test_the_lineage_is_also_stated_in_words(client):
     nodes = client.cockpit.state("dev").materializer.nodes
     sentence = lineage_sentence(nodes["projects.alpha"], nodes)
@@ -444,19 +426,6 @@ def test_a_lineage_node_carries_its_description_for_the_hover_card(client):
 # ---- scenarios: one vertical, filterable ------------------------------------
 
 
-def test_a_scenario_shows_its_gherkin_with_resources_linked(client):
-    body = client.get("/scenarios/accounts::a-project-belongs-to-its-account").text
-    assert 'href="/catalog/node/accounts.primary?env=dev"' in body
-    assert 'href="/catalog/node/projects.alpha?env=dev"' in body
-    assert "Given" in body and "When" in body and "Then" in body
-
-
-def test_a_scenario_is_named_by_its_title_not_its_pytest_identifier(client):
-    body = client.get("/scenarios").text
-    assert "A project belongs to its account" in body
-    assert "test_a_project_belongs_to_its_account" not in body
-
-
 def test_an_examples_table_carries_the_outcome_of_each_row(client):
     """An outline is one behaviour run several times, so the values belong beside the Gherkin —
     not under a card explaining what pytest collects."""
@@ -480,15 +449,6 @@ def test_filtering_by_state_focuses_a_scenario_in_that_state(client, project):
     failing = next(view for view in scenario_views("dev") if view.state == "failing")
     assert failing.spec.scenario in body
     assert 'aria-pressed="true"' in body
-
-
-def test_a_scenario_says_what_running_it_would_create(client):
-    body = client.get("/scenarios/accounts::a-project-belongs-to-its-account").text
-    assert "Running this will" in body and "accounts.primary" in body
-
-
-def test_a_scenario_links_back_to_the_file_that_declares_it(client):
-    assert "accounts.feature" in client.get("/scenarios/accounts::a-project-belongs-to-its-account").text
 
 
 # ---- htmx ------------------------------------------------------------------

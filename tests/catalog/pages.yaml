@@ -59,3 +59,47 @@ primary_node:
     - cockpits.chained
   body:
     at: ${cockpits.chained.id}/catalog/node/owners.primary
+
+scenario_detail:
+  resource: page
+  represents: One scenario — its Gherkin, what running it would create, and where it is written.
+  depends_on:
+    - cockpits.chained
+  body:
+    at: ${cockpits.chained.id}/scenarios/lists::a-list-belongs-to-its-owner
+
+# Two pages that must *not* be there. A path that was retired and an instance nobody declared are
+# both 404s, and the reason this suite claims it is that the alternative — quietly rendering an
+# empty page — is the failure mode a person cannot see.
+retired_path:
+  resource: page
+  represents: A URL from the interface ATF used to have. Nothing may answer here.
+  depends_on:
+    - cockpits.chained
+  body:
+    at: ${cockpits.chained.id}/fixtures
+
+unknown_node:
+  resource: page
+  represents: An instance nobody declared, asked for by name.
+  depends_on:
+    - cockpits.chained
+  body:
+    at: ${cockpits.chained.id}/catalog/node/owners.nope
+
+# The pages of the second cockpit, where a resource ATF cannot make lives.
+badge_node:
+  resource: page
+  represents: A resource ATF never creates — so the page has to say that instead of offering a button.
+  depends_on:
+    - cockpits.unmakeable
+  body:
+    at: ${cockpits.unmakeable.id}/catalog/node/badges.missing
+
+badge_type:
+  resource: page
+  represents: The type page for a resource ATF never creates.
+  depends_on:
+    - cockpits.unmakeable
+  body:
+    at: ${cockpits.unmakeable.id}/catalog/type/badge

@@ -194,6 +194,10 @@
 'the page "{name}" is titled "{title}"':
   - the page "{name}" field "title" is "{title}"
 
+# Nothing answers here — which is a claim about a status code, and therefore lives in this file.
+'the page "{name}" was not found':
+  - the page "{name}" field "status" is "404"
+
 # The reference as it is written in the catalog, left unresolved because that is the whole point of
 # showing a payload. Spelling `${...}` in a feature would put ATF's own syntax into a sentence.
 'the payload shows the reference rather than a value':

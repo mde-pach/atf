@@ -274,7 +274,7 @@ class Page:
                 Control(
                     role=its_role,
                     name=its_name,
-                    text=element.text,
+                    text=self.readable(element),
                     disabled=self.disabled(element),
                 )
             )
@@ -286,14 +286,21 @@ class Page:
         Prose has no accessible name — ARIA computes one for things you can act on, and a paragraph
         is not one — so this is the claim about what a page *says*, and it is still not a selector.
         """
-        return _flat(text) in _flat(self._visible_text(self.root))
+        return _flat(text) in _flat(self.readable(self.root))
 
-    def _visible_text(self, element: Element) -> str:
+    def readable(self, element: Element) -> str:
+        """What this element says to someone who can see it — hidden descendants left out.
+
+        Not the same as its text. A control commonly writes a decorative glyph beside its label and
+        marks it `aria-hidden`, which is exactly the author saying *do not read this out*: the rail
+        link is called "Overview", not "◎ Overview". Taking the raw text would put the decoration in
+        the name and make every claim about that control wrong in a way nobody could see.
+        """
         if element.tag in UNSPOKEN or (element is not self.root and self.hidden(element, deep=False)):
             return ""
         parts = list(element.own_text)
-        parts.extend(self._visible_text(child) for child in element.children)
-        return " ".join(parts)
+        parts.extend(self.readable(child) for child in element.children)
+        return " ".join(" ".join(parts).split())
 
     # ---- what one element is ------------------------------------------------
 
@@ -318,7 +325,7 @@ class Page:
         the advisory `title` as a last resort.
         """
         if labelledby := element.attrs.get("aria-labelledby", "").split():
-            named = [self.by_id[ref].text for ref in labelledby if ref in self.by_id]
+            named = [self.readable(self.by_id[ref]) for ref in labelledby if ref in self.by_id]
             if any(named):
                 return " ".join(part for part in named if part)
         if labelled := element.attrs.get("aria-label", "").strip():
@@ -332,7 +339,7 @@ class Page:
             return element.attrs.get("alt", "").strip()
         if element.tag == "table":
             caption = next((one for one in element.children if one.tag == "caption"), None)
-            return caption.text if caption else ""
+            return self.readable(caption) if caption else ""
         if element.tag == "input" and element.attrs.get("type", "").lower() in ("button", "submit", "reset"):
             # A button written as an input is named by what is printed on it, and a submit with
             # nothing printed on it still reads "Submit" — which is what the browser draws.
@@ -341,16 +348,16 @@ class Page:
             )
         if element.tag in LABELLED:
             return self._label_for(element)
-        return element.text if role in NAME_FROM_CONTENT else ""
+        return self.readable(element) if role in NAME_FROM_CONTENT else ""
 
     def _label_for(self, element: Element) -> str:
         """What names a field: a label pointing at it, a label around it, or its placeholder."""
         for label in self.labels.get(element.attrs.get("id", ""), []):
-            if label.text:
-                return label.text
+            if readable := self.readable(label):
+                return readable
         for ancestor in element.ancestors():
-            if ancestor.tag == "label" and ancestor.text:
-                return ancestor.text
+            if ancestor.tag == "label" and (readable := self.readable(ancestor)):
+                return readable
         return element.attrs.get("placeholder", "").strip()
 
     def hidden(self, element: Element, *, deep: bool = True) -> bool:

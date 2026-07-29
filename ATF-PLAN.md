@@ -11,11 +11,11 @@ and coverage may be lost where losing it makes the suite better.
 
 ## Where things stand
 
-**Branch `readable-specs`, 24 commits.** All gates green: `uv run ruff check`, `uv run ty check`,
+**Branch `readable-specs`, 25 commits.** All gates green: `uv run ruff check`, `uv run ty check`,
 `uv run pytest -q`, `uv run mkdocs build --strict`, `examples/todo`, and
 `ATF_MANIFEST=tests/atf.yaml uv run python -m atf.cli lint`.
 
-**115 scenarios, ~465 Python tests.** Started at 21 scenarios and 573 Python tests.
+**129 scenarios, ~450 Python tests.** Started at 21 scenarios and 573 Python tests.
 
 `selftest/` is deleted. `tests/` is a consuming project — `atf.yaml`, `catalog/`, `specs/`,
 templates under `suites/` — and one `pytest` run covers the scenarios and the Python tests together.
@@ -53,10 +53,10 @@ better description. Each residue module's docstring says which it is and why.
 
 | Module | n | Verdict |
 |---|---:|---|
-| `test_cockpit.py` | 60 | convert the behavioural half; **lose the markup assertions** |
-| `test_accessible.py` | 42 | **new, keep.** Markup in, role and name out — a decision procedure |
-| `test_compose.py` | 60 | same |
-| `test_authoring.py` | 27 | same |
+| `test_cockpit.py` | 50 | **done.** What the interface shows is scenarios; what is left is pure functions, HTTP contracts, and states needing a run |
+| `test_accessible.py` | 43 | **new, keep.** Markup in, role and name out — a decision procedure |
+| `test_compose.py` | 58 | **keep, and the docstring says why.** Every test posts a draft: a request, a decision and a file on disk, none of it a page |
+| `test_authoring.py` | 27 | **keep.** Every test is a write, or a write being refused |
 | `test_discovery.py` | 42 | mostly convert — the cockpit's pages *are* discovery's output |
 | `test_runner_jobs.py` | 32 | convert — the activity dock and `atf run` |
 | `test_rest_adapter.py` | 28 | convert — a workspace whose catalog exercises the seams |
@@ -77,8 +77,11 @@ better description. Each residue module's docstring says which it is and why.
 Deleted outright: `test_lint.py`, `test_collect.py`, `test_cli.py`, `test_config.py`,
 `test_catalog.py`, `test_materializer.py`, `test_bootstrap.py`.
 
-**The cockpit trio is 147 of the 441** and the largest decision left: a faithful conversion means
-acting through the UI and claiming a *domain* outcome, which loses markup-level coverage.
+**The cockpit trio is settled.** The conversion boundary turned out not to be a matter of taste:
+what a page *shows* is a scenario, and what needs a POST is not — a page resource only ever GETs, so
+that nothing which reads the interface can change it. `test_cockpit.py` lost its page-rendering half
+(now 14 scenarios); `test_compose.py` and `test_authoring.py` keep almost everything, because every
+test in them posts a draft or writes a file. Both docstrings now say so.
 
 ---
 
@@ -178,6 +181,9 @@ Things a future change would be wrong to undo.
   suite quietly weaker on a machine with no browser.
 - **Which system a claim is about is settled by the `Given` that opened a page**, noted on
   `context._showing` by the plugin. A suite may configure both, and no sentence has to say which.
+- **An `aria-hidden` subtree is not part of an accessible name.** Found by dogfooding: the cockpit's
+  rail marks its glyphs hidden and ATF read them anyway, so every link was called `◎ Overview`. A
+  name is computed from what a person can *read*, not from the raw text.
 - **A landmark is not named by what is inside it.** `nav` wrapping the menu is called nothing, not
   "Catalog Compose Runs" — otherwise `the region "…"` matches whatever happens to be in one today.
 - **A scenario may never depend on an ambient variable.** Two scaffolded-suite scenarios passed

@@ -2,7 +2,7 @@
 
 This is a decision procedure over markup — one table of "this HTML means this role and this name" —
 so it is the kind of thing a unit test describes better than a scenario. What the *steps* built on
-it say is in `specs/features/interface.feature`, against the cockpit's real pages.
+it say is in `specs/features/cockpit.feature`, against the cockpit's real pages.
 
 The bar is not "all of ARIA". It is that the subset ATF implements is the subset a server-rendered
 page uses, and that where it stops it stops predictably.
@@ -106,6 +106,17 @@ def test_a_landmark_is_not_named_by_what_is_inside_it():
     page = Page('<nav><a href="/c">Catalog</a><a href="/r">Runs</a></nav>')
     assert names(page, "navigation") == [""]
     assert names(page, "link") == ["Catalog", "Runs"]
+
+
+def test_a_decoration_the_author_hid_is_not_part_of_the_name():
+    """`aria-hidden` on a glyph is the author saying "do not read this out", and it means it.
+
+    A rail link writing an icon beside its label is called "Overview", not "◎ Overview" — and a
+    reading that took the raw text would make every claim about that control wrong in a way nobody
+    looking at the page could see.
+    """
+    page = Page('<a href="/"><span aria-hidden="true">◎</span><span>Overview</span></a>')
+    assert names(page, "link") == ["Overview"]
 
 
 def test_a_name_is_matched_whole_and_case_is_ignored():

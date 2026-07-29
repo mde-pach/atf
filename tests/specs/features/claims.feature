@@ -90,3 +90,28 @@ Feature: What a claim says when it does not hold
       When I run "atf run"
       Then the run fails
       And it lists every field that disagrees
+
+  Rule: A phrase may stand for a claim about a whole shape
+
+    Scenario: A sentence stands for a table, and holds when the record has that shape
+      # The rows are written as YAML writes a mapping — a step that takes a table ends with a
+      # colon, and so does a mapping key — so there is no second format to learn.
+      Given the workspace "chained" but:
+        | catalog/owners.yaml          | primary:\n  resource: owner\n  represents: An owner on a plan.\n  body:\n    email: primary@atf.test\n    plan: standard\n |
+        | specs/steps/test_lists.py    | #absent |
+        | specs/phrasebook.yaml        | 'the owner is set up the way a new customer should be':\n  - the owner "primary" is:\n      plan: standard\n      email: primary@atf.test\n      id: "#notnull"\n |
+        | specs/features/lists.feature | Feature: Claims\n\n  Scenario: A shape behind a sentence\n    Given the owner "primary"\n    Then the owner is set up the way a new customer should be\n |
+      When I run "atf seed local"
+      And I run "atf run"
+      Then the command succeeds
+
+    Scenario: The same sentence, against a record that is a different shape
+      Given the workspace "chained" but:
+        | catalog/owners.yaml          | primary:\n  resource: owner\n  represents: An owner on a plan.\n  body:\n    email: primary@atf.test\n    plan: standard\n |
+        | specs/steps/test_lists.py    | #absent |
+        | specs/phrasebook.yaml        | 'the owner is set up the way a new customer should be':\n  - the owner "primary" is:\n      plan: enterprise\n |
+        | specs/features/lists.feature | Feature: Claims\n\n  Scenario: A shape behind a sentence\n    Given the owner "primary"\n    Then the owner is set up the way a new customer should be\n |
+      When I run "atf seed local"
+      And I run "atf run"
+      Then the run fails
+      And it names the sentence somebody wrote, not only the claim under it

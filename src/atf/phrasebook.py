@@ -26,6 +26,20 @@ and a space start a mapping, so `contains "registered: env, now"` loads as a dic
 comes back holding a boolean. Both are sentences. They are read from the document tree rather than
 from loaded values, which takes that footgun away instead of asking every author to know about it.
 
+**A step that takes a table carries its rows, written as YAML writes a mapping.** A step that takes
+one ends with a colon, and so does a mapping key, so the two fit together with nothing invented:
+
+```yaml
+'the account is set up the way a new customer should be':
+  - the account "primary" is:
+      plan: free
+      trial_ends_at: "#datetime"
+```
+
+Which is also what tells a table from the colon trap above: a table step's value is another
+*mapping*, and a sentence YAML found structure in has a scalar. One quoting rule is unavoidable and
+is checked at load — `#` starts a comment in YAML, so a marker has to be quoted.
+
 **Three rules hold this in place.**
 
 *A phrase expands to steps, never to another phrase.* Flat, one level, no recursion, checked when
@@ -82,6 +96,9 @@ MARKER = "__atf_phrase__"
 
 _DEFAULT_KEYWORD = "then"
 
+# What pytest-bdd calls the rows under a step, and therefore what a step declares to receive them.
+DATATABLE = "datatable"
+
 # Which keyword the phrase now running was said with, so its steps run as the same kind. pytest-bdd
 # gives a step function no way to ask, so it is taken from the hook that fires immediately before.
 _KEYWORD = pytest.StashKey[str]()
@@ -98,16 +115,43 @@ class PhrasebookError(Exception):
 
 
 @dataclass(frozen=True)
+class Line:
+    """One step a phrase stands for: the line, and the rows under it where it takes a table.
+
+    A step that takes a table is written in YAML the way YAML writes a mapping, because a step that
+    takes one ends with a colon and so does a mapping key:
+
+    ```yaml
+    'the account is set up the way a new customer's should be':
+      - the account "primary" is:
+          plan: free
+          seats: 1
+    ```
+
+    No new format: that list item is an ordinary one-key mapping, and ATF hands the rows to the step
+    as the table it was expecting.
+    """
+
+    text: str
+    rows: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def datatable(self) -> list[list[str]] | None:
+        """The rows as pytest-bdd hands a table over, or nothing where there is no table."""
+        return [[field, value] for field, value in self.rows] if self.rows else None
+
+
+@dataclass(frozen=True)
 class Phrase:
     """One sentence, and the steps it stands for."""
 
     pattern: str
-    expands_to: tuple[str, ...]
+    expands_to: tuple[Line, ...]
     captures: tuple[str, ...] = ()
 
     @property
     def summary(self) -> str:
-        return "Says in one line: " + "; ".join(self.expands_to)
+        return "Says in one line: " + "; ".join(line.text for line in self.expands_to)
 
 
 def path_for(specs_dir: Path | str) -> Path:
@@ -136,7 +180,7 @@ def load(path: Path) -> list[Phrase]:
     phrases = [
         made
         for key, value in root.value
-        if (made := _phrase(_text(key, text), _steps(value, text), problems)) is not None
+        if (made := _phrase(_text(key, text), _steps(value, text, problems), problems)) is not None
     ]
     _check_flat(phrases, problems)
     if problems:
@@ -144,7 +188,7 @@ def load(path: Path) -> list[Phrase]:
     return phrases
 
 
-def _steps(node: yaml.Node, text: str) -> list[str] | None:
+def _steps(node: yaml.Node, source: str, problems: list[str]) -> list[Line] | None:
     """The steps a phrase stands for, as the *text* they were written as.
 
     Read from the document tree rather than from loaded values, because a step is a line of English
@@ -156,10 +200,49 @@ def _steps(node: yaml.Node, text: str) -> list[str] | None:
     think was special. This is that footgun taken away rather than labelled.
     """
     if isinstance(node, yaml.ScalarNode):
-        return [_text(node, text)]
+        return [Line(text=_text(node, source))]
+    if isinstance(node, yaml.MappingNode):
+        return [_line(node, source, problems)]
     if isinstance(node, yaml.SequenceNode):
-        return [_text(item, text) for item in node.value]
+        return [_line(item, source, problems) for item in node.value]
     return None
+
+
+def _line(node: yaml.Node, source: str, problems: list[str]) -> Line:
+    """One step: a line on its own, or a line with the rows a table step needs.
+
+    The two are told apart by what the value is, and the distinction is exactly the one that
+    matters. A step ending in a colon is a mapping key whose value is *another mapping* — the rows.
+    A step that merely happens to contain a colon is a mapping key whose value is a scalar, which is
+    YAML having found structure in a sentence, and is recovered from the source as it always was.
+    """
+    if isinstance(node, yaml.MappingNode) and len(node.value) == 1:
+        key, value = node.value[0]
+        if isinstance(value, yaml.MappingNode):
+            # The colon is the step's, not YAML's: `the account "primary" is:` is how the step is
+            # worded, and YAML ate it on the way in.
+            return Line(text=f"{_text(key, source)}:", rows=_rows(value, source, problems))
+    return Line(text=_text(node, source))
+
+
+def _rows(node: yaml.MappingNode, source: str, problems: list[str]) -> tuple[tuple[str, str], ...]:
+    """The rows of a table, as a step reads them: a field and what it must hold.
+
+    A value YAML read as nothing is almost always a marker somebody did not quote — `plan: #str` is
+    a key with a comment after it, not a key holding `#str`. Saying so is worth the check, because
+    the claim would otherwise pass for the wrong reason.
+    """
+    rows: list[tuple[str, str]] = []
+    for key, value in node.value:
+        field = _text(key, source)
+        if isinstance(value, yaml.ScalarNode) and value.tag.endswith(":null"):
+            problems.append(
+                f"the row {field!r} holds nothing. A `#` starts a comment in YAML, so a marker has "
+                f'to be quoted: `{field}: "#str"`.'
+            )
+            continue
+        rows.append((field, _text(value, source)))
+    return tuple(rows)
 
 
 def _text(node: yaml.Node, source: str) -> str:
@@ -178,7 +261,7 @@ def _text(node: yaml.Node, source: str) -> str:
     return raw.split("\n", 1)[0].strip()
 
 
-def _phrase(pattern: str, steps: list[str] | None, problems: list[str]) -> Phrase | None:
+def _phrase(pattern: str, steps: list[Line] | None, problems: list[str]) -> Phrase | None:
     if not pattern.strip():
         problems.append("a phrase is the sentence a spec will say, so it must be text")
         return None
@@ -187,13 +270,17 @@ def _phrase(pattern: str, steps: list[str] | None, problems: list[str]) -> Phras
         return None
 
     captures = tuple(dict.fromkeys(CAPTURE_RE.findall(pattern)))
-    for text in steps:
-        unknown = [name for name in CAPTURE_RE.findall(text) if name not in captures]
+    for line in steps:
+        # A capture is checked wherever the phrase writes one, in the line and in the rows alike:
+        # a table cell reaching for `{plan}` the sentence never took would fail at run time with a
+        # brace still in it, which is a worse way to find out.
+        written = [line.text, *(cell for row in line.rows for cell in row)]
+        unknown = [name for text in written for name in CAPTURE_RE.findall(text) if name not in captures]
         if unknown:
             known = ", ".join(captures) or "none"
             problems.append(
-                f"{pattern!r}: its step {text!r} uses {{{unknown[0]}}}, which the phrase does not "
-                f"capture (it captures: {known})"
+                f"{pattern!r}: its step {line.text!r} uses {{{unknown[0]}}}, which the phrase does "
+                f"not capture (it captures: {known})"
             )
     return Phrase(pattern=pattern, expands_to=tuple(steps), captures=captures)
 
@@ -202,11 +289,11 @@ def _check_flat(phrases: list[Phrase], problems: list[str]) -> None:
     """No phrase may stand for another phrase. One level, always."""
     known = [(phrase, re.compile(pattern_regex(phrase.pattern))) for phrase in phrases]
     for phrase in phrases:
-        for text in phrase.expands_to:
+        for line in phrase.expands_to:
             for other, matcher in known:
-                if matcher.fullmatch(text):
+                if matcher.fullmatch(line.text):
                     problems.append(
-                        f"{phrase.pattern!r}: its step {text!r} is the phrase {other.pattern!r}. "
+                        f"{phrase.pattern!r}: its step {line.text!r} is the phrase {other.pattern!r}. "
                         "A phrase stands for steps, never for another phrase — write out the steps "
                         "here instead."
                     )
@@ -219,12 +306,21 @@ def _check_flat(phrases: list[Phrase], problems: list[str]) -> None:
 def run(request: pytest.FixtureRequest, phrase: Phrase, values: dict[str, str], keyword: str) -> None:
     """Run every step this phrase stands for, in order, under the keyword it was said with."""
     __tracebackhide__ = True
-    for text in (fill(item, values) for item in phrase.expands_to):
-        _run_step(request, phrase, text, keyword)
+    for line in phrase.expands_to:
+        _run_step(request, phrase, _filled(line, values), keyword)
 
 
-def _run_step(request: pytest.FixtureRequest, phrase: Phrase, text: str, keyword: str) -> None:
+def _filled(line: Line, values: dict[str, str]) -> Line:
+    """The line with the sentence's captures written into it — its text and its rows alike."""
+    return Line(
+        text=fill(line.text, values),
+        rows=tuple((fill(field, values), fill(value, values)) for field, value in line.rows),
+    )
+
+
+def _run_step(request: pytest.FixtureRequest, phrase: Phrase, line: Line, keyword: str) -> None:
     __tracebackhide__ = True
+    text = line.text
     made = _Step(name=text, type=keyword, indent=0, line_number=0, keyword=keyword.capitalize())
     found = _resolve_step(request, made)
     if found is None:
@@ -240,6 +336,12 @@ def _run_step(request: pytest.FixtureRequest, phrase: Phrase, text: str, keyword
     }
     arguments |= {name: request.getfixturevalue(name) for name in _required_args(function) if name not in arguments}
     _resolve_placeholders(request, arguments, phrase, text)
+    # The table, last: a step that takes one declares `datatable` with a default, so it is never a
+    # required argument and nothing above would have passed it. `${...}` in a cell is left alone —
+    # a table step resolves its own cells, because pytest-bdd hands them over as one argument and
+    # they never reach the hook that resolves everything else.
+    if DATATABLE in parameters:
+        arguments[DATATABLE] = line.datatable
 
     try:
         _call(fixturefunc=function, request=request, kwargs=arguments)
@@ -300,5 +402,5 @@ def make_step(phrase: Phrase, source: Path) -> Any:
     # its fixture resolution both read. The body still takes `**values`, and that is what gets
     # called — the declaration only says which of them to pass.
     _phrase_step.__signature__ = declared  # ty: ignore[unresolved-attribute]
-    setattr(_phrase_step, MARKER, {"file": str(source), "expands_to": list(phrase.expands_to)})
+    setattr(_phrase_step, MARKER, {"file": str(source), "expands_to": [line.text for line in phrase.expands_to]})
     return _phrase_step

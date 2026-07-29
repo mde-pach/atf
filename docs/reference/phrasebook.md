@@ -41,8 +41,33 @@ One mapping. Each key is the sentence; each value is the steps it stands for, in
 'the command succeeds': the result field "exit_code" is "0"
 ```
 
-`{capture}` in the sentence is a value the spec writes, and it reaches every step that names it.
-A step naming a capture the sentence does not take is refused when the file loads.
+`{capture}` in the sentence is a value the spec writes, and it reaches every step that names it —
+in a step's line and in a table's cells alike. A step naming a capture the sentence does not take is
+refused when the file loads.
+
+### A step that takes a table {#tables}
+
+A step ending with a colon takes [a table](specs-and-fixtures.md#tables) under it. So does a YAML
+mapping key, which is what lets a phrase carry one with no second format to learn:
+
+```yaml
+'the account is set up the way a new customer should be':
+  - the account "primary" is:
+      plan: free
+      seats: 1
+      trial_ends_at: "#datetime"
+```
+
+```gherkin
+Then the account is set up the way a new customer should be
+```
+
+**Quote a marker.** `#` starts a comment in YAML, so `plan: #str` is a key with a comment after it
+and a claim that would pass for the wrong reason. Writing it unquoted is refused when the file
+loads, by name.
+
+This is also how a table is told from [the colon trap](#file): a table step's value is another
+*mapping*, and a sentence YAML found structure in has a scalar.
 
 **A step is read as the line you wrote.** YAML would rather it were something else — a colon and a
 space start a mapping, so `contains "registered: env, now"` would load as one, and `"flag: true"`

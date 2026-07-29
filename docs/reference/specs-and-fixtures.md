@@ -420,9 +420,8 @@ Then the account "primary" is:
 over as one argument rather than as step values, so it never reaches the hook that resolves them
 everywhere else.
 
-**A table step is not offered by the composer.** The builder has no way to write the table under the
-line, and offering a line it cannot finish is worse than not offering it — so these are written by
-hand, or in the composer's text mode, which is held to exactly the same checks.
+A table step can also stand behind [a phrase](phrasebook.md#tables), written as an ordinary YAML
+mapping.
 
 ### What `contains` means {#containment}
 

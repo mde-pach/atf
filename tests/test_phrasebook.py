@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from atf.phrasebook import MARKER, Phrase, PhrasebookError, load, make_step, path_for
+from atf.phrasebook import MARKER, Line, Phrase, PhrasebookError, load, make_step, path_for
 from tests.sample_project import run_pytest, write_spec
 
 
@@ -38,7 +38,10 @@ def test_a_phrase_is_a_sentence_and_the_steps_it_stands_for(tmp_path):
     assert phrases == [
         Phrase(
             pattern='it is refused because "{reason}"',
-            expands_to=('the result field "exit_code" is "2"', 'the result field "output" contains "{reason}"'),
+            expands_to=(
+                Line('the result field "exit_code" is "2"'),
+                Line('the result field "output" contains "{reason}"'),
+            ),
             captures=("reason",),
         )
     ]
@@ -46,7 +49,7 @@ def test_a_phrase_is_a_sentence_and_the_steps_it_stands_for(tmp_path):
 
 def test_one_step_may_be_written_without_a_list(tmp_path):
     phrases = load(book(tmp_path, "'the command succeeds': the result field \"exit_code\" is \"0\"\n"))
-    assert phrases[0].expands_to == ('the result field "exit_code" is "0"',)
+    assert phrases[0].expands_to == (Line('the result field "exit_code" is "0"'),)
 
 
 def test_no_phrasebook_is_no_phrases_rather_than_an_error(tmp_path):
@@ -104,9 +107,9 @@ def test_a_step_is_read_as_the_line_it_was_written_as(tmp_path):
         )
     )
     assert phrases[0].expands_to == (
-        'the result field "output" contains "registered: env, now"',
-        'the result field "flag" is "true"',
-        "quoting still works: and still means what it means",
+        Line('the result field "output" contains "registered: env, now"'),
+        Line('the result field "flag" is "true"'),
+        Line("quoting still works: and still means what it means"),
     )
 
 
@@ -125,7 +128,83 @@ def test_a_comment_after_a_step_is_not_part_of_it(tmp_path):
 ''',
         )
     )
-    assert phrases[0].expands_to == ('the result field "output" contains "registered: env, now"',)
+    assert phrases[0].expands_to == (Line('the result field "output" contains "registered: env, now"'),)
+
+
+# ---- a step that takes a table ----------------------------------------------
+
+
+def test_a_step_that_takes_a_table_carries_its_rows(tmp_path):
+    """Written the way YAML writes a mapping, because a step that takes a table ends with a colon
+    and so does a mapping key. No new format: an ordinary one-key mapping."""
+    phrases = load(
+        book(
+            tmp_path,
+            """
+'the account is set up the way a new customer should be':
+  - the account "primary" is:
+      plan: free
+      seats: 1
+      trial_ends_at: "#datetime"
+""",
+        )
+    )
+    assert phrases[0].expands_to == (
+        Line(
+            text='the account "primary" is:',
+            rows=(("plan", "free"), ("seats", "1"), ("trial_ends_at", "#datetime")),
+        ),
+    )
+
+
+def test_a_line_with_rows_hands_them_over_the_way_a_table_arrives():
+    line = Line(text='the account "primary" is:', rows=(("plan", "free"),))
+    assert line.datatable == [["plan", "free"]]
+    assert Line(text="the account is there").datatable is None
+
+
+def test_a_step_that_merely_contains_a_colon_is_still_a_line(tmp_path):
+    """The distinction that matters: a table step's value is a *mapping*, and a sentence YAML found
+    structure in has a scalar. Both are one-key mappings to YAML; only one of them is a table."""
+    written = 'the result field "output" contains "registered: env, now"'
+    phrases = load(book(tmp_path, f"'it lists them':\n  - {written}\n"))
+    assert phrases[0].expands_to[0].rows == ()
+    assert phrases[0].expands_to[0].text == written
+
+
+def test_an_unquoted_marker_is_a_comment_and_is_refused_by_name(tmp_path):
+    """`plan: #str` is a key with a comment after it. The claim would otherwise pass for the wrong
+    reason, which is the failure mode a checker exists for."""
+    with pytest.raises(PhrasebookError) as caught:
+        load(
+            book(
+                tmp_path,
+                """
+'the account is set up right':
+  - the account "primary" is:
+      plan: #str
+""",
+            )
+        )
+    assert "holds nothing" in str(caught.value)
+    assert 'plan: "#str"' in str(caught.value)
+
+
+def test_a_row_using_a_capture_the_phrase_does_not_take_is_refused(tmp_path):
+    """Checked in the rows as well as in the line: a cell reaching for a capture the sentence never
+    took would otherwise run with a brace still in it."""
+    with pytest.raises(PhrasebookError) as caught:
+        load(
+            book(
+                tmp_path,
+                """
+'the account is on the "{plan}" plan':
+  - the account "primary" is:
+      plan: "{tier}"
+""",
+            )
+        )
+    assert "uses {tier}, which the phrase does not capture" in str(caught.value)
 
 
 def test_a_phrase_standing_for_nothing_is_refused(tmp_path):
@@ -174,21 +253,26 @@ def test_a_registered_phrase_declares_the_captures_it_takes():
     """pytest-bdd hands a step only the parameters its signature names."""
     from inspect import signature
 
-    phrase = Phrase('it is refused because "{reason}"', ('the result field "output" contains "{reason}"',), ("reason",))
+    phrase = Phrase(
+        'it is refused because "{reason}"', (Line('the result field "output" contains "{reason}"'),), ("reason",)
+    )
     function = make_step(phrase, Path("/suite/specs/phrasebook.yaml"))
     assert list(signature(function).parameters) == ["request", "reason"]
 
 
 def test_a_registered_phrase_says_where_it_came_from_and_what_it_stands_for():
     """Discovery reads this to tell a phrase from a step, and to work out what it needs."""
-    phrase = Phrase("the command succeeds", ('the result field "exit_code" is "0"',))
+    phrase = Phrase("the command succeeds", (Line('the result field "exit_code" is "0"'),))
     marked = getattr(make_step(phrase, Path("/suite/specs/phrasebook.yaml")), MARKER)
     assert marked["file"].endswith("phrasebook.yaml")
     assert marked["expands_to"] == ['the result field "exit_code" is "0"']
 
 
 def test_a_phrase_describes_itself_by_what_it_stands_for():
-    phrase = Phrase("the command succeeds", ('the result field "exit_code" is "0"', "the account \"primary\" exists"))
+    phrase = Phrase(
+        "the command succeeds",
+        (Line('the result field "exit_code" is "0"'), Line('the account "primary" exists')),
+    )
     assert phrase.summary == (
         'Says in one line: the result field "exit_code" is "0"; the account "primary" exists'
     )

@@ -388,6 +388,12 @@
 'it lists every field that disagrees':
   - the result field "output" contains "is not the shape this scenario says"
 
+# A phrase failing names the sentence somebody wrote, not only the claim underneath it — a reader
+# who wrote a sentence should never be handed a message about a field they have never seen.
+'it names the sentence somebody wrote, not only the claim under it':
+  - the result field "output" contains "the owner is set up the way a new customer should be"
+  - the result field "output" contains "and that did not hold"
+
 # ---- what a CI report brings back -------------------------------------------
 
 'it reports what CI saw':

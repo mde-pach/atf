@@ -55,6 +55,11 @@ def _parser() -> argparse.ArgumentParser:
     serve.add_argument("--env")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument(
+        "--mcp",
+        action="store_true",
+        help="also answer MCP, so an agent can compose scenarios from this suite's own vocabulary",
+    )
     serve.set_defaults(handler=cmd_serve)
 
     seed = sub.add_parser("seed", help="materialize resources into an environment")
@@ -162,14 +167,33 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
+    """Run the cockpit, and — asked for it — the MCP endpoint on the same server.
+
+    `--mcp` is checked before anything is started, and refused with what to install rather than
+    served without it. Starting a cockpit that quietly lacks the endpoint somebody asked for is the
+    worst of the three outcomes: they would find out from a client that could not connect, which
+    says nothing about why.
+    """
     import uvicorn
 
     from .cockpit.app import create_app
 
-    manifest = load_manifest(resolve_manifest())
-    app = create_app(args.env)
     url = f"http://{args.host}:{args.port}"
+    answering = ""
+    if args.mcp:
+        from .mcp import MOUNT, unavailable
+
+        reason = unavailable()
+        if reason:
+            print(f"atf: --mcp was asked for, and {reason}", file=sys.stderr)
+            return 2
+        answering = f"  Answering MCP at {url}{MOUNT}/ — it can run scenarios against those environments.\n"
+
+    manifest = load_manifest(resolve_manifest())
+    app = create_app(args.env, mcp_host=args.host if args.mcp else None)
     print(BANNER.format(url=url, host=args.host, mutable=", ".join(sorted(manifest.mutable_envs)) or "none"))
+    if answering:
+        print(answering)
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
         print(f"WARNING: binding {args.host} exposes the cockpit beyond this machine.\n", file=sys.stderr)
 

@@ -108,7 +108,7 @@ def test_serving_a_public_host_prints_a_warning(monkeypatch, capsys, tmp_path):
     (tmp_path / "catalog" / "resources.yaml").write_text("", encoding="utf-8")
     monkeypatch.setenv("ATF_MANIFEST", str(manifest))
 
-    monkeypatch.setattr("atf.cockpit.app.create_app", lambda env=None: object())
+    monkeypatch.setattr("atf.cockpit.app.create_app", lambda env=None, mcp_host=None: object())
     assert cli.main(["serve", "--host", "0.0.0.0"]) == 0
 
     captured = capsys.readouterr()
@@ -134,13 +134,102 @@ def test_serving_localhost_prints_the_banner_without_a_warning(monkeypatch, caps
     (tmp_path / "catalog").mkdir()
     (tmp_path / "catalog" / "resources.yaml").write_text("", encoding="utf-8")
     monkeypatch.setenv("ATF_MANIFEST", str(manifest))
-    monkeypatch.setattr("atf.cockpit.app.create_app", lambda env=None: object())
+    monkeypatch.setattr("atf.cockpit.app.create_app", lambda env=None, mcp_host=None: object())
 
     assert cli.main(["serve"]) == 0
     captured = capsys.readouterr()
     assert "127.0.0.1" in captured.out
     assert "Mutable environments: dev" in captured.out
     assert captured.err == ""
+
+
+def test_the_introspection_api_reaches_every_word_the_framework_knows(tmp_path, monkeypatch):
+    """The whole condition the MCP surface was accepted under: it must not need maintaining.
+
+    An agent composing through MCP can only say what `describe` offers it. So the moment ATF learns
+    a word that `describe` does not surface, the surface has silently become a subset of the
+    framework — and the failure is invisible, because everything that *is* offered still works.
+
+    This is the guard against that. It stands up a real suite, discovers it the way the cockpit
+    does, and requires the three tables that define ATF's vocabulary to come back out whole:
+
+    - every `GENERIC_STEPS` wording is offered, and recognised as ATF's own rather than mistaken
+      for something the project wrote;
+    - every `COMPARISONS` entry is offered, *and* the step it writes is one of those wordings — a
+      claim the composer can express but pytest cannot run is worse than one it cannot express;
+    - every `MARKERS` entry is offered with what it means.
+
+    Each of the three fails for a different kind of drift, which is why all three are here. A new
+    generic step reaches the surface through discovery, so what would drop it is a *filter* — and
+    that is what the first check catches; it has already caught a wording declared in the table and
+    never registered. Comparisons and markers reach it by being read out of their tables, so the way
+    to break those is for the surface to grow a *copy* of the list — and comparing the answer with
+    the tables themselves is what makes a copy fail the moment it falls behind. Nothing here writes
+    out an expected word, so nothing here can be satisfied by updating a second copy.
+    """
+    import sys
+
+    from atf.bootstrap import bootstrap
+    from atf.compare import MARKERS
+    from atf.discovery import discover
+    from atf.introspect import FROM_ATF, Surface, describe
+    from atf.steps import COMPARISONS, GENERIC_STEPS
+    from tests.sample_project import write_sample_project
+
+    root = write_sample_project(tmp_path / "suite")
+    monkeypatch.setenv("ATF_MANIFEST", str(root / "atf.yaml"))
+    monkeypatch.setenv("ATF_ENV", "dev")
+    monkeypatch.setenv("PYTHONPATH", str(SRC.parent.parent))
+    monkeypatch.chdir(root)
+    monkeypatch.delitem(sys.modules, "suite_adapters", raising=False)
+
+    boot = bootstrap("dev")
+    engine = boot.materializer
+    found = discover(
+        boot.manifest.specs_dir, engine.nodes, set(engine.types), "dev", boot.manifest.root
+    )
+    assert found.errors == [], found.errors
+
+    described = describe(
+        Surface(
+            env="dev",
+            root=boot.manifest.root,
+            specs_dir=boot.manifest.specs_dir,
+            engine=engine,
+            found=found,
+        )
+    )
+
+    offered = {one["pattern"]: one for group in described["steps"].values() for one in group}
+    missing = [one.pattern for one in GENERIC_STEPS if one.pattern not in offered]
+    assert missing == [], f"the introspection API offers no way to say: {missing}"
+    mistaken = [one.pattern for one in GENERIC_STEPS if offered[one.pattern]["defined_by"] != FROM_ATF]
+    assert mistaken == [], f"offered, but not as ATF's own: {mistaken}"
+
+    assert {one.key for one in COMPARISONS} == {one["key"] for one in described["comparisons"]}
+    unrunnable = [one.key for one in COMPARISONS if one.pattern not in offered]
+    assert unrunnable == [], f"a claim that composes into a step nothing offers: {unrunnable}"
+
+    assert {one["marker"]: one["means"] for one in described["markers"]} == MARKERS
+
+
+def test_the_mcp_layer_cannot_hold_a_copy_of_the_vocabulary():
+    """Why the guard above can never be defeated by editing the MCP layer instead.
+
+    `mcp.py` does not import the tables that define ATF's words, so it has no way to enumerate them
+    and no way to hold a stale copy of one. Everything it can say about the vocabulary it has to ask
+    `introspect.py` for. That is what makes three tools enough forever: a tool per step would have
+    needed editing every time the framework learnt a word, and this cannot.
+    """
+    tree = ast.parse((SRC / "mcp.py").read_text(encoding="utf-8"))
+    reached = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module
+    }
+    assert not reached & {"steps", "compare", "discovery", "catalog"}, (
+        f"mcp.py reaches for the vocabulary directly: {sorted(reached)}"
+    )
 
 
 def test_htmx_is_vendored_with_a_pinned_version_and_no_cdn_reference():

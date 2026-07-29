@@ -512,3 +512,13 @@
 # The format a CI gate reads. Naming it in a feature would put an acronym where a sentence belongs.
 'it says where it wrote the report':
   - the result field "output" contains "Wrote a CTRF report to"
+
+# Asking `atf serve` to answer agents as well as people. The flag is the technical half; what a
+# reader cares about is that the suite is being offered to something that is not a person.
+'the developer serves this suite to agents':
+  - I run "atf serve --mcp"
+
+# The one thing a missing optional dependency has to say. The command names the group, so this is
+# the only place that has to know what the group is called.
+'it says what to install for it':
+  - the result field "output" contains "uv sync --group mcp"

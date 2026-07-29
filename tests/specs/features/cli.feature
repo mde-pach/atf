@@ -216,3 +216,24 @@ Feature: The command
       When the developer runs the specs, writing a report for CI
       Then the command succeeds
       And it says where it wrote the report
+
+  Rule: A capability the suite asked for and has not got is named, not worked around
+
+    # `atf serve --mcp` answers agents as well as people, and the MCP SDK it needs is not a
+    # dependency of ATF — a framework should not decide that every suite serves agents. So the
+    # interesting case is the one where somebody asks for it without having installed it, and the
+    # only acceptable answer is the command saying so before it starts anything.
+    #
+    # Deterministic whether or not the SDK is installed, and it has to be: `atf serve --mcp` with
+    # the SDK present starts a real server and answers until something kills it, so a scenario that
+    # merely assumed the dependency was absent would hang for five minutes the day somebody ran
+    # `uv sync --group mcp`. The suite says "absent" out loud instead, by putting a module of that
+    # name in the way that refuses to import — which is exactly what absent looks like from here.
+
+    Scenario: Asked to answer agents without the SDK for it, the command says what to install
+      Given the workspace "chained" but:
+        | mcp.py | raise ImportError("stood in for by the suite: this is what absent looks like")\n |
+      When the developer serves this suite to agents
+      Then it is refused because "MCP SDK is not installed"
+      And it says what to install for it
+      And nothing was created

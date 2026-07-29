@@ -196,6 +196,51 @@ production actually holds.
 **Edit as text** switches to the Gherkin itself, held to exactly the same checks. A draft that would
 not parse is never written, and a new file that would not parse is not left behind.
 
+## The introspection surface {#introspection}
+
+Everything the composer runs on is a plain function of a catalog and a
+[discovery](#discovery) — no request, no page. [`atf serve --mcp`](cli.md#serve-mcp) offers that same
+surface over [MCP](https://modelcontextprotocol.io), so an agent composes from the list the page
+composes from.
+
+The point is what it *cannot* do. An agent handed a file and a docstring writes arbitrary
+automation; an agent that can only choose from `available steps × catalog nodes × phrases` cannot
+write a step this suite does not define, name a resource the catalog does not declare, or assert
+about a [slot](specs-and-fixtures.md#slots) nothing above it produced. Those are not rules it is
+asked to follow — there is nothing on the surface that would turn them into a line.
+
+### Three tools {#introspection-tools}
+
+| Tool | Answers |
+|---|---|
+| `describe` | what can be said here |
+| `compose` | these choices → the Gherkin they mean, or the reason they are not a scenario |
+| `run` | a scenario this suite has, or a draft that has not been written yet |
+
+Three, and structural rather than one per wording. `describe` returns the steps with what each
+captures, needs and produces; the catalog's resources with their status in this environment and the
+fields each is known to have, with current values; the [phrases](phrasebook.md) this suite writes
+and what they stand for; the closed lists of comparisons and of
+[`#markers`](specs-and-fixtures.md#markers); and the resource types with the actions declared on
+them. All of it is derived from the tables that define ATF's vocabulary, so **adding a generic step,
+a resource type, a phrase, a marker or an adapter surfaces it with no change to the MCP layer** —
+which is asserted by a guard in the test suite rather than merely intended.
+
+`compose` writes nothing. Its `problems` are one sentence each and are the useful half: *"no when
+step this feature can reach is worded 'I invent a step'"*, *"the catalog declares no account called
+'nobody'"*, *"nothing above this puts `result` on the context"*.
+
+`run` is the only one that touches an environment, so it is **gated by
+[`mutable_envs`](manifest.md#mutable_envs)** exactly as the composer's *Try it* is: running
+provisions. A draft is run from a scratch feature that is removed afterwards; nothing is written to
+the suite.
+
+### Reaching it {#introspection-endpoint}
+
+One process serves both — the endpoint is streamable HTTP at `/mcp/` on the same host and port as
+the pages, stateless, and it refuses a request whose `Host` header names somewhere else. It carries
+**no authentication**, like the rest of the cockpit; see [Security posture](#security).
+
 ## Resources {#catalog}
 
 `GET /catalog` — *everything a scenario can ask for, whether it exists in this environment, and what

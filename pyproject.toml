@@ -41,6 +41,11 @@ browser = ["playwright>=1.40"]
 # What a consuming project installs to use `${fake:…}`. ATF registers the provider only when the
 # import succeeds, so a suite without it simply has one fewer provider.
 fake = ["faker"]
+# What a suite installs to let `atf serve --mcp` answer agents. Deliberately not a dependency of
+# `atf` and deliberately not in `dev`: a framework should not decide that every suite serves agents,
+# and this repository's own suite asserts what the command says when the SDK is absent — which it
+# could not do if its own checks installed it.
+mcp = ["mcp>=2"]
 
 [build-system]
 requires = ["hatchling"]

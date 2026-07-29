@@ -1,5 +1,0 @@
-urgent:
-  resource: label
-  represents: A label the environment ships with — ATF finds it, never creates it.
-  body:
-    name: urgent

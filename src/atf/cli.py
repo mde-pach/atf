@@ -19,7 +19,7 @@ from .materializer import BLOCKED, CREATED, EPHEMERAL, PRESENT, REFERENCE
 from .report import as_ctrf
 from .runner import ERROR, FAILED, RunRecord, failed_ids
 from .runner import run as run_tests
-from .scaffold import scaffold
+from .scaffold import MANIFEST_FILE, scaffold
 from .store import ReportError, RunStore
 
 BANNER = """\
@@ -109,16 +109,39 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    root = Path(args.directory).resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    written = scaffold(root, root.name)
+    """Write a new suite here, or refuse because there is one already.
 
-    if not written:
-        print(f"{root} already contains a suite — nothing written.")
-        return 0
+    A manifest is what every other command means by "there is a suite here", so its presence is what
+    this refuses on — and refusing is the whole of the change. It used to write whatever was
+    missing, which is right for an empty directory and wrong for a suite somebody has since edited:
+    run again over a catalog whose `resources.yaml` no longer declares an account, it put the
+    template's `accounts.yaml` back beside it and left a suite that would not load. A command that
+    scaffolds must not be able to break the thing it is pointed at.
+
+    Anything else already in the directory is left alone and reported. `git init` then `atf init` is
+    how a project ordinarily starts, so a `README.md` or a `.gitignore` being there is the normal
+    case, not a problem — and taking one over would destroy work to save a template.
+    """
+    root = Path(args.directory).resolve()
+    if (root / MANIFEST_FILE).is_file():
+        print(
+            f"{root} already contains a suite — {MANIFEST_FILE} is there, so nothing was written.\n"
+            "Edit it, or run `atf init` somewhere with no suite in it.",
+            file=sys.stderr,
+        )
+        return 2
+
+    root.mkdir(parents=True, exist_ok=True)
+    written, kept = scaffold(root, root.name)
     print(f"Scaffolded an ATF suite in {root}:")
     for path in written:
         print(f"  {path.relative_to(root)}")
+    if kept:
+        # Said rather than silently skipped: a file that was already there is a file the scaffold
+        # did not get to write, and somebody reading a green run has to know which.
+        print("\nLeft alone, because they were already here:")
+        for path in kept:
+            print(f"  {path.relative_to(root)}")
     print("\nNext: `atf run` — it passes as it stands, against a stand-in backend. Then `atf serve`.")
     return 0
 

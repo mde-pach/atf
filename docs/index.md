@@ -94,7 +94,9 @@ and there is no deprecation policy before 1.0. Pin a commit if you need reproduc
 
 ## Elsewhere in the repository
 
-- [`examples/todo/`](https://github.com/mde-pach/atf/tree/main/examples/todo) — a complete suite
-  exercising every seam against an in-process fake API.
 - [`tests/`](https://github.com/mde-pach/atf/tree/main/tests) — ATF tested with ATF: a suite
-  whose system under test is the `atf` CLI.
+  whose system under test is the `atf` CLI. The largest worked example there is, and the only one
+  that cannot drift from what ATF does, because breaking ATF turns it red.
+- Whatever `atf init` writes you. There is no sample project checked in here on purpose: a
+  checked-in example is a second thing to keep green and it drifts from what the tool produces,
+  while the scaffold is what every new suite actually starts as.

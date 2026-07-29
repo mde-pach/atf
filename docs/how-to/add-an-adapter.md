@@ -124,8 +124,8 @@ system to catch up — put the whole chain in `create`. That is what the seam is
 
 The catalog still treats it as one resource, so specs say `Given the guest "visitor"` and know
 nothing about the three calls. Resources built this way are usually ephemeral — see
-[About lifecycles](../explanation/lifecycles.md). There is a worked example in
-`examples/todo/adapters.py`.
+[About lifecycles](../explanation/lifecycles.md). `atf init` writes a working one into
+`adapters.py`, which is the shortest way to see the shape.
 
 ## Reuse the materializer's cache
 

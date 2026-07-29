@@ -171,7 +171,7 @@ Two different mechanisms share the word.
 - **`system: reference`** selects the built-in `ReferenceAdapter` — a `rest` adapter whose `create`
   raises. It is find-only for JSON APIs specifically.
 
-A find-only REST resource normally wants both, as `examples/todo` does:
+A find-only REST resource normally wants both:
 
 ```yaml
 label:

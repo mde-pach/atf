@@ -44,7 +44,12 @@ history-dependent, which is the specific failure mode end-to-end suites are noto
 
 The fix is not to make the resource ephemeral. It is to give the mutating scenario a resource of its
 own — one task the assertions read, a second the completion spec closes. Two nodes instead of one,
-and the coupling is gone. (`examples/todo` does exactly this, and says why in its README.)
+and the coupling is gone.
+
+Or one node and a line in the spec:
+[`Given a fresh task "laundry"`](../reference/specs-and-fixtures.md#fresh) says the same
+thing where only one scenario needs it, without the catalog carrying a node that exists for a
+single test.
 
 The catalog makes this cheap on purpose:
 when adding a resource costs almost nothing, "give the mutating test its own" stops being a

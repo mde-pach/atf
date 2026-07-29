@@ -81,8 +81,14 @@
 'the output says a suite was scaffolded':
   - the result field "output" contains "Scaffolded"
 
-'the output says the directory already holds one':
-  - the result field "output" contains "already contains a suite"
+'it says where to run it instead':
+  - the result field "output" contains "somewhere with no suite in it"
+
+'it says what it left alone':
+  - the result field "output" contains "Left alone, because they were already here"
+
+'the developer reads the readme':
+  - I run "cat README.md"
 
 # What a scaffolded suite needs before it will run: an actor to send, and nothing else — with no
 # backend URL exported it starts the stand-in one it ships with. Exported here rather than left to

@@ -1,8 +1,0 @@
-visitor:
-  resource: guest
-  represents: >
-    An anonymous visitor, signed up and activated fresh for every run. The nickname is generated,
-    which is only safe because a guest is ephemeral — it is never looked up, so a value that
-    changes every run cannot accumulate. The catalog refuses the same thing on a persistent type.
-  body:
-    nickname: visitor-${uuid:hex}

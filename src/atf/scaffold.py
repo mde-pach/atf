@@ -320,9 +320,15 @@ Tests and fixtures follow automatically: each resource type becomes a pytest fix
 """
 
 
-def scaffold(root: Path, name: str) -> list[Path]:
-    """Write a new consuming project. Never overwrites an existing file."""
-    files = {
+# The one file that makes a directory a suite. `resolve_manifest` walks up looking for it, so its
+# presence is not a matter of taste — it is what every other command means by "there is a suite
+# here", and therefore the only honest thing for `init` to refuse on.
+MANIFEST_FILE = "atf.yaml"
+
+
+def files_for(name: str) -> dict[str, str]:
+    """Every file a new suite is made of, and what goes in each."""
+    return {
         "atf.yaml": MANIFEST,
         "catalog/resources.yaml": RESOURCES,
         "catalog/accounts.yaml": ACCOUNTS,
@@ -338,12 +344,28 @@ def scaffold(root: Path, name: str) -> list[Path]:
         "README.md": README.format(name=name),
     }
 
+
+def scaffold(root: Path, name: str) -> tuple[list[Path], list[Path]]:
+    """Write a new consuming project: what was written, and what was already there.
+
+    Never overwrites. A directory somebody is about to scaffold into commonly already holds a
+    `README.md`, a `.gitignore` or a `conftest.py` — `git init` then `atf init` is the ordinary way
+    to start — and taking those over would destroy work to save a template.
+
+    What it must not do is write *some* of a suite into a directory that already holds one, which is
+    what it used to do: run twice over a catalog somebody had since edited, it dropped the template's
+    `accounts.yaml` into a catalog whose `resources.yaml` no longer declared that type, and left
+    behind a suite that would not load. Refusing that case is [`cmd_init`](cli.py)'s job, because a
+    refusal is a sentence somebody reads; this reports what it found so that it can be worded.
+    """
     written: list[Path] = []
-    for relative, content in files.items():
+    kept: list[Path] = []
+    for relative, content in files_for(name).items():
         path = root / relative
         if path.exists():
+            kept.append(path)
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         written.append(path)
-    return written
+    return written, kept

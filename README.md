@@ -89,17 +89,22 @@ v1 is **single-worker**: the session materializer, its listing cache and get-or-
 under parallel workers, and the cockpit serializes runs with one active job per environment. Do not
 enable `pytest-xdist`. See [concurrency](docs/reference/specs-and-fixtures.md#concurrency).
 
-## The example
+## The example is the one you are given
 
-`examples/todo/` is a complete suite exercising every seam — REST resources with composite, scoped
-and datetime natural keys; a reference resource; a custom ephemeral adapter with teardown; two
-feature files; a read-only environment — against a tiny in-process fake API, so it runs with no
-backend:
+There is no sample project in this repository, deliberately. A checked-in example is a second thing
+to keep green, it drifts from what the tool actually produces, and a fake API proves nothing about a
+real one. What `atf init` writes *is* the worked example — a manifest, a two-level catalog with a
+placeholder, a custom adapter, a feature and a stand-in backend — and it is the one thing that
+cannot drift, because it is what every new suite starts as:
 
 ```sh
-cd examples/todo
-uv run pytest -q            # 8 passed
+mkdir my-suite && cd my-suite
+atf init
+atf run            # green as it stands, against the stand-in backend
+atf serve          # the cockpit, over your own suite
 ```
+
+Then point `ATF_URL` at something real and delete `fake_backend.py`.
 
 ## Developing ATF
 

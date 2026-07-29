@@ -11,11 +11,11 @@ and coverage may be lost where losing it makes the suite better.
 
 ## Where things stand
 
-**Branch `readable-specs`, 29 commits.** All gates green: `uv run ruff check`, `uv run ty check`,
+**Branch `readable-specs`, 30 commits.** All gates green: `uv run ruff check`, `uv run ty check`,
 `uv run pytest -q`, `uv run mkdocs build --strict`, `examples/todo`, and
 `ATF_MANIFEST=tests/atf.yaml uv run python -m atf.cli lint`.
 
-**151 scenarios, ~465 Python tests.** Started at 21 scenarios and 573 Python tests.
+**152 scenarios, ~460 Python tests.** Started at 21 scenarios and 573 Python tests.
 
 `selftest/` is deleted. `tests/` is a consuming project — `atf.yaml`, `catalog/`, `specs/`,
 templates under `suites/` — and one `pytest` run covers the scenarios and the Python tests together.
@@ -72,7 +72,6 @@ better description. Each residue module's docstring says which it is and why.
 | `test_acceptance.py` | 12 | keep, or convert with a source-rule adapter (grep as a data source) |
 | `test_providers.py` | 10 | **trimmed.** Keeps the registry |
 | `test_placeholders.py` | 7 | **keep** with `compare` — a pure decision procedure |
-| `test_example.py` | 5 | **keep.** A claim about the repository, not the framework |
 | `test_plugin.py` | 5 | **keep.** Fixtures and skips no scenario can watch |
 | `test_mutations.py` | 4 | **keep.** A green suite proves nothing unless it can go red |
 | `test_command_adapter.py` | 11 | **keep.** What raises before a claim can be made — nothing to run, nowhere to run it, no such program |
@@ -193,6 +192,21 @@ Things a future change would be wrong to undo.
 - **Waivers are comments in the feature file**, so the reason lives beside the line it excuses, and
   apply to the line directly beneath and no further.
 
+**The front door**
+
+- **There is no example project in the repository, on purpose.** A checked-in example is a second
+  thing to keep green, it drifts from what the tool produces, and a fake API proves nothing about a
+  real one. What `atf init` writes *is* the worked example, and it cannot drift. A demo against a
+  real system belongs in its own repository.
+- **`atf init` refuses where a manifest already exists.** A manifest is what every other command
+  means by "there is a suite here". It used to write whatever was missing, which is right for an
+  empty directory and wrong for a suite somebody had since edited — it put the template's
+  `accounts.yaml` back beside a `resources.yaml` that no longer declared that type, and left a suite
+  that would not load. A command that scaffolds must not be able to break what it is pointed at.
+- **Anything else already in the directory is left alone and said.** `git init` then `atf init` is
+  the ordinary way to start, so a `README.md` being there is the normal case — and taking it over
+  would destroy work to save a template.
+
 **The composer**
 
 - Offers slot claims only over slots a **step** produced, never a `Given`'s record — a resource claim
@@ -252,10 +266,7 @@ Things a future change would be wrong to undo.
 
 ## Found on the way, not fixed
 
-- **`atf init` inside a suite that already exists leaves it broken.** It never overwrites *per file*,
-  so run inside `chained` it drops `catalog/accounts.yaml` into a catalog whose `resources.yaml`
-  declares no such type, and `atf status` then exits 2. Whether it should refuse outright or scaffold
-  only the gaps is a product decision.
+*(empty — `atf init` was the last one, and it is fixed.)*
 
 ---
 

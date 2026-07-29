@@ -55,7 +55,12 @@ jobs:
         env:
           ATF_MANIFEST: tests/atf.yaml
 
-      # Run the way a user would, which catches anything the harness papers over.
-      - name: The example must build to green
-        working-directory: examples/todo
-        run: uv run --project "${{ github.workspace }}" python -m pytest -q
+      # Run the way a user would, which catches anything the harness papers over: scaffold a suite
+      # with the command, then run it with nothing else set up. There is no example checked in — the
+      # thing under test here is what a newcomer is actually handed.
+      - name: What `atf init` writes must be green
+        run: |
+          mkdir -p "${RUNNER_TEMP}/scaffolded"
+          cd "${RUNNER_TEMP}/scaffolded"
+          uv run --project "${{ github.workspace }}" python -m atf.cli init
+          ATF_ACTOR=scaffold uv run --project "${{ github.workspace }}" python -m pytest -q

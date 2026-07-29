@@ -22,18 +22,29 @@ Feature: The command
       Then the command succeeds
       And the scaffolded suite passes
 
-    Scenario: Run a second time, it writes nothing and says so
-      # `init` never overwrites a file that is already there. Run twice, the second run finds
-      # everything present and has nothing to do — and what the first run wrote still passes,
-      # which is what says it was left alone rather than merely not reported.
-      Given the workspace "empty"
+    Scenario: Pointed at a suite that already exists, it refuses rather than filling in gaps
+      # It used to write whatever was missing, which is right for an empty directory and wrong for
+      # a suite somebody has since edited: a catalog that no longer declares an account got the
+      # template's accounts.yaml back beside it, and stopped loading. A command that scaffolds must
+      # not be able to break the thing it is pointed at.
+      Given the workspace "chained"
       When I run "atf init"
-      And I run "atf init"
+      Then it is refused because "already contains a suite"
+      And it says where to run it instead
+      When I run "atf status local"
       Then the command succeeds
-      And the output says the directory already holds one
-      When the developer runs the scaffolded suite
+
+    Scenario: What was already in the directory is left alone, and said
+      # `git init` then `atf init` is how a project ordinarily starts, so a README being there is
+      # the normal case rather than a problem — and taking it over would destroy work to save a
+      # template.
+      Given the workspace "empty" but:
+        | README.md | Our own words about this project.\n |
+      When I run "atf init"
       Then the command succeeds
-      And the scaffolded suite passes
+      And it says what it left alone
+      When the developer reads the readme
+      Then the page mentions "Our own words about this project."
 
   Rule: Status is a reading of the whole catalog, resource by resource
 

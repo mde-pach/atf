@@ -88,3 +88,20 @@ def _(context, materializer, command):
     runner = materializer.adapters["command"]
     aim_the_command_at(None, materializer)
     context.result = runner.run(command)
+
+
+def pytest_collection_modifyitems(items):
+    """Keep every scenario on one worker when the suite is run in parallel.
+
+    ATF's engine is single-worker by design — one session materializer, one listing cache, one
+    get-or-create — so two scenarios provisioning the same environment at once is exactly the thing
+    [concurrency](../../docs/reference/specs-and-fixtures.md#concurrency) forbids. Running them
+    across workers really does fail, in the way that ban predicts.
+
+    That is not a reason to run the whole repository serially, though. `xdist_group` pins these to a
+    single worker, which is all the ban asks for, and leaves the Python tests — ordinary tests with
+    their own temp directories and their own stub backend per worker — free to spread out. The
+    scenarios then cost what they always did, and everything else costs almost nothing.
+    """
+    for item in items:
+        item.add_marker(pytest.mark.xdist_group("the-atf-suite"))

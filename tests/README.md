@@ -3,9 +3,27 @@
 ATF's test suite is an ATF suite whose system under test is ATF. Running it is running ATF:
 
 ```sh
-uv run pytest -q          # from the repository root — the scenarios and the rest together
-uv run pytest -q tests/specs   # the scenarios alone
+uv run pytest -q               # everything, in one go — about eighteen minutes
+uv run pytest -q tests/specs   # the scenarios alone — about ninety seconds
 ```
+
+**Three invocations are four times faster than one**, and CI uses them:
+
+```sh
+uv run pytest -q --ignore=tests/specs --ignore=tests/test_mutations.py -n auto   # ~55s
+uv run pytest -q tests/specs                                                      # ~90s
+uv run pytest -q tests/test_mutations.py                                          # ~95s
+```
+
+They want different things. The Python tests are ordinary tests with their own temp directories, so
+they go across cores. The scenarios are an ATF suite and **must not** — the engine is single-worker
+by design, and running them across workers fails in exactly the way
+[concurrency](https://mde-pach.github.io/atf/reference/specs-and-fixtures/#concurrency) predicts.
+The mutation guard runs the suite in subprocesses, so it shares a machine with nobody.
+
+Running the lot with `-n auto` is *correct* — every scenario carries an `xdist_group` marker that
+pins them to one worker — but it takes seven minutes rather than four, because the nested `atf`
+subprocesses fight each other for the machine.
 
 Six scenarios need a real browser and skip without one, so a checkout that never ran
 `uv sync --group browser` is still green and still meaningful.

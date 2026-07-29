@@ -423,7 +423,13 @@ def test_a_provision_job_reports_every_node(project, engine):
 
 def test_provisioning_twice_reports_what_was_already_there(project, engine):
     jobs = JobRunner(project, project / "specs")
-    wait_for(lambda: jobs.start_provision(["accounts.primary"], "dev", engine).done)
+    # Started once and *then* waited on. `wait_for(lambda: start_provision(…).done)` re-runs its
+    # predicate every 20ms, and `active` reports a finished job as no job — so each poll after one
+    # completed started another, and the loop only ever escaped when a job happened to finish inside
+    # the window between being handed back and being asked. It provisioned dozens of times to learn
+    # one thing, and was the slowest test in the suite by a factor of six.
+    first = jobs.start_provision(["accounts.primary"], "dev", engine)
+    wait_for(lambda: first.done)
 
     again = jobs.start_provision(["accounts.primary"], "dev", engine)
     wait_for(lambda: again.done)

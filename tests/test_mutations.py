@@ -61,20 +61,16 @@ def counts(output: str) -> tuple[int, int]:
     return number("passed"), number("skipped")
 
 
-def test_atf_passes_its_own_specs():
-    result = run_suite()
-    assert result.returncode == 0, result.stdout + result.stderr
-
-    passed, skipped = counts(result.stdout)
-    assert passed + skipped == SCENARIOS, result.stdout
-    assert skipped in (0, BROWSER_SCENARIOS), "only the browser-tagged scenarios may skip"
-
-
 def test_the_suite_is_still_a_meaningful_self_test_without_a_browser():
     """Most of this suite reads pages the server rendered, and that needs nothing installed.
 
     A checkout that never ran `uv sync --group browser` must still go green and still prove
     something — otherwise the browser layer has quietly become mandatory.
+
+    This is also the one place that runs the whole of `specs/` in a clean process, and it is enough:
+    the ordinary `pytest` invocation over this repository already runs every scenario, browser ones
+    included, in the environment somebody actually has. A second full run asserting the same thing
+    cost two minutes to tell us nothing new.
     """
     result = run_suite(env={"PLAYWRIGHT_BROWSERS_PATH": NOWHERE})
     assert result.returncode == 0, result.stdout + result.stderr
@@ -154,8 +150,16 @@ def test_the_self_hosted_suite_catches_regressions(module, find, replace, expect
     assert find in original, f"{module}: the mutation target moved — update this test"
     path.write_text(original.replace(find, replace), encoding="utf-8")
 
-    result = run_suite(src=src)
+    # Only the scenario that has to notice. What this asserts is that *this* break turns *that*
+    # scenario red, and running the other hundred and sixty to learn it cost two minutes each. The
+    # whole suite still runs, once, unmutated, in the test above.
+    result = run_suite("-k", expected_failure, src=src)
     assert result.returncode != 0, f"{module}: the suite stayed green with the code broken"
     assert expected_failure in result.stdout, result.stdout
+    # A `-k` that matched nothing also exits non-zero, which would make this pass for the worst
+    # possible reason: a mutation nobody checked, reported as caught. pytest says so in one phrase.
+    assert "no tests ran" not in result.stdout, (
+        f"{module}: `-k {expected_failure}` selected no scenario, so nothing was actually checked"
+    )
 
     assert (REPO / "src" / "atf" / Path(module)).read_text(encoding="utf-8") == original, "the repo must be untouched"

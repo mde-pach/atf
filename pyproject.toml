@@ -28,7 +28,11 @@ atf = "atf.cli:main"
 [dependency-groups]
 # `faker` is here so the repo's own type check and tests can see it. It is *not* a dependency of
 # `atf`: a framework should not decide what a project's test data looks like.
-dev = ["ruff", "ty", "faker"]
+# `pytest-xdist` is for this repository's own suite and nothing else. ATF's engine is single-worker
+# by design, so it never parallelises a *suite* — but ATF's own Python tests are ordinary tests with
+# their own temp directories, and running those across cores takes them from four minutes to under
+# one. See `tests/README.md`.
+dev = ["ruff", "ty", "faker", "pytest-xdist"]
 docs = ["mkdocs>=1.6", "mkdocs-material>=9.5"]
 # Only `tests/` uses this, and only for the scenarios that need a page to have *run* rather
 # than merely been served. Absent, those scenarios skip and everything else still passes:
@@ -65,4 +69,8 @@ possibly-unresolved-reference = "error"
 testpaths = ["tests"]
 markers = [
     "browser: needs a real browser — skipped unless playwright and chromium are installed",
+    # Applied to every scenario by `tests/specs/conftest.py`, so that `-n auto --dist loadgroup`
+    # keeps them all on one worker. Registered here because the marker has to be known whether or
+    # not pytest-xdist is installed.
+    "xdist_group: run these on one worker — ATF's engine is single-worker by design",
 ]

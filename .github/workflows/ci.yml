@@ -47,8 +47,18 @@ jobs:
 
       # `tests/` is an ATF suite describing ATF, so this is one run: the scenarios, and the
       # handful of Python tests for the parts no scenario can watch.
+      # Three invocations rather than one, because they want different things. The Python tests are
+      # ordinary tests and go across cores. The scenarios are an ATF suite and must not — the engine
+      # is single-worker by design. The mutation guard runs the suite in subprocesses, so it shares a
+      # machine with nobody. One `pytest -q` over the lot takes four times as long as the three.
       - name: Tests
-        run: uv run pytest -q
+        run: uv run pytest -q --ignore=tests/specs --ignore=tests/test_mutations.py -n auto
+
+      - name: The scenarios
+        run: uv run pytest -q tests/specs
+
+      - name: The suite can still go red
+        run: uv run pytest -q tests/test_mutations.py
 
       - name: The feature files are well formed
         run: uv run python -m atf.cli lint

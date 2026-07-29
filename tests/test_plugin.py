@@ -81,3 +81,61 @@ def test_nothing_is_skipped_when_the_system_is_there(project, monkeypatch):
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "2 passed" in result.stdout
+
+
+def test_the_adapters_are_closed_when_the_run_ends(project):
+    """`Closeable` is part of the SPI and nothing called it until now.
+
+    A REST adapter holds an HTTP client and a browser adapter holds a browser and the process
+    driving it. An adapter of a project's own may hold a socket, a tunnel or a container, and the
+    only honest moment to tell it the run is over is the end of the run. No scenario can watch this
+    — it happens after the last one — so it is here.
+
+    The adapter is added to the project's own adapters module rather than to a steps file, because
+    the plugin builds every adapter the environment names when it imports, which is before a steps
+    module has been read.
+    """
+    adapters = project / "suite_adapters.py"
+    adapters.write_text(
+        adapters.read_text()
+        + '''
+
+class Holding:
+    """Registered for one run, so that the session finishing can be observed at all."""
+
+    def __init__(self, settings):
+        self.root = Path(__file__).parent
+
+    def find(self, node, ctx):
+        return None
+
+    def create(self, node, body, ctx):
+        return {}
+
+    def delete(self, node, record, ctx):
+        return None
+
+    def close(self):
+        (self.root / "closed.txt").write_text("yes", encoding="utf-8")
+
+
+register("holding", Holding)
+''',
+        encoding="utf-8",
+    )
+    manifest = project / "atf.yaml"
+    manifest.write_text(
+        manifest.read_text().replace("    adapters:", "    adapters:\n      holding: {}", 1), encoding="utf-8"
+    )
+    write_spec(
+        project,
+        "closing",
+        '''Feature: Closing
+  Scenario: Something ran at all
+    Given the account "primary"
+''',
+    )
+
+    result = run_pytest(project, "-q", "-p", "no:randomly", "specs/steps/test_closing.py")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (project / "closed.txt").is_file(), "the run ended without closing the adapters"

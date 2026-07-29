@@ -319,6 +319,21 @@ def pytest_collection_modifyitems(items) -> None:
             item.add_marker(pytest.mark.skip(reason=f"needs {requires[tag]}: {reasons[tag]}"))
 
 
+def pytest_sessionfinish(session, exitstatus) -> None:
+    """Let every adapter release what it is holding, now that no scenario will ask for anything.
+
+    `Closeable` has been part of the SPI since the browser adapter shipped — a REST adapter holds an
+    HTTP client, a browser adapter holds a browser and the process driving it — and nothing ever
+    called it. A suite that opened a page left Playwright and a Chromium running until the
+    interpreter died, and an adapter of a project's own that held a socket, a tunnel or a container
+    had no moment at which it was told the run was over. It has one.
+
+    Never raises: what is being released is already finished with, and a run that passed must not go
+    red on the way out. `close_adapter` swallows and logs, and this is the only caller.
+    """
+    _BOOT.materializer.close()
+
+
 def pytest_bdd_before_step_call(request, feature, scenario, step, step_func, step_func_args) -> None:
     """Resolve `${...}` in every value a step was handed, whoever wrote the step.
 

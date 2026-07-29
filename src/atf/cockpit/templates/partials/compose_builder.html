@@ -5,6 +5,39 @@
 {% set post = u('/compose/preview') %}
 {% set swap = 'hx-target="#compose-body" hx-swap="innerHTML"' %}
 
+{# The rows under a step that takes a table. One line per field, and a spare row at the bottom so
+   adding one is typing rather than pressing something first. Where the row names a resource, each
+   field it is known to have is offered with what it currently holds — which is the reason this is
+   worth building at all: a whole-shape claim is the most tedious thing in ATF to write by hand and
+   the composer already knows every answer. #}
+{% macro table_rows(row) %}
+  {% set known = table_fields(row) %}
+  {% set filled = row.table + [['', '']] %}
+  <div class="table-rows">
+    <label>what it must hold</label>
+    {% for pair in filled %}
+      <div class="field-row">
+        <input name="tf_{{ row.index }}_{{ loop.index0 }}" value="{{ pair[0] }}"
+               list="table-fields-{{ row.index }}" placeholder="field"
+               hx-post="{{ post }}" hx-trigger="change" {{ swap|safe }}>
+        <input name="tv_{{ row.index }}_{{ loop.index0 }}" value="{{ pair[1] }}"
+               list="table-markers" placeholder="what it holds"
+               hx-post="{{ post }}" hx-trigger="change" {{ swap|safe }}>
+      </div>
+    {% endfor %}
+    {% if known %}
+      <datalist id="table-fields-{{ row.index }}">
+        {% for choice in known %}<option value="{{ choice.name }}">{{ choice.current }}</option>{% endfor %}
+      </datalist>
+      <span class="note">
+        {{ known | length }} field{{ '' if known | length == 1 else 's' }} known here, with what each
+        holds now. A <code>#marker</code> says what <em>kind</em> of thing must be there when the
+        value is not the point.
+      </span>
+    {% endif %}
+  </div>
+{% endmacro %}
+
 {# The parameters of one step. A step ATF defines names a resource, one of its fields and a value,
    and every one of those is a choice the catalog can already make for you — so it is a picker, and
    each option carries what is needed to pick it. A step this project defines gets a text box,
@@ -147,6 +180,12 @@
   {% for name in held_fields() %}<option value="{{ name }}">{% endfor %}
 </datalist>
 
+{# What a table cell may say instead of a value. One list for the whole page: a marker means the
+   same thing in every table, and offering it per row would be the same twelve options repeated. #}
+<datalist id="table-markers">
+  {% for marker, means in markers.items() %}<option value="{{ marker }}">{{ means }}</option>{% endfor %}
+</datalist>
+
 <input type="hidden" name="mode" value="{{ draft.mode }}">
 
 <div class="card stack">
@@ -266,6 +305,7 @@
               {% if row.subject.startswith('step:') and row.definition and row.definition.params %}
                 {{ captures(row, generic(row.definition.pattern)) }}
               {% endif %}
+              {% if row.takes_table %}{{ table_rows(row) }}{% endif %}
 
             {% else %}
               <div class="drop">
@@ -290,6 +330,7 @@
               {% if row.definition and row.definition.params %}
                 {{ captures(row, generic(row.definition.pattern)) }}
               {% endif %}
+              {% if row.takes_table %}{{ table_rows(row) }}{% endif %}
 
               {% if row.node_id %}
                 {% set state = status.get(row.node_id, {}).get('status', '') %}

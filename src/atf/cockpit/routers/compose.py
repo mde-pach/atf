@@ -27,6 +27,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ...adapters import actions_of
 from ...catalog import Node, find_node
+from ...compare import MARKERS
 from ...context import RESULT
 from ...discovery import (
     CAPTURE_RE,
@@ -105,9 +106,16 @@ class Row:
     # resource re-reads it live and a claim about a slot does not — so offering the slot would be
     # offering the worse of two ways to say the same thing. See `steps.py`.
     produced: set[str] = field(default_factory=set)
+    # The rows of a table, for the steps that take one. Held as pairs because that is what a table
+    # is; empty for every other step, which is most of them.
+    table: list[list[str]] = field(default_factory=list)
     text: str = ""
     shown_keyword: str = ""
     problem: str = ""
+
+    @property
+    def takes_table(self) -> bool:
+        return self.definition is not None and self.definition.takes_table
 
     @property
     def given(self) -> bool:
@@ -295,6 +303,7 @@ def _row(
     # The resource picker posts `node:<id>`; a value posts itself. Stored bare either way.
     row.target = fields.get(f"target_{index}", "").strip().removeprefix(NODE_SUBJECT)
     row.pattern = fields.get(f"pattern_{index}", "")
+    row.table = _table(index, fields)
 
     claimed = row.subject and not row.subject.startswith(STEP_SUBJECT)
     if claimed:
@@ -310,6 +319,21 @@ def _row(
     if not row.subject:
         _read_claim(row, nodes)
     return row
+
+
+def _table(index: int, fields: dict[str, str]) -> list[list[str]]:
+    """The rows somebody filled in under a step that takes a table.
+
+    A row with neither a field nor a value is one the page is offering and nobody has used, so it
+    is dropped rather than written — the preview has to be exactly what lands on disk. A row with
+    one of the two is kept, so that a half-filled row is reported rather than silently discarded.
+    """
+    prefix = f"tf_{index}_"
+    numbers = sorted(
+        int(key[len(prefix) :]) for key in fields if key.startswith(prefix) and key[len(prefix) :].isdigit()
+    )
+    rows = [[fields.get(f"tf_{index}_{n}", "").strip(), fields.get(f"tv_{index}_{n}", "").strip()] for n in numbers]
+    return [row for row in rows if row[0] or row[1]]
 
 
 # The three things a Then can be about. A project's own step is a subject too: choosing it is
@@ -516,6 +540,16 @@ def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
         row.problem = f"give {'a value' if len(missing) == 1 else 'values'} for {', '.join(missing)}"
         return
 
+    if row.takes_table:
+        if not row.table:
+            row.problem = "say what this must hold — add a field and what it holds, below"
+            return
+        half = next((pair for pair in row.table if not pair[0] or not pair[1]), None)
+        if half is not None:
+            written = half[0] or half[1]
+            row.problem = f"the row for {written!r} needs both a field and what it holds"
+            return
+
     absent = [name for name in row.definition.needs if name not in row.held]
     # A step that names its own slot is held to the slot it named, not to a fixed one.
     if row.definition.needs_slot:
@@ -554,8 +588,25 @@ def _gherkin(title: str, rows: list[Row]) -> str:
     lines = [f"  Scenario: {title}".rstrip()]
     # A row with nothing chosen yet contributes no line: a bare `Given` is not something that would
     # ever be written, and the preview is only worth trusting if it is exactly what will be.
-    lines += [f"    {row.shown_keyword} {row.text}" for row in rows if row.text]
+    for row in rows:
+        if not row.text:
+            continue
+        lines.append(f"    {row.shown_keyword} {row.text}")
+        lines += _table_lines(row)
     return "\n".join(lines) + "\n"
+
+
+def _table_lines(row: Row) -> list[str]:
+    """A table under its step, its columns padded so a reader can follow a row across.
+
+    Aligned because every table written by hand in this project is, and a generated one that is not
+    would be the single ragged block in the file — which is how a tool teaches people to stop using
+    it for anything they care about.
+    """
+    if not row.takes_table or not row.table:
+        return []
+    widest = [max(len(pair[column]) for pair in row.table) for column in (0, 1)]
+    return [f"      | {pair[0].ljust(widest[0])} | {pair[1].ljust(widest[1])} |" for pair in row.table]
 
 
 def _reindent(text: str) -> str:
@@ -1031,15 +1082,22 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         # table under it, and offering a line it cannot finish is worse than not offering it. Those
         # are written by hand, or in text mode, which is held to exactly the same checks.
         "step_options": lambda row: _step_options(
-            [step for step in offered[row.keyword] if usable(step, row) and not step.takes_table]
+            [step for step in offered[row.keyword] if usable(step, row)]
         ),
         # A Then said as a claim: what it is about, what of it, how, and against what.
         "subject_options": lambda row: _subject_options(
             engine,
             status,
-            [step for step in offered[row.keyword] if usable(step, row) and not step.takes_table],
+            [step for step in offered[row.keyword] if usable(step, row)],
             row,
         ),
+        # What a table's rows can be about: the fields this row's resource is known to have, with
+        # what each holds right now. The composer already reads these for the single-field claim —
+        # a whole-shape claim is the same question asked about several fields at once, and the
+        # tedium it replaces is exactly why it was worth teaching the builder to write one.
+        "table_fields": lambda row: _table_fields(engine, status, row),
+        # What a cell may say instead of a value, offered rather than remembered.
+        "markers": MARKERS,
         "aspect_options": lambda row: _aspect_options(
             engine, status, row.subject.removeprefix(NODE_SUBJECT)
         ),
@@ -1145,20 +1203,37 @@ def _subject_options(
             }
         )
     for step in steps:
-        if generic(step.pattern) is None:
-            options.append(
-                {
-                    "value": f"{STEP_SUBJECT}{step.pattern}",
-                    "label": step.pattern,
-                    "meta": Path(step.file).name if step.file else "",
-                    "desc": step.docstring,
-                    # A phrase is not a step this suite defines — it is this suite's wording over
-                    # steps that needed no code, and saying so is what keeps someone from going
-                    # looking for the Python behind it.
-                    "group": "A phrase this suite writes" if step.phrase else "A step this suite defines",
-                }
-            )
+        # A step ATF defines is normally reached through the four choices rather than by its
+        # wording — that is what the claim row is. The exception is a step that takes a table:
+        # there is no comparison to pick, because the table *is* the comparison, so it is offered
+        # here by name and the rows are filled in underneath.
+        if generic(step.pattern) is not None and not step.takes_table:
+            continue
+        options.append(
+            {
+                "value": f"{STEP_SUBJECT}{step.pattern}",
+                "label": step.pattern,
+                "meta": Path(step.file).name if step.file else "",
+                "desc": step.docstring,
+                # A phrase is not a step this suite defines — it is this suite's wording over
+                # steps that needed no code, and saying so is what keeps someone from going
+                # looking for the Python behind it.
+                "group": _subject_group(step),
+            }
+        )
     return options
+
+
+def _subject_group(step: StepDef) -> str:
+    """Which heading a Then's subject picker files a step under.
+
+    Not `_group`, which names the same steps for the *When* picker. Two pickers, two questions —
+    a When asks what the scenario does and a Then asks what it is about — and a step means a
+    different thing under each, so it is filed differently.
+    """
+    if step.takes_table and generic(step.pattern) is not None:
+        return "A whole shape, said as a table"
+    return "A phrase this suite writes" if step.phrase else "A step this suite defines"
 
 
 def _resource_options(engine: Any, status: dict[str, Any], group: str = "") -> list[dict[str, str]]:
@@ -1171,6 +1246,21 @@ def _resource_options(engine: Any, status: dict[str, Any], group: str = "") -> l
             "group": group,
         }
         for node in sorted(engine.nodes.values(), key=lambda item: (item["resource"], item["name"]))
+    ]
+
+
+def _table_fields(engine: Any, status: dict[str, Any], row: Row) -> list[dict[str, str]]:
+    """The fields a table row may name, and what each holds — empty where the row names no resource.
+
+    A slot's shape has nothing to offer: the slot is filled by a step that has not run yet, so there
+    is no record to read. Those rows are typed, and that is honest rather than a gap.
+    """
+    node = engine.nodes.get(row.node_id) if row.node_id else None
+    if node is None:
+        return []
+    return [
+        {"name": choice.name, "current": choice.current, "source": choice.source}
+        for choice in field_choices(node, status.get(row.node_id))
     ]
 
 

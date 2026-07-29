@@ -24,7 +24,7 @@ from markupsafe import escape
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import Cockpit, set_cockpit
 from atf.discovery import parse_feature
-from atf.steps import COUNT, FIELD_IS, FIELD_IS_NOT
+from atf.steps import COUNT, FIELD_IS, FIELD_IS_NOT, SHAPE_IS
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
@@ -303,6 +303,87 @@ def test_a_scenario_of_nothing_but_generic_steps_can_be_written(client, project)
     specs = parse_feature(feature_file(project), {}, set())
     assert "An account carries the plan it declares" in [spec.scenario for spec in specs]
     assert "have no definition yet" not in response.text, "a step ATF provides is already defined"
+
+
+# ---- a claim about a whole shape --------------------------------------------
+#
+# The one thing the builder could not write. A table step was not offered at all, on the grounds
+# that offering a line it cannot finish is worse than not offering it — which was true of the
+# builder as it stood and made the cockpit strictly weaker than a text editor for the most tedious
+# claim in ATF to write by hand.
+
+
+def shape(**overrides) -> dict[str, str]:
+    """A draft whose Then is a whole-shape claim about the account the Given names."""
+    data = {
+        "mode": "build",
+        "feature": "Accounts",
+        "title": "An account has the shape a new one should",
+        "kw_0": "given",
+        "rtype_0": "account",
+        "rname_0": "primary",
+        "kw_1": "then",
+        "subject_1": "step:" + SHAPE_IS,
+        "pattern_1": SHAPE_IS,
+        "p_1_resource_type": "account",
+        "p_1_name": "primary",
+        "tf_1_0": "plan",
+        "tv_1_0": "standard",
+        "tf_1_1": "id",
+        "tv_1_1": "#notnull",
+    }
+    data.update(overrides)
+    return {key: value for key, value in data.items() if value is not None}
+
+
+def test_a_table_step_is_offered_now_that_the_builder_can_finish_one(client):
+    body = client.post("/compose/preview", data=draft()).text
+    assert esc(SHAPE_IS) in body
+
+
+def test_a_whole_shape_composes_into_the_gherkin_it_means(client):
+    body = client.post("/compose/preview", data=shape()).text
+    assert esc('Then the account "primary" is:') in body
+    assert esc("| plan | standard |") in body
+    assert esc("| id   | #notnull |") in body
+
+
+def test_the_columns_line_up_the_way_a_hand_written_table_does(client):
+    """A generated table that is ragged is how a tool teaches people to stop using it."""
+    body = client.post("/compose/preview", data=shape(tf_1_1="identifier")).text
+    assert esc("| plan       | standard |") in body
+    assert esc("| identifier | #notnull |") in body
+
+
+def test_a_table_with_no_rows_is_held_back_before_it_is_written(client):
+    body = client.post("/compose/preview", data=shape(tf_1_0=None, tv_1_0=None, tf_1_1=None, tv_1_1=None)).text
+    assert "say what this must hold" in body
+
+
+def test_a_half_filled_row_names_what_is_missing(client):
+    body = client.post("/compose/preview", data=shape(tv_1_1=None)).text
+    assert "needs both a field and what it holds" in body
+
+
+def test_a_row_nobody_filled_in_is_not_written(client):
+    """The page always offers a spare row. An offer is not a line."""
+    body = client.post("/compose/preview", data=shape(tf_1_2="", tv_1_2="")).text
+    assert esc("| plan | standard |") in body
+    assert "needs both a field" not in body
+
+
+def test_the_fields_offered_are_the_ones_the_resource_is_known_to_have(client):
+    """The whole reason this is worth building: the composer already knows every answer."""
+    body = client.post("/compose/preview", data=shape()).text
+    assert 'id="table-fields-1"' in body
+    assert 'value="email"' in body
+    assert "fields known here" in body
+
+
+def test_a_marker_is_offered_rather_than_remembered(client):
+    body = client.post("/compose/preview", data=shape()).text
+    assert 'id="table-markers"' in body
+    assert 'value="#uuid"' in body
 
 
 # ---- the live loop ----------------------------------------------------------

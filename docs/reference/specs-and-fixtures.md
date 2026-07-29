@@ -451,7 +451,10 @@ over as one argument rather than as step values, so it never reaches the hook th
 everywhere else.
 
 A table step can also stand behind [a phrase](phrasebook.md#tables), written as an ordinary YAML
-mapping.
+mapping, and **the composer writes one**: choose it as what the claim is about, and each field the
+resource is known to have is offered with what it currently holds, alongside the markers. A
+whole-shape claim is the most tedious thing in ATF to write by hand and the one the cockpit already
+had every answer for.
 
 ### What `contains` means {#containment}
 

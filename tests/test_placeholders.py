@@ -1,3 +1,19 @@
+"""`${...}` resolved: a small language, and the rules it is read by.
+
+That placeholders *work* is said everywhere in `tests/specs` — every chained resource in every suite
+template hangs off `${owners.primary.id}`, and `specs/features/providers.feature` says what a
+generated value does and what an unresolvable one says. This is the grammar underneath.
+
+Four rules, each a decision over one string: a placeholder that is the whole value keeps its type
+while one interpolated into a sentence becomes text; resolution reaches through nested mappings and
+lists; a reference to something that was never provisioned raises rather than resolving to nothing;
+and a form nobody registered says so instead of being left in the value to confuse a backend.
+
+A pure function over text, kept as one — and paired with `test_compare.py`, which is the same shape
+of thing at the other end of the same journey.
+"""
+
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

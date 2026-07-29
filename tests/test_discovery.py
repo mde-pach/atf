@@ -1,3 +1,26 @@
+"""Reading a suite without running it: a parser and a static analyser.
+
+The plan expected most of this to become scenarios, on the grounds that the cockpit's pages are
+discovery's output. The pages did become scenarios — `specs/features/cockpit.feature` claims what
+the catalog page lists, what a scenario page links to, and that the composer offers ATF's own steps
+beside the suite's. That is discovery's output, checked through the surface a person sees.
+
+What is left is the machinery underneath, and it is two pure functions over text:
+
+**A parser.** Feature files in, scenarios out — narrative, tags, `Rule:` groupings, `Background:`
+steps belonging to every scenario, Examples rows expanded, and the catalog resources each step line
+names. Its inputs are files and its outputs are dataclasses; a scenario could only ever observe it
+second-hand, through something that renders what it produced.
+
+**A static analyser.** `context_use` reads a step function's source to say what it takes off the
+context and what it puts back, so the composer can offer a claim about a slot only once a step above
+has produced one. That claim *is* a scenario — but that this analysis reads `context.result = ...`
+as a write and `context.result` as a read is a fact about parsing Python, not about a suite.
+
+Both are decision procedures over source text, and a truth table is the honest description.
+"""
+
+
 from __future__ import annotations
 
 import os

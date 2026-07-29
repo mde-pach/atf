@@ -9,16 +9,16 @@ What is left here is the part with no observable surface, and it is deliberately
 
 - **A graph and a cache.** `closure` and `topo` are pure functions over a dependency graph;
   `cached` is a memo. A scenario can prove that seeding happens dependency-first — the mutation
-  guard in `test_selftest.py` breaks `topo` and watches the right scenario go red — but it cannot
+  guard in `test_mutations.py` breaks `topo` and watches the right scenario go red — but it cannot
   say *which* function was wrong, and for a pure function with a decision procedure the unit test
-  is the better diagnosis. This is the trade `ATF-TARGET.md`'s risk section names, made explicitly
-  and in the one place it is worth making.
+  is the better diagnosis. That is the standing cost of a suite written as scenarios, paid
+  deliberately and in the one place it is worth paying.
 - **The adapter registry.** A registration API, not a behaviour: nothing a suite can do observes it
   except by having an adapter at all.
 - **What happens when an adapter misbehaves.** A `find` that raises must become a reported `error`
   rather than a crash, and a `delete` that raises must not fail a run that already passed. Both
-  *are* observable in principle — through a suite-side adapter told to break — and both are
-  [deliberately not converted yet](../ATF-PLAN.md); see the M1d notes.
+  *are* observable in principle, through a suite-side adapter told to break — and arranging that is
+  a suite whose whole purpose is to have a broken adapter in it, which says less than these do.
 
 Everything here uses the fake adapter from `conftest.py`, so it is fast and touches nothing.
 """
@@ -153,13 +153,12 @@ def test_ensure_is_never_keep_going(write_catalog, fake):
 
 # ---- still here, and why ----------------------------------------------------
 #
-# Each of these has an observable surface that `selftest` cannot reach *yet*, rather than none at
-# all. They are listed in `ATF-PLAN.md` under what M1d deliberately did not convert, with the
-# vocabulary each one is waiting for:
+# Each of these has a surface a scenario could reach in principle, rather than none at all — and
+# each would need a suite built for the purpose, which would describe it worse than the lines below:
 #
-# - the ephemeral pair need a sub-suite whose persistent resource hangs off an ephemeral one;
-# - the cache pair need a step that changes the backend behind ATF's back, between two commands;
-# - `mode: data` needs the cockpit's "can this be created?" question, which is M2's.
+# - the ephemeral pair want a suite whose persistent resource hangs off an ephemeral one;
+# - the cache pair want a step that changes the backend behind ATF's back, between two commands;
+# - `mode: data` is already claimed through `atf status`, and what is left here is the engine rule.
 
 
 def test_ephemeral_is_built_every_pass_and_returned(engine, fake):

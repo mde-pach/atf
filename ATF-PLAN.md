@@ -11,16 +11,18 @@ and coverage may be lost where losing it makes the suite better.
 
 ## Where things stand
 
-**Branch `readable-specs`, 30 commits.** All gates green: `uv run ruff check`, `uv run ty check`,
-`uv run pytest -q`, `uv run mkdocs build --strict`, `examples/todo`, and
-`ATF_MANIFEST=tests/atf.yaml uv run python -m atf.cli lint`.
+**Branch `readable-specs`, 31 commits.** All gates green: `uv run ruff check`, `uv run ty check`,
+`uv run pytest -q`, `uv run mkdocs build --strict`, `ATF_MANIFEST=tests/atf.yaml … atf lint`, the
+mutation guard, and a suite scaffolded by `atf init` from scratch in CI.
 
-**152 scenarios, ~460 Python tests.** Started at 21 scenarios and 573 Python tests.
+**152 scenarios, 564 Python tests, 716 together.** Started at 21 scenarios and 573 Python tests.
 
-`selftest/` is deleted. `tests/` is a consuming project — `atf.yaml`, `catalog/`, `specs/`,
-templates under `suites/` — and one `pytest` run covers the scenarios and the Python tests together.
+`selftest/` is deleted, and nothing in the repository references it or these two files any more.
+`tests/` is a consuming project — `atf.yaml`, `catalog/`, `specs/`, templates under `suites/` — and
+one `pytest` run covers the scenarios and the Python tests together. `examples/` is deleted too: the
+worked example is what `atf init` writes, and CI scaffolds one and runs it.
 
-### The framework: eleven of thirteen changes from the target's Part 5
+### The framework: fifteen of the target's eighteen changes
 
 | Done | What it bought |
 |---|---|
@@ -37,12 +39,15 @@ templates under `suites/` — and one `pytest` run covers the scenarios and the 
 | C10 `Rule:` | Example Mapping's middle card, in the file |
 | C11 auto-collection | a feature needing no code needs no file beside it |
 | C12 skip-when-unavailable | a system this machine has not got skips, saying what is missing |
-
 | C13 `atf run -k/--tag/--failed/--json` | the dev loop: narrow it, repeat what failed, hand it to CI as CTRF |
 | C14 `atf docs` | the features as pages, carrying what the last run said — the thing Pickles cannot do |
 | C16 `Given a fresh <resource>` | **O2 answered**: the spec says isolation, the catalog stays quiet |
 
-**Not started:** C15 introspection + MCP, C17 `atf import openapi`. C18 is parked by the target.
+**Not started, and correctly so.** C15 (introspection + MCP) and C17 (`atf import openapi`) are what
+the target's own sequencing calls *"as they earn their place"*. C15's case is a forecast about how
+people will work rather than a cost measured here, and its "nearly free" property is durable — the
+enumerable vocabulary it needs is already built. C17 is the adoption lever and is what will make a
+demo repository cheap. C18 is parked by the target.
 
 **Both findings the target opens with are closed.** §3.1 by C8. §3.2 by C4 and C5 — and
 `cockpit.feature`'s lint waiver, which the target called its best evidence that generic vocabulary
@@ -56,34 +61,41 @@ better description. Each residue module's docstring says which it is and why.
 
 | Module | n | Verdict |
 |---|---:|---|
-| `test_cockpit.py` | 50 | **done.** What the interface shows is scenarios; what is left is pure functions, HTTP contracts, and states needing a run |
+| `test_cockpit.py` | 54 | **done.** What the interface shows is scenarios; what is left is pure functions, HTTP contracts, and states needing a run |
 | `test_accessible.py` | 43 | **new, keep.** Markup in, role and name out — a decision procedure |
-| `test_compose.py` | 58 | **keep, and the docstring says why.** Every test posts a draft: a request, a decision and a file on disk, none of it a page |
-| `test_authoring.py` | 27 | **keep.** Every test is a write, or a write being refused |
-| `test_discovery.py` | 42 | mostly convert — the cockpit's pages *are* discovery's output |
-| `test_runner_jobs.py` | 32 | convert — the activity dock and `atf run` |
-| `test_rest_adapter.py` | 28 | convert — a workspace whose catalog exercises the seams |
-| `test_steps.py` | 42 | **trimmed.** Keeps `PASSING`: every generic `Then` paired with a line that holds |
-| `test_phrasebook.py` | 22 | convert the running half; the loader is a pure function |
-| `test_context.py` | 21 | partly — held slots reach the run report |
+| `test_compose.py` | 68 | **keep, and the docstring says why.** Every test posts a draft: a request, a decision and a file on disk, none of it a page |
+| `test_authoring.py` | 34 | **keep.** Every test is a write, or a write being refused |
+| `test_compare.py` | 46 | **keep — reverses the earlier guess.** Half its rows cannot be arranged from a feature at all, and the behaviour already has scenarios through `PASSING` |
+| `test_steps.py` | 44 | **trimmed.** Keeps `PASSING`: every generic `Then` and `When` paired with a line that holds |
+| `test_discovery.py` | 42 | **keep — reverses the earlier guess.** Discovery's *output* became cockpit scenarios; what is left is a parser and a static analyser over source text |
+| `test_runner_jobs.py` | 32 | **keep.** A run observed while it is in flight, which no scenario can watch from inside |
+| `test_context.py` | 30 | **keep.** The descriptions, which are a table of value-in, sentence-out |
+| `test_rest_adapter.py` | 28 | **keep — reverses the earlier guess.** Its happy path is every scenario in the suite; what is left is configuration and a backend misbehaving |
+| `test_phrasebook.py` | 23 | **keep.** The loader is a pure function; the running half is `claims.feature` |
+| `test_providers.py` | 19 | **trimmed.** Keeps the registry |
 | `test_engine.py` | 17 | **keep.** A graph, a memo, a registry, an adapter told to misbehave |
-| `test_store.py` | 16 | **trimmed.** Keeps pruning, flakiness, streaks |
-| `test_compare.py` | 15 | convert as a Scenario Outline truth table |
-| `test_acceptance.py` | 12 | keep, or convert with a source-rule adapter (grep as a data source) |
-| `test_providers.py` | 10 | **trimmed.** Keeps the registry |
+| `test_store.py` | 16 | **keep.** Tolerance, pruning, and counting over a window of runs |
+| `test_acceptance.py` | 16 | **keep.** Rules about what the framework may not *do* |
+| `test_report.py` | 12 | **new, keep.** The CTRF mapping and the two translations that choose what runs |
+| `test_docs.py` | 10 | **new, keep.** Folding an outline's rows into one word |
 | `test_placeholders.py` | 7 | **keep** with `compare` — a pure decision procedure |
 | `test_plugin.py` | 5 | **keep.** Fixtures and skips no scenario can watch |
-| `test_mutations.py` | 4 | **keep.** A green suite proves nothing unless it can go red |
+| `test_mutations.py` | 7 | **keep.** A green suite proves nothing unless it can go red |
 | `test_command_adapter.py` | 11 | **keep.** What raises before a claim can be made — nothing to run, nowhere to run it, no such program |
 
 Deleted outright: `test_lint.py`, `test_collect.py`, `test_cli.py`, `test_config.py`,
 `test_catalog.py`, `test_materializer.py`, `test_bootstrap.py`.
 
-**The cockpit trio is settled.** The conversion boundary turned out not to be a matter of taste:
-what a page *shows* is a scenario, and what needs a POST is not — a page resource only ever GETs, so
-that nothing which reads the interface can change it. `test_cockpit.py` lost its page-rendering half
-(now 14 scenarios); `test_compose.py` and `test_authoring.py` keep almost everything, because every
-test in them posts a draft or writes a file. Both docstrings now say so.
+**The conversion is finished, and the boundary is not a matter of taste.** It settled into four
+kinds of thing that stay: a decision procedure over data (a truth table, a parser, a static
+analyser); a contract a reading surface has no words for (an HTTP header, a confirmation token, an
+auth scheme); something observable only *while* it happens or only when a backend misbehaves; and a
+rule about what the framework may not do. Three of the last four modules reverse an earlier guess in
+this table, and each says so in its own docstring.
+
+**Everything in the "Decisions" section below now has a home in the repository** — a module
+docstring, `docs/`, `README.md` or `tests/README.md` — so this file holds nothing that would be lost
+with it. That was the last thing owed before it can be deleted.
 
 ---
 
@@ -272,9 +284,25 @@ Things a future change would be wrong to undo.
 
 ## Standing constraints
 
+All of these now live in the repository as well — the first three in `README.md` under *Constraints
+the tests enforce*, the fourth in `docs/reference/manifest.md`. Kept here only until this file goes.
+
 - No Node, no build step. One semantic CSS file.
 - No literal `http(s)://` under `src/atf/` except `scaffold.py`; no `type: ignore` or `noqa: F`
   anywhere in it. Both have acceptance tests, and both have caught real mistakes.
 - `mutable_envs` gates provisioning and running, never authoring.
 - Design a whole change before writing it.
 - Run only the tests that cover the change in hand. The full suite is ~10 minutes.
+
+---
+
+## What closing this file means
+
+The migration is done and the target's Part 5 is fifteen of eighteen. Everything above that a future
+change would be wrong to undo has been written into the code or the docs, and the three suite
+disciplines learned by getting them wrong are in `tests/README.md`. Nothing is lost by deleting
+`ATF-PLAN.md` and `ATF-TARGET.md`, which is what both of them say should happen.
+
+`ATF-TARGET.md` is worth keeping *somewhere* first — it is the design document this whole branch
+derives from, it is untracked, and deleting it is unrecoverable. Commit it, or keep it out of the
+repository deliberately.

@@ -115,14 +115,28 @@ uv run ty check             # strict, zero suppressions
 uv run pytest -q            # the framework's own tests; no network
 ```
 
-ATF is tested at two layers:
+`tests/` is one directory holding both layers, and one `pytest` run covers them together:
 
-- **`tests/`** — unit and integration tests for each part (catalog validation, placeholder
-  resolution, the materializer against a fake adapter, the REST adapter against a loopback stub,
-  discovery, jobs, the cockpit). No network.
-- **`tests/`** — ATF tested *with* ATF: an ATF suite whose resources are real consuming suites
-  on disk and whose system under test is the `atf` CLI. See `tests/README.md`; the suite is
-  itself mutation-tested, so a regression in ATF turns it red.
+- **An ATF suite whose system under test is ATF** — its resources are real consuming suites on
+  disk and a running cockpit, and its scenarios drive the real `atf` command against them. See
+  `tests/README.md`. It is itself mutation-tested, so a regression in ATF turns it red.
+- **Python tests for what a scenario cannot watch** — a parser, a truth table, a run observed
+  while it is in flight, a request refused. Every one of those modules opens with a docstring
+  saying which it is and why it did not become a scenario; that split is the rule, not a habit.
+
+### Constraints the tests enforce
+
+Four, and each has an acceptance test because each has caught a real mistake:
+
+- **No `type: ignore` and no `noqa: F...` anywhere under `src/atf/`.** A suppression is a claim
+  nobody checks.
+- **No literal `http://` or `https://` under `src/atf/` except `scaffold.py`.** A host belongs in a
+  manifest, behind a `*_env` pointer.
+- **No Node, no build step, one semantic CSS file.** The cockpit is server-rendered with htmx
+  vendored into `src/atf/cockpit/static/`. A build step is a thing that breaks between you and a
+  green suite.
+- **The scaffold must run green.** CI scaffolds a suite with `atf init` and runs it with nothing
+  else set up, because that is what a newcomer is handed.
 
 The documentation is MkDocs Material, organised by [Diátaxis](https://diataxis.fr), and built with
 `--strict` in CI:

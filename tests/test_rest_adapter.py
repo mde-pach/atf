@@ -1,3 +1,25 @@
+"""The `rest` adapter's configuration surface, and how it behaves when a backend misbehaves.
+
+Its *happy path* is not here and does not need to be: every resource in this suite's own catalog is
+a `rest` resource, so every scenario that says `Given the owner "primary"` or
+`Then the environment has 0 guest` is a get-or-create, a listing and a delete through this adapter
+against a real HTTP server. Converting those tests would have written a second, worse copy of what
+`tests/specs` already runs a hundred times.
+
+What is left is the two things a scenario cannot reach.
+
+**Configuration.** An enveloped create response, a delete path template, custom pagination
+parameter names, three auth schemes, which status codes count as success. Each is a line in a
+manifest that changes what goes on the wire — and nothing a scenario can see, because a correctly
+configured adapter and a differently configured one both just work.
+
+**Adverse conditions.** A backend that ignores an offset and pages for ever; a create that must
+never be retried when the connection drops; a short page; a deletion the backend does not
+implement. Reaching these needs a stub that misbehaves in one specific way per test, and a suite's
+environment is one backend behaving one way.
+"""
+
+
 from __future__ import annotations
 
 import pytest

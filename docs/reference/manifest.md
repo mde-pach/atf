@@ -67,6 +67,12 @@ Leaving production off this list makes the protection structural rather than a m
 discipline. Nothing read-only is gated: [`atf status`](cli.md#atf-status) and every cockpit page
 work in any environment.
 
+**Authoring is not gated either**, deliberately. Writing a resource into the catalog, or a scenario
+into a feature file, changes files in your repository and touches no environment at all — so it is
+allowed wherever the cockpit is, and guarded by a confirmation token instead. Conflating "may write
+to production" with "may describe production" would make the catalog uneditable from the one place
+that can see what production actually holds.
+
 ### `requires` {#requires}
 
 Mapping of **tag** to **system**, default `{}`. A scenario carrying the tag cannot run where that

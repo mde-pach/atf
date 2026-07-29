@@ -114,10 +114,20 @@ made the argument true was the missing variation mechanism, not the subject matt
 suite templates would indeed have been worse than forty unit tests. `Given … but:` removed the
 reason.
 
-What is left in `tests/` is what genuinely has no observable surface: rules about what the
-framework may not *do* (`test_acceptance.py` — no product URLs in the source, no per-system
-branching in the materializer, no socket opened while a catalog loads), and the parts not yet
-ported. The migration is tracked in `ATF-PLAN.md`.
+What is left in `tests/` is what genuinely has no observable surface, and the split settled into
+four kinds of thing. **Every one of those modules opens with a docstring saying which it is and
+why**, so the boundary is written down where somebody about to add a test will read it:
+
+| Kind | Modules |
+|---|---|
+| A decision procedure over data — a truth table, a parser, a static analyser | `test_compare.py`, `test_placeholders.py`, `test_discovery.py`, `test_accessible.py`, `test_context.py` |
+| A contract a reading surface has no words for — an HTTP header, a confirmation token, a status code, an auth scheme | parts of `test_cockpit.py`, `test_compose.py`, `test_authoring.py`, `test_rest_adapter.py` |
+| Something only observable *while* it happens, or only when a backend misbehaves | `test_runner_jobs.py`, `test_store.py`, `test_engine.py` |
+| A rule about what the framework may not *do* | `test_acceptance.py`, `test_mutations.py` |
+
+The rule behind the table: **a module's behaviour becomes scenarios; what stays is a decision
+procedure over data.** Where a conversion would have needed a suite whose whole purpose was to fail
+in a particular shape, the unit test was the better description and stayed.
 
 **The one real cost is diagnosis, and it is a deliberate trade.** If a bootstrap bug lands, this
 whole suite fails to collect and tells you nothing, where a unit test still points at the broken
@@ -126,8 +136,26 @@ function. The mutation guard below is the partial recovery, and the failure mess
 
 ## Guarding the guard
 
-`tests/test_selftest.py` runs this suite, and then mutation-tests it: it breaks ATF in four places
+`tests/test_mutations.py` runs this suite, and then mutation-tests it: it breaks ATF in four places
 — topological ordering, the `mutable_envs` gate, ephemeral teardown, and the threshold above which
 the cockpit draws a lineage rather than describing it — and asserts the matching scenario goes red.
 A self-test that cannot fail proves nothing, and that last one is the interface caught through the
 interface.
+
+It also guards the dogfood itself: no hand-written `@given` or `@then` may appear anywhere under
+`specs/`. Provisioning and every claim are ATF's own, and the day one of them is written here by
+hand is the day this stops being a suite that proves the framework is usable.
+
+## Three disciplines, learned by getting them wrong
+
+**A scenario may never depend on an ambient variable.** Two scenarios about a scaffolded suite
+passed alone and failed under the full suite, because they inherited an `ATF_ACTOR` that the unit
+test they replaced had set explicitly. Whatever a scenario needs in the environment, it says.
+
+**A negative claim is worth doubting until its positive twin is green.** `Then the option "the
+todo_list" is not showing` passed for a year because no option was called that at all. Write the
+claim that proves the thing can be seen before you trust the claim that it cannot.
+
+**A claim's value cannot contain a double quote**, because it is captured between them. A message
+reading `is "standard", not "enterprise"` has to be claimed by naming the parts around the quotes —
+which is a limitation of the vocabulary, not of the message.

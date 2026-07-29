@@ -4,7 +4,7 @@ Feature: The catalog
 
   Where a scenario below only claims that the command succeeded, that is the claim: a catalog with
   anything wrong with it is a refusal, so "it ran" means "there is nothing wrong with this". What
-  each catalog holds is in the table under `but:`, one row per file — see `selftest_adapters.py`
+  each catalog holds is in the table under `but:`, one row per file — see `suite_adapters.py`
   for why a variation is written there rather than as a suite template of its own.
 
   Rule: A catalog is read as a whole, and every problem in it is reported at once

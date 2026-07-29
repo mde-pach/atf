@@ -1,3 +1,24 @@
+"""Comparing a value with a value: a truth table, and the right shape for one.
+
+The plan for this file was to become a Scenario Outline. It should not, and the reason is worth
+writing down rather than rediscovering.
+
+What these functions decide is *already* said as scenarios wherever it can be. Every generic claim
+in `steps.py` runs on `written_matches`, and `test_steps.py` pairs each of them with a line that
+holds against a real project — so the behaviour has a scenario, and what is left here is the table
+underneath it: `("42", 42)` matches, `(None, "")` does not, `false` and `no` and `0` are all the
+same written word.
+
+A feature file is the wrong place for that. Half these rows cannot be arranged from one at all — a
+value that is absent rather than empty, the same instant written two ways, a structured value
+compared as JSON — and arranging the other half would mean a catalog carrying a field of every
+shape, which is a suite whose whole purpose is to have shapes in it. The scenario would be longer
+than the table and would say less.
+
+So: a decision procedure over data, kept as one.
+"""
+
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

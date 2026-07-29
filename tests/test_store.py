@@ -1,3 +1,26 @@
+"""The run history: what it keeps, what it throws away, and what it can be asked.
+
+That runs are *recorded* is scenarios — `atf run` writes one, `atf import-run` brings CI's back, the
+cockpit shows the last verdict, `atf docs` puts it on a page, `--failed` reruns what did not pass.
+Every one of those goes through this store against a real directory.
+
+What is left is memory, and three kinds of it:
+
+**Tolerance.** A half-written file, a record carrying keys this version has never heard of, a store
+that does not exist yet. Each has to answer rather than raise, because a history is a convenience
+and a suite that cannot run because its own history is corrupt has the priority backwards.
+Arranging a corrupt file from a feature is possible and would be theatre.
+
+**Pruning.** Newest kept, oldest dropped, per environment, and two runs finishing in the same
+millisecond not colliding. A cap nobody can observe until it is wrong.
+
+**Questions over a window of runs.** Which tests flip verdict and are therefore flaky, how long a
+test has been failing, which run wins when two disagree. Those are counting problems over a list of
+records — a table is the description, and a scenario would need a suite whose purpose is to fail on
+alternate Tuesdays.
+"""
+
+
 from __future__ import annotations
 
 import json

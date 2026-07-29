@@ -1,3 +1,21 @@
+"""The scratchpad, and what it can say about what it is holding.
+
+A scenario's own use of the context is scenarios: a `When` writes to `result`, a claim reads it back,
+and `specs/features/claims.feature` says what happens when it is asked for a slot nothing has put
+there. What is here is the layer below that — the *descriptions*.
+
+`Context` behaves as the namespace it replaced and additionally keeps a description of everything
+set on it: how many records, which fields they share, which resource type they look like. Those
+descriptions reach the run history and the cockpit, so they are observable second-hand, and every
+rule about them is a decision over one value: a list of records is described by the fields they
+*share*, an underscore is ATF's own bookkeeping and is not described, a description never holds the
+value because a record carries a token as readily as a title, and a type is guessed only when
+exactly one fits — because a wrong label is worse than none.
+
+None of that is a behaviour a spec could name. It is a table of value-in, sentence-out.
+"""
+
+
 from __future__ import annotations
 
 import pytest

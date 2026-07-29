@@ -14,7 +14,7 @@ is what every other test in `tests/` quietly assumes and none of them state.
 carry its docstring, because that is how someone discovers what a suite gave them. Nothing a
 scenario does observes a fixture *listing*.
 
-**A system this machine cannot reach is skipped, with the reason.** `selftest` proves its own
+**A system this machine cannot reach is skipped, with the reason.** The suite proves its own
 `@browser` scenarios skip; these prove the mechanism underneath, including that the reason reaches
 the report — which is the half that decides whether anyone ever removes the skip.
 """

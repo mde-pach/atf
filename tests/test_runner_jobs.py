@@ -1,3 +1,22 @@
+"""A run while it is still happening.
+
+Everything a run leaves *behind* is scenarios: `atf run` reports what failed and where, the history
+survives the process, the cockpit shows the verdict, and `--failed` reruns what did not pass. Those
+all read a finished run, and a finished run is something a scenario can claim about.
+
+This is the other half, and no scenario can watch it. A job reports queued, then running, then
+passed, item by item, while it is in flight — and a scenario asking about it would have to start a
+run and observe it from inside the same process that is being observed. The cockpit's activity dock
+is what a person sees of this, and pressing its button is a `@browser` scenario; what is here is
+what the dock is reading.
+
+The same goes for the guarantees around a run rather than in it: one active job per environment,
+two environments not blocking each other, a hung run killed and its slot released, a run producing
+megabytes of output still finishing. Each needs a run arranged to go wrong in one specific way and
+watched while it does.
+"""
+
+
 from __future__ import annotations
 
 import os

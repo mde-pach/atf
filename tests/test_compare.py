@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from atf.compare import describe, matches, same_instant, written_matches
+from atf.compare import MISSING, describe, field_matches, matches, same_instant, written_matches
 
 # ---- matches: what an adapter's `find` uses --------------------------------
 
@@ -137,3 +137,59 @@ def test_a_structured_value_is_compared_as_json():
 )
 def test_describe_names_the_kind_of_thing_as_well_as_the_value(value, text):
     assert describe(value) == text
+
+
+# ---- markers: the kind of thing a field holds, not its value ------------------
+#
+# Named after Pact's matchers, so a project publishing contracts learns one vocabulary rather than
+# two. What is checked here is that each decides the thing its name says — including the two Python
+# traps: a bool is an int, and an int is not a decimal.
+
+
+@pytest.mark.parametrize(
+    ("actual", "marker", "holds"),
+    [
+        ("anything", "#present", True),
+        (MISSING, "#present", False),
+        (MISSING, "#absent", True),
+        (None, "#absent", False),
+        ("x", "#notnull", True),
+        (None, "#notnull", False),
+        (None, "#null", True),
+        ("", "#null", False),
+        ("text", "#str", True),
+        (7, "#str", False),
+        (7, "#int", True),
+        (7.5, "#int", False),
+        (True, "#int", False),
+        (7.5, "#decimal", True),
+        (7, "#decimal", False),
+        (7, "#number", True),
+        (7.5, "#number", True),
+        (True, "#number", False),
+        (True, "#bool", True),
+        (1, "#bool", False),
+        ("3f2b8c1e-0000-4000-8000-1234567890ab", "#uuid", True),
+        ("not-a-uuid", "#uuid", False),
+        ("2026-07-29", "#date", True),
+        ("2026-07-29T09:00:00Z", "#date", False),
+        ("2026-07-29T09:00:00Z", "#datetime", True),
+        ("2026-07-29", "#datetime", False),
+        ("09:00:00", "#time", True),
+        ("teatime", "#time", False),
+        ("AC-123456", "#regex ^AC-[0-9]{6}$", True),
+        ("AC-12", "#regex ^AC-[0-9]{6}$", False),
+        (7, "#regex ^7$", False),  # a pattern is about text, and a number is not text
+        ("anything", "#regex [", False),  # a pattern that will not compile is not a match
+        ("anything", "#regex", False),  # nor is a pattern nobody wrote
+    ],
+)
+def test_a_marker_decides_the_kind_of_thing_its_name_says(actual, marker, holds):
+    assert field_matches(actual, marker) is holds
+
+
+def test_a_marker_is_told_from_a_value_by_its_hash():
+    """So a field that genuinely holds `#present` as text can still be claimed — by quoting nothing
+    else: there is no escape, and this is the boundary that says one is needed if it ever comes up."""
+    assert field_matches("#present", "#present") is True
+    assert field_matches("hashtag", "hashtag") is True

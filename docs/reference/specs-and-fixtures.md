@@ -376,20 +376,45 @@ each.
 Sometimes the value is not the point: an id is whatever the backend assigned, a timestamp is
 whatever `now` was. A marker says what *kind* of thing must be there instead.
 
-| Marker | Passes when the field |
-|---|---|
-| `#present` | is there, whatever it holds |
-| `#absent` | is not there at all |
-| `#notnull` | is there and holds something |
-| `#null` | holds nothing |
-| `#string` | holds text |
-| `#number` | holds a number (and not `true`/`false`) |
-| `#boolean` | holds a true/false value |
-| `#uuid` | holds a UUID |
+| Marker | Passes when the field | Pact's name for it |
+|---|---|---|
+| `#present` | is there, whatever it holds | — |
+| `#absent` | is not there at all | — |
+| `#notnull` | is there and holds something | — |
+| `#null` | holds nothing | null matcher |
+| `#str` | holds text | `match.str()` |
+| `#int` | holds a whole number (and not `true`/`false`) | `match.int()` |
+| `#decimal` | holds a number with a fractional part | `match.float()` |
+| `#number` | holds a number of either kind | — |
+| `#bool` | holds a true/false value | `match.bool()` |
+| `#uuid` | holds a UUID | `match.uuid()` |
+| `#date` | holds a date | `match.date()` |
+| `#datetime` | holds a date and a time | `match.datetime()` |
+| `#time` | holds a time of day | `match.time()` |
+| `#regex <pattern>` | holds text matching the pattern | `match.regex(…, regex=…)` |
 
-A closed list, on purpose: every entry is something ATF can decide, and a pattern language here
-would be a schema language nobody asked for — and could not be offered in a dropdown, which is what
-[the composer](cockpit.md) needs.
+**The names follow [Pact](https://docs.pact.io)'s matchers**, because this is not a new idea and a
+project that already publishes contracts should not have to learn a second vocabulary for the same
+act. Two differences are worth knowing:
+
+- **A Pact matcher wraps an example value; a marker replaces it.** `match.int(12345)` keeps the
+  `12345`, because a pact file is a contract published to the provider team and needs concrete data
+  in it. A marker is an assertion — nobody downstream reads it — so there is nothing to keep.
+- **Presence has no Pact equivalent.** `#present`, `#absent`, `#notnull` and `#null` are about
+  whether a field is *there*, which Pact expresses through the shape of the body. A claim has no
+  body to shape, so it says it.
+
+Otherwise a closed list on purpose: every entry is something ATF can decide, and every one can be
+offered in a dropdown, which is what [the composer](cockpit.md) needs. `#regex` is the single
+exception, because a pattern is the one expectation that cannot be enumerated and Pact treats it as
+core:
+
+```gherkin
+Then the account "primary" is:
+  | reference  | #regex ^AC-[0-9]{6}$ |
+  | created_at | #datetime            |
+  | id         | #uuid                |
+```
 
 `${...}` resolves inside a table's cells, which it has to do explicitly: pytest-bdd hands a table
 over as one argument rather than as step values, so it never reaches the hook that resolves them

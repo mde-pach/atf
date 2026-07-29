@@ -104,7 +104,7 @@ PASSING = {
     RUN: 'I run "echo hello"',
     # A table step carries its table with it, indented under the line the test writes.
     SHAPE_IS: 'the account "primary" is:\n      | plan  | standard |\n      | id    | #notnull |',
-    SLOT_SHAPE_IS: "the result is:\n      | plan  | standard |\n      | notes | #string  |",
+    SLOT_SHAPE_IS: "the result is:\n      | plan  | standard |\n      | notes | #str     |",
 }
 
 

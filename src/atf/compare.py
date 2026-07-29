@@ -123,20 +123,45 @@ class Uncontainable(Exception):
 # an id is whatever the backend assigned, a timestamp is whatever `now` was. A marker says what
 # *kind* of thing must be there instead of what it must equal.
 #
-# Deliberately a closed list of things ATF can decide. A pattern language here would be a schema
-# language nobody asked for, and it could not be offered in a dropdown.
+# **The names follow Pact's matchers**, because this is not a new idea and a project that already
+# publishes contracts should not have to learn a second vocabulary for the same act. `match.int(…)`,
+# `match.str(…)`, `match.uuid(…)`, `match.datetime(…)`, `match.regex(…, regex=…)` are theirs;
+# `#int`, `#str`, `#uuid`, `#datetime`, `#regex` are these. Where the two differ they differ for a
+# reason worth knowing:
+#
+# - **A Pact matcher wraps an example value; a marker replaces it.** `match.int(12345)` keeps the
+#   12345, because a pact file is a contract published to the provider team and needs concrete data
+#   in it. A marker is an assertion — nobody downstream reads it — so there is nothing to keep.
+# - **Presence has no Pact equivalent.** `#present`, `#absent`, `#notnull` and `#null` are about
+#   whether a field is *there*, which Pact expresses structurally by the body's shape. A claim has
+#   no body to shape, so it says it.
+#
+# Otherwise a closed list of things ATF can decide, so that every one of them can be offered in a
+# dropdown — with `#regex` the single exception, because a pattern is the one kind of expectation
+# that cannot be enumerated and Pact treats it as core.
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+# The marker that takes an argument: `#regex ^AC-[0-9]+$`. Written with a space rather than
+# brackets, because a table cell is already delimited and `#regex(^\|)` would need escaping a pipe
+# inside brackets inside a cell.
+REGEX_MARKER = "#regex"
 
 MARKERS: dict[str, str] = {
     "#present": "the field is there, whatever it holds",
     "#absent": "the field is not there at all",
     "#notnull": "the field is there and holds something",
     "#null": "the field holds nothing",
-    "#string": "text",
-    "#number": "a number",
-    "#boolean": "a true/false value",
+    "#str": "text",
+    "#int": "a whole number",
+    "#decimal": "a number with a fractional part",
+    "#number": "a number of either kind",
+    "#bool": "a true/false value",
     "#uuid": "a UUID",
+    "#date": "a date",
+    "#datetime": "a date and a time",
+    "#time": "a time of day",
+    f"{REGEX_MARKER} <pattern>": "text matching the pattern written after it",
 }
 
 MISSING = object()
@@ -144,7 +169,8 @@ MISSING = object()
 
 
 def is_marker(written: str) -> bool:
-    return written.strip() in MARKERS
+    text = written.strip()
+    return text in MARKERS or text.split(" ", 1)[0] == REGEX_MARKER
 
 
 def marker_matches(actual: Any, written: str) -> bool:
@@ -161,16 +187,56 @@ def marker_matches(actual: Any, written: str) -> bool:
         return actual is not None
     if marker == "#null":
         return actual is None
-    if marker == "#string":
+    if marker == "#str":
         return isinstance(actual, str)
-    if marker == "#boolean":
+    if marker == "#bool":
         return isinstance(actual, bool)
+    # Before the bool check would matter, every time: in Python a bool *is* an int, and a field
+    # holding `true` is not a field holding 1.
+    if marker == "#int":
+        return isinstance(actual, int) and not isinstance(actual, bool)
+    if marker == "#decimal":
+        return isinstance(actual, float)
     if marker == "#number":
-        # Before the bool check would matter: in Python a bool *is* an int, and `true` is not 1.
         return isinstance(actual, int | float) and not isinstance(actual, bool)
     if marker == "#uuid":
         return isinstance(actual, str) and bool(_UUID_RE.match(actual))
+    if marker in ("#date", "#datetime", "#time"):
+        return _is_moment(actual, marker)
+    if marker.split(" ", 1)[0] == REGEX_MARKER:
+        return _matches_pattern(actual, marker)
     return False
+
+
+def _is_moment(actual: Any, marker: str) -> bool:
+    """A date, a time, or both. Read with the same parser a datetime natural key is read with.
+
+    A time on its own is not a `datetime`, so it is tried as one by borrowing a date nobody sees —
+    which is what `fromisoformat` would want and is cheaper than a second parser.
+    """
+    if marker == "#time":
+        return parse_datetime(f"1970-01-01T{str(actual).strip()}") is not None
+    moment = parse_datetime(actual)
+    if moment is None:
+        return False
+    # A date is a moment somebody wrote without a time on it, and that is a fact about the text.
+    written_as_date = isinstance(actual, str) and "t" not in actual.strip().lower()
+    return written_as_date if marker == "#date" else not written_as_date
+
+
+def _matches_pattern(actual: Any, marker: str) -> bool:
+    """`#regex <pattern>` — the one marker that takes an argument, and the one Pact calls core.
+
+    A pattern that will not compile is not a match rather than a crash: the scenario is what is
+    wrong, and it says so through the ordinary "did not hold" message with the pattern in it.
+    """
+    _, _, pattern = marker.partition(" ")
+    if not pattern.strip() or not isinstance(actual, str):
+        return False
+    try:
+        return re.search(pattern.strip(), actual) is not None
+    except re.error:
+        return False
 
 
 def field_matches(actual: Any, written: str) -> bool:

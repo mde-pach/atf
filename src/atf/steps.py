@@ -46,6 +46,7 @@ from .compare import (
     describe,
     field_matches,
     is_empty,
+    is_marker,
     matches,
     written_contains,
     written_matches,
@@ -609,7 +610,14 @@ def _shape(record: Record, datatable: Any, subject: str, engine: Materializer) -
 def _wanted(written: str) -> str:
     """What a cell asked for, said the way a failure should say it."""
     marker = written.strip()
-    return f"{marker} ({MARKERS[marker]})" if marker in MARKERS else describe(written)
+    if marker in MARKERS:
+        return f"{marker} ({MARKERS[marker]})"
+    # `#regex ^AC-[0-9]+$` carries its pattern, so it is not a key of the table — but a reader
+    # meeting one in a failure wants to be told it was a pattern rather than a value.
+    if is_marker(marker):
+        _, _, pattern = marker.partition(" ")
+        return f"text matching {pattern.strip()!r}"
+    return describe(written)
 
 
 def _rows(datatable: Any, subject: str) -> list[tuple[str, str]]:

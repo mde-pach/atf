@@ -41,6 +41,11 @@ class Step:
     keyword: str
     text: str
     resources: list[str] = field(default_factory=list)
+    # The rows written under the step, if it carries a table. `Given the workspace "bare" but:` says
+    # nothing at all without them, so anything rendering a step back out — the cockpit, and now
+    # [`atf docs`](docs.py) — was showing half a sentence. Empty for the steps that take no table,
+    # which is most of them.
+    table: list[list[str]] = field(default_factory=list)
 
 
 @dataclass
@@ -454,7 +459,10 @@ def parse_feature(path: Path, nodes: dict[str, Node], resource_types: set[str]) 
                 tags=pending_tags,
                 skipped="skip" in pending_tags or "wip" in pending_tags,
             )
-            current.steps.extend(Step(keyword=step.keyword, text=step.text) for step in background)
+            current.steps.extend(
+                Step(keyword=step.keyword, text=step.text, table=[list(row) for row in step.table])
+                for step in background
+            )
             specs.append(current)
             pending_tags, in_examples, example_header = [], False, []
             in_background = False
@@ -469,12 +477,20 @@ def parse_feature(path: Path, nodes: dict[str, Node], resource_types: set[str]) 
             current, in_examples, in_background = None, False, True
             continue
 
-        if in_examples and line.startswith("|") and current is not None:
+        if line.startswith("|"):
             cells = [cell.strip() for cell in line.strip("|").split("|")]
-            if not example_header:
-                example_header = cells
-            else:
-                current.examples.append(dict(zip(example_header, cells, strict=False)))
+            if in_examples and current is not None:
+                if not example_header:
+                    example_header = cells
+                else:
+                    current.examples.append(dict(zip(example_header, cells, strict=False)))
+                continue
+            # Otherwise it is a table under the step above it, and belongs to that step. A row with
+            # no step above it is a table nobody wrote a sentence for, and is dropped rather than
+            # guessed at.
+            above = background if in_background else (current.steps if current is not None else [])
+            if above:
+                above[-1].table.append(cells)
             continue
 
         keyword, _, text = line.partition(" ")

@@ -68,6 +68,68 @@ Feature: The command
       Then the command succeeds
       And it says the resource is one this environment cannot reach
 
+  Rule: A suite's features are its documentation, and the command writes them out
+
+    Scenario: A feature reads back as the page a person would have written
+      # The whole promise in one scenario: a narrative, the rule its scenarios sit under, and the
+      # steps as the lines they were written as — nothing invented and nothing lost.
+      Given the workspace "bare" but:
+        | specs/features/a.feature | Feature: Paying\n  Money moves once, and only once.\n\n  Rule: A card is charged once per basket\n\n    Scenario: A basket is paid for\n      Given the owner "primary"\n      Then the owner "primary" exists\n |
+      When I run "atf docs"
+      Then the command succeeds
+      When the developer reads the page written for that feature
+      Then the page mentions "Money moves once, and only once."
+      And the page mentions "Rule: A card is charged once per basket"
+      And the page mentions "Given the owner"
+
+    Scenario: The features are indexed, so a reader can arrive without knowing what to look for
+      Given the workspace "chained"
+      When I run "atf docs"
+      Then the command succeeds
+      And it says it wrote an index beside the pages
+
+    Scenario: What the last run said about a scenario is on the page beside it
+      # This is the whole difference between a prettier feature file and documentation somebody
+      # trusts: the page knows whether what it says is currently true.
+      Given the workspace "chained"
+      When I run "atf run"
+      And I run "atf docs"
+      Then the command succeeds
+      And it says how the suite last did
+      When the developer reads the page written for the lists feature
+      Then the page says that scenario is passing
+
+    Scenario: A suite nobody has run yet says so rather than claiming a verdict
+      Given the workspace "chained"
+      When I run "atf docs"
+      Then the command succeeds
+      And it says nothing has run there yet
+
+    Scenario: Writing the documentation changes nothing but the documentation
+      # Read-only, and said as the only thing that could prove it: the environment is untouched.
+      Given the workspace "chained"
+      When I run "atf docs"
+      Then the command succeeds
+      And nothing was created
+
+    Scenario: The pages go where the writer asks for them
+      Given the workspace "chained"
+      When the developer writes the pages somewhere else
+      Then the command succeeds
+      When the developer reads the index from there
+      Then the page mentions "Lists"
+
+    Scenario: A suite with nothing written yet is told so, not handed an empty page
+      Given the workspace "bare"
+      When I run "atf docs"
+      Then the command succeeds
+      And it says there is nothing to write
+
+    Scenario: Documenting an environment the manifest never declared is refused
+      Given the workspace "chained"
+      When the developer asks for the documentation of an environment nobody configured
+      Then it is refused because "unknown environment"
+
   Rule: A secret the manifest names but nobody exported stops the command, saying which
 
     Scenario: A client setting pointing at a variable nobody exported names the client

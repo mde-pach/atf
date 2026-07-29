@@ -1,4 +1,4 @@
-"""The `atf` command: init, serve, seed, status, run, lint, import-run."""
+"""The `atf` command: init, serve, seed, status, run, lint, docs, import-run."""
 
 from __future__ import annotations
 
@@ -8,9 +8,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from . import docs as living
 from .bootstrap import bootstrap
 from .catalog import DATA, CatalogError
-from .config import ConfigError, load_manifest, resolve_manifest
+from .config import ConfigError, load_manifest, resolve_env, resolve_manifest
 from .lint import check as lint_specs
 from .lint import report as lint_report
 from .materializer import BLOCKED, CREATED, EPHEMERAL, PRESENT, REFERENCE
@@ -75,6 +76,13 @@ def _parser() -> argparse.ArgumentParser:
 
     lint = sub.add_parser("lint", help="check that no spec line says something only the layer below should know")
     lint.set_defaults(handler=cmd_lint)
+
+    docs = sub.add_parser("docs", help="write the features out as markdown, with the last run's verdict")
+    docs.add_argument(
+        "--out", default=living.DEFAULT_OUT, help=f"where the pages go (default: {living.DEFAULT_OUT})"
+    )
+    docs.add_argument("--env", help="whose run history the verdicts come from")
+    docs.set_defaults(handler=cmd_docs)
 
     imported = sub.add_parser("import-run", help="record a pytest --json-report file from CI as a run")
     imported.add_argument("env")
@@ -240,6 +248,54 @@ def cmd_lint(args: argparse.Namespace) -> int:
     findings = lint_specs(manifest.specs_dir)
     print(lint_report(findings, manifest.specs_dir), file=sys.stderr if findings else sys.stdout)
     return 1 if findings else 0
+
+
+def cmd_docs(args: argparse.Namespace) -> int:
+    """Write the suite's features out as markdown, with what the runs so far said about each.
+
+    Two flags, and a reason for each.
+
+    `--out` because a page has to land somewhere, and the only honest default is a directory inside
+    the docs tree the project already has. It is the one argument this command cannot do without:
+    everything else it needs it can find.
+
+    `--env` because a verdict is only ever a verdict *somewhere* — a scenario that passes against
+    dev and fails against staging is the normal case, and documentation that did not say which was
+    meant would be documentation nobody could act on. It defaults the way `run` and `serve` do,
+    rather than being required the way `seed` and `status` are: those change an environment or file
+    a result against one, and this only reads.
+
+    There is deliberately no `--check`. A staleness gate would be the obvious third flag, and it
+    would be wrong here: the verdicts come from a run history that lives on the machine that ran
+    the tests, so the pages a developer generates are ones CI cannot reproduce, and the gate would
+    fail for the one reason that is not the author's fault.
+
+    Read-only, and not gated by `mutable_envs`: it reads the feature files and the run store, runs
+    nothing, provisions nothing, and writes only under `--out`.
+    """
+    manifest = load_manifest(resolve_manifest())
+    env = args.env or resolve_env(manifest)
+    manifest.env(env)  # raises ConfigError, with the known environments, when it is not one
+
+    specs = living.read(manifest.specs_dir)
+    if not specs:
+        print(f"No scenarios under {manifest.specs_dir} — nothing to write.")
+        return 0
+
+    results = RunStore(manifest.root).merged_results(env)
+    out = Path(args.out)
+    out = out if out.is_absolute() else manifest.root / out
+    try:
+        written = living.write(living.render(specs, results, env, manifest.specs_dir), out)
+    except OSError as exc:
+        print(f"atf: nothing written — {exc}", file=sys.stderr)
+        return 2
+
+    print(f"Wrote {len(written)} page{'' if len(written) == 1 else 's'} under {out}:")
+    for path in written:
+        print(f"  {path.relative_to(out)}")
+    print("\n" + living.tally(specs, results, env))
+    return 0
 
 
 def cmd_import_run(args: argparse.Namespace) -> int:

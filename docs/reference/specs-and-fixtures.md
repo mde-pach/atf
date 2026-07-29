@@ -31,6 +31,67 @@ no matching instance raises `UnknownResource`.
 Ephemeral resources provisioned by this step are recorded on `context._ephemeral` and deleted when
 the scenario ends.
 
+### One to yourself {#fresh}
+
+```gherkin
+Given a fresh <resource_type> "<name>"
+Given a fresh <resource_type> "<name>" but:
+```
+
+The same catalog node, provisioned as an instance **this scenario alone holds** — created rather
+than found, and deleted when the scenario ends, exactly as an
+[ephemeral](../explanation/lifecycles.md) resource is. The catalog does not change, and no other
+scenario notices: `Given the todo_list "groceries"` still gets the shared one.
+
+This is the article doing the work. `the todo_list "groceries"` is *the* list — found once, left in
+place, the same one for everybody. `a fresh todo_list "groceries"` is one of them. Isolation is
+something a **scenario** needs, and the type it needs one of is usually a type another scenario is
+perfectly happy to share — so it is said where it is needed rather than declared once for everyone.
+
+**It gets a name of its own.** Two instances of a node are only two things if something tells them
+apart, and what ATF already understands about that is the
+[natural key](../explanation/glossary.md#natural-key). Each key field the body writes as text gets a
+discriminator appended — `slug: groceries` becomes `groceries-fresh-4a1c8e02` — from the same
+[`${uuid}`](providers.md) a suite would write itself. A key field holding `${<node>.id}` is left
+alone: that is the link to the resource's parent, and a copy pointing at nothing is not a copy.
+
+Because it has a key of its own, it is read back like anything else. Every claim in this reference
+resolves against **this scenario's instance** for the rest of the scenario, so `When I delete it`
+followed by `Then it is gone` says what it looks like it says — about the copy, never about the
+resource everyone shares.
+
+**It does not cascade.** Its dependencies are provisioned exactly as usual: found-or-created and
+shared. That is the whole point — the expensive scaffolding stays seeded once, and only what this
+scenario needs to itself is built per scenario. A chain of them is a line per link, and each hangs
+off the previous one:
+
+```gherkin
+Given a fresh owner "primary"
+And a fresh todo_list "groceries"    # under the owner this scenario just made, not the shared one
+```
+
+**`but:` means what it means everywhere else** — this node's body, varied for one scenario — with
+one addition: a field the table writes is taken *exactly* as written, discriminator and all. That is
+how a scenario says what makes its copy different when appending would spoil the value, which is
+what happens to anything with a shape:
+
+```gherkin
+Given a fresh owner "primary" but:
+  | email | mine@example.test |
+```
+
+**Three things it refuses**, each naming what to write instead:
+
+| Asked for | Why not |
+|---|---|
+| a type that is already `lifecycle: ephemeral` | every scenario already gets its own — `Given the …` is one |
+| a type in [`mode: reference`](catalog.md#mode) | ATF never creates one, so there is nothing to make a copy of |
+| a type in [`mode: data`](catalog.md#mode) | an observation is not a resource ATF makes |
+
+It also refuses a node it could not tell from the shared one — a type with no `natural_key`, or one
+whose every key field is a link to another resource. Give the type a key, or say what makes this one
+different with `but:`.
+
 ### Scenario Outlines {#scenario-outlines}
 
 pytest-bdd substitutes `<placeholders>` from the `Examples` table before the step is matched, so

@@ -21,6 +21,11 @@ name, and interprets no value. That is the same act as `natural_key: email` in t
 An ephemeral resource is the one exception to reading live, and it is forced: an ephemeral resource
 is never looked up — that is what ephemeral means — so the record this scenario built is the only
 one there is.
+
+An instance a scenario asked to have to itself (`Given a fresh …`) is deliberately *not* a second
+exception. It was given a natural key of its own precisely so that it can be looked up, so every
+claim below reads it back the way it reads back any other resource — and `When I delete it` followed
+by `Then it is gone` means what it says about the copy, not about the resource everybody shares.
 """
 
 from __future__ import annotations
@@ -57,6 +62,21 @@ from .records import as_records
 # offer a real choice for, and that is as true of the Given as of the assertions.
 PROVISION = 'the {resource_type} "{name}"'
 PROVISION_VARIED = 'the {resource_type} "{name}" but:'
+
+# The same resource, isolated. `the todo_list "groceries"` is the shared one — found once, left in
+# place, the same list for every scenario that names it. `a fresh todo_list "groceries"` is an
+# instance of that node this scenario alone holds, torn down with it, and the catalog says nothing
+# about it: isolation is a thing a *scenario* needs, and the type it needs one of is often the same
+# type another scenario is happy to share.
+#
+# Read as English rather than as a lifecycle keyword. "A fresh one" is what a person says about a
+# glass, and the article is what carries the difference from "the" — the one everybody uses.
+PROVISION_FRESH = 'a fresh {resource_type} "{name}"'
+PROVISION_FRESH_VARIED = 'a fresh {resource_type} "{name}" but:'
+# Like the two above, these are defined in `plugin.py` beside the factories they drive, and written
+# out there rather than imported from here: importing this module into the plugin would have pytest
+# import it before it registers it, and warn every consuming suite about assertion rewriting on
+# every run.
 
 EXISTS = 'the {resource_type} "{name}" exists'
 GONE = 'the {resource_type} "{name}" is gone'
@@ -158,6 +178,19 @@ GENERIC_STEPS: tuple[GenericStep, ...] = (
     GenericStep(
         "given",
         PROVISION_VARIED,
+        "The same, with some of its body written differently for this scenario only.",
+        (TYPE, NAME),
+        takes_table=True,
+    ),
+    GenericStep(
+        "given",
+        PROVISION_FRESH,
+        "Make one of these that belongs to this scenario alone, and goes when it does.",
+        (TYPE, NAME),
+    ),
+    GenericStep(
+        "given",
+        PROVISION_FRESH_VARIED,
         "The same, with some of its body written differently for this scenario only.",
         (TYPE, NAME),
         takes_table=True,
@@ -782,7 +815,11 @@ def _node(request: pytest.FixtureRequest, resource_type: str, name: str) -> tupl
             f"the catalog declares no {resource_type} called {name!r} "
             f"(it declares: {declared or 'none of that type'})"
         )
-    return engine, node
+    # Where this scenario asked for an instance of its own, that is the one every claim below is
+    # about — the node as it was varied to make it, carrying the key it was given. Substituted here,
+    # once, rather than in each step: a claim says which resource it is about and nothing about how
+    # that resource came to be, and it should not have to.
+    return engine, engine.made_fresh(node["id"]) or node
 
 
 def _field(

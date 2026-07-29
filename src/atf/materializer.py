@@ -23,9 +23,17 @@ from .adapters import (
     close_adapter,
     registered_systems,
 )
-from .catalog import BUILT_IN_ACTIONS, DATA, UNIVERSAL_TYPE_KEYS, Node, find_node, load_catalog
+from .catalog import (
+    BUILT_IN_ACTIONS,
+    DATA,
+    UNIVERSAL_TYPE_KEYS,
+    Node,
+    find_node,
+    load_catalog,
+    natural_keys,
+)
 from .catalog import REFERENCE as REFERENCE_MODE
-from .placeholders import Unresolved
+from .placeholders import Unresolved, references
 from .placeholders import resolve as resolve_placeholders
 
 log = logging.getLogger("atf.materializer")
@@ -41,6 +49,27 @@ CREATED = "created"
 EXISTS = "exists"
 REFERENCE = "reference"
 OBSERVED = "observed"
+
+# ---- an instance of one scenario's own --------------------------------------
+#
+# A normally-persistent resource is shared: found once, left in place, and every scenario that names
+# it gets the same one. `Given a fresh <type> "<name>"` asks for an instance of that same catalog
+# node that belongs to one scenario and is taken away with it — the case §4.7 of the target calls
+# the point of per-node lifecycle, since without it a suite has to choose *per type* between cheap
+# and isolated.
+#
+# What makes one instance not the other is its natural key, which is the one thing ATF already
+# understands about identity. So a fresh instance is the node with a discriminator appended to each
+# key field that is text of its own, and nothing else about it changes.
+
+# What separates the discriminator from the value the catalog wrote. Visible in the data on purpose:
+# an instance a killed run left behind then says what it was, rather than looking like a typo.
+FRESH_MARK = "-fresh-"
+
+# How much of a `${uuid}` is enough to tell two of them apart. Eight hex characters is four billion,
+# and appending the full thirty-two would push slugs and names past the length limits real backends
+# have — which would be ATF breaking a suite in the name of isolating it.
+FRESH_TAG = 8
 
 _T = TypeVar("_T")
 
@@ -77,6 +106,11 @@ class Materializer:
         # Generated values, held for one scenario. A `${fake:email}` written in a body and again in
         # the assertion checking it has to be the same email, or the assertion can never pass.
         self._generated: dict[str, Any] = {}
+        # The instances this scenario asked to have to itself: the node as it was varied to make one
+        # (the key it was given, still written as `${...}`), and the record that came back. Held for
+        # one scenario, because that is exactly how long such an instance lives.
+        self._fresh: dict[str, tuple[Node, Record]] = {}
+        self._isolated = 0
         self.reload()
 
     # ---- catalog ----------------------------------------------------------
@@ -121,9 +155,14 @@ class Materializer:
 
         Called once per scenario by the plugin. A provisioning pass clears `_ids` too, so this only
         adds the case of a scenario that asserts without provisioning first.
+
+        The instances a scenario had to itself go with them: one is torn down when its scenario
+        ends, so remembering it into the next one could only ever point at something deleted.
         """
         self._generated.clear()
         self._ids.clear()
+        self._fresh.clear()
+        self._isolated = 0
 
     def cached(self, key: str, loader: Callable[[], Any]) -> Any:
         if key not in self._cache:
@@ -299,6 +338,7 @@ class Materializer:
         on_start: Callable[[str], None] | None = None,
         on_result: Callable[[dict[str, Any]], None] | None = None,
         overrides: Mapping[str, Record] | None = None,
+        fresh: str = "",
     ) -> dict[str, Any]:
         """Provision `subset` and everything it depends on, dependency-first.
 
@@ -309,6 +349,15 @@ class Materializer:
 
         `on_start` and `on_result` observe the pass as it happens, node by node, for a caller
         showing progress; they see exactly the entries the return value collects.
+
+        `fresh` names the one node this pass must *make* rather than look up, whatever its
+        lifecycle. Every other node is provisioned as it always is — found-or-created and shared —
+        with one exception: a node this scenario already has an instance of its own of is handed
+        that instance back rather than looked up again. That is what lets a chain of them be written
+        a line per link, a fresh list hanging off the fresh owner this scenario made rather than off
+        the shared one. It also settles what a plain `Given the …` means *after* a fresh one in the
+        same scenario: the one you already have. Provisioning the shared resource as well would
+        leave the scenario holding two of a thing it named once.
         """
         # A listing is memoised for the duration of one pass, not the session: the materializer is
         # session-scoped, and the system under test mutates the same backend between passes.
@@ -343,7 +392,14 @@ class Materializer:
                 continue
 
             _notify(on_start, nid)
-            outcome = self._attempt(node, (overrides or {}).get(nid))
+            held = None if nid == fresh else self._fresh.get(nid)
+            outcome: dict[str, Any]
+            if held is not None:
+                # This scenario already has one of these of its own, and a dependent asking for the
+                # shared one behind its back would be the isolation quietly not happening.
+                outcome = {"id": nid, "action": EXISTS, "ok": True, "record": held[1]}
+            else:
+                outcome = self._attempt(node, (overrides or {}).get(nid), fresh=nid == fresh)
             results.append(outcome)
             if outcome["ok"]:
                 record = outcome.pop("record")
@@ -359,7 +415,7 @@ class Materializer:
 
         return {"results": results, "records": records}
 
-    def _attempt(self, node: Node, overrides: Record | None = None) -> dict[str, Any]:
+    def _attempt(self, node: Node, overrides: Record | None = None, fresh: bool = False) -> dict[str, Any]:
         """Provision one node. Returns a result entry, carrying `record` when it succeeded."""
         nid = node["id"]
         adapter = self.adapters.get(node["system"])
@@ -368,7 +424,7 @@ class Materializer:
             return {"id": nid, "action": UNSUPPORTED, "ok": False, "detail": detail}
 
         try:
-            record, action = self._provision(_varied(node, overrides), adapter)
+            record, action = self._provision(_varied(node, overrides), adapter, fresh)
         except Exception as exc:  # noqa: BLE001 - reported, not raised: callers read `results`
             return {"id": nid, "action": ERROR, "ok": False, "detail": _short(exc)}
 
@@ -380,13 +436,15 @@ class Materializer:
             return {"id": nid, "action": action, "ok": False, "detail": "reference resource not found"}
         return {"id": nid, "action": action, "ok": True, "record": record}
 
-    def _provision(self, node: Node, adapter: Adapter) -> tuple[Record | None, str]:
+    def _provision(self, node: Node, adapter: Adapter, fresh: bool = False) -> tuple[Record | None, str]:
         if node["mode"] == DATA:
             return adapter.find(node, self), OBSERVED
         if node["mode"] == REFERENCE_MODE:
             return adapter.find(node, self), REFERENCE
 
-        existing = None if node["lifecycle"] == EPHEMERAL else adapter.find(node, self)
+        # An isolated instance is not looked up, for the same reason an ephemeral one is not: the
+        # lookup would find the shared resource and hand back the very thing being isolated from.
+        existing = None if fresh or node["lifecycle"] == EPHEMERAL else adapter.find(node, self)
         if existing is not None:
             return existing, EXISTS
 
@@ -454,6 +512,9 @@ class Materializer:
         """
         nid = self.resolve_id(resource_type, name)
         outcome = self.create_closure(nid, overrides={nid: overrides} if overrides else None)
+        return self._ensured(nid, outcome)
+
+    def _ensured(self, nid: str, outcome: dict[str, Any]) -> tuple[Record, dict[str, Record]]:
         for result in outcome["results"]:
             if not result["ok"]:
                 raise ProvisioningError(str(result["id"]), str(result.get("detail", "")))
@@ -462,6 +523,79 @@ class Materializer:
         if record is None:
             raise ProvisioningError(nid, "adapter returned no record")
         return record, records
+
+    # ---- one scenario's own ------------------------------------------------
+
+    def ensure_fresh(
+        self, resource_type: str, name: str, overrides: Record | None = None
+    ) -> tuple[Record, dict[str, Record]]:
+        """An instance of a catalog node that belongs to this scenario, and is taken away with it.
+
+        The same closure as `ensure_closure`, with one node made instead of found. Its dependencies
+        are *not* made afresh — see `materialize` — because the mix is the point: the expensive
+        scaffolding stays shared and seeded once, and only what a scenario needs to itself is built
+        per scenario. Cascading would be the all-or-nothing model this exists to escape.
+
+        Two questions this deliberately does not answer are the step's, because the step is where
+        the sentence a person reads is written: whether the node is one ATF can create at all
+        (`provisionable`), and whether it can be told apart from the shared one
+        (`key_of_its_own`). Called with neither asked, this still does the honest thing — it creates
+        a second resource — and the caller has simply not said what makes it a second one.
+        """
+        nid = self.resolve_id(resource_type, name)
+        written = dict(overrides or {})
+        varied = {**self._own_key(self.node(nid), written), **written}
+        outcome = self.materialize(self.closure(nid), overrides={nid: varied} if varied else None, fresh=nid)
+        record, records = self._ensured(nid, outcome)
+        # Kept unresolved, as the catalog writes bodies: the `${uuid…}` in the key resolves through
+        # this scenario's memo, so every later read of this node resolves to the same instance and
+        # the claims about it need to know nothing about any of this.
+        self._fresh[nid] = (_varied(self.node(nid), varied), record)
+        return record, records
+
+    def made_fresh(self, nid: str) -> Node | None:
+        """This node as this scenario made it its own — the key it was given — or nothing.
+
+        What a claim resolves against. A step reading the catalog node instead would go looking for
+        the shared resource and make a claim about somebody else's.
+        """
+        held = self._fresh.get(nid)
+        return None if held is None else held[0]
+
+    def key_of_its_own(self, node: Node) -> tuple[list[str], str]:
+        """The natural-key fields an isolated instance can be told apart by, and why there are none.
+
+        A field holding a `${...}` that names another node is left out: that is the link to this
+        resource's parent, and a copy pointing at nothing is not a copy of anything. A field that is
+        not text is left out too — appending to a number would quietly change what kind of thing the
+        backend is being sent.
+        """
+        keys = natural_keys(node["config"])
+        if not keys:
+            return [], f"{node['resource']} declares no natural key, so nothing tells two of them apart"
+        mine = [key for key in keys if _is_own_text(node["body"].get(key))]
+        if not mine:
+            return [], (
+                f"every field a {node['resource']} is known by ({', '.join(keys)}) is either a link "
+                "to another resource or not text, so a copy could not be told from the shared one"
+            )
+        return mine, ""
+
+    def _own_key(self, node: Node, written: Record) -> Record:
+        """The key fields to write differently so this instance is nobody else's.
+
+        One discriminator per fresh instance, from the provider a person would reach for themselves.
+        The `#` part is what keeps two of them apart within one scenario: a provider call is
+        evaluated once per scenario per expression, which is exactly what makes the *same* fresh
+        instance keep its key from the `Given` that made it to the last claim about it.
+        """
+        mine, _ = self.key_of_its_own(node)
+        wanted = [key for key in mine if key not in written]
+        if not wanted:
+            return {}
+        self._isolated += 1
+        tag = str(self.resolve(f"${{uuid:hex#{node['id']}/{self._isolated}}}"))[:FRESH_TAG]
+        return {key: f"{node['body'][key]}{FRESH_MARK}{tag}" for key in wanted}
 
     def ephemeral_records(self, records: Mapping[str, Record]) -> list[tuple[str, Record]]:
         return [
@@ -476,16 +610,20 @@ class Materializer:
             close_adapter(adapter)
 
     def teardown(self, records: Mapping[str, Record] | Iterable[tuple[str, Record]]) -> None:
-        """Best-effort delete of ephemeral resources. Never raises.
+        """Best-effort delete of what this scenario built for itself. Never raises.
 
         Accepts pairs as well as a mapping, because one scenario can provision several instances
         of the same ephemeral node — each is a distinct record that has to be deleted.
+
+        Two kinds of resource are taken away: an ephemeral one, and an instance of a persistent node
+        this scenario asked to have to itself. Nothing else, ever — the guard is what keeps a
+        shared resource from being deleted by a scenario that merely used it.
         """
         source: Any = records.items() if isinstance(records, Mapping) else records
         pairs: list[tuple[str, Record]] = [(str(nid), record) for nid, record in source]
         for nid, record in pairs:
-            node = self.nodes.get(nid)
-            if node is None or node["lifecycle"] != EPHEMERAL:
+            node = self.made_fresh(nid) or self.nodes.get(nid)
+            if node is None or (node["lifecycle"] != EPHEMERAL and nid not in self._fresh):
                 continue
             adapter = self.adapters.get(node["system"])
             if adapter is None:
@@ -512,6 +650,11 @@ def _varied(node: Node, overrides: Record | None) -> Node:
     varied = dict(node)
     varied["body"] = {**node["body"], **overrides}
     return cast("Node", varied)
+
+
+def _is_own_text(value: Any) -> bool:
+    """Whether a body field is text this resource holds of its own, rather than a link elsewhere."""
+    return isinstance(value, str) and bool(value) and not references(value)
 
 
 def _notify(callback: Callable[[_T], None] | None, value: _T) -> None:

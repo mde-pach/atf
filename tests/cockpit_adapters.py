@@ -80,7 +80,7 @@ class CockpitAdapter:
             return None
         workspace = str(ctx.resolve(node["body"]["workspace"]))
         url = self._serving.get(workspace)
-        return {"url": url, "workspace": workspace} if url and self._answering(url) else None
+        return {"url": url, "workspace": workspace} if url and self._alive(url) else None
 
     def create(self, node: Node, body: Record, ctx: Context) -> Record:
         workspace = Path(str(body["workspace"]))
@@ -130,14 +130,22 @@ class CockpitAdapter:
         if process.poll() is None:
             process.kill()
 
-    @staticmethod
-    def _answering(url: str) -> bool:
-        """Whether a server this adapter started is still there. A dead one is not a cockpit."""
-        try:
-            httpx.get(url, timeout=1.0)
-        except httpx.HTTPError:
-            return False
-        return True
+    def _alive(self, url: str) -> bool:
+        """Whether the server this adapter started is still running. Asked of the process, not of it.
+
+        This used to `GET /` with a one-second timeout, and that was a real bug rather than an
+        inefficiency. The overview is the *most* expensive page the cockpit serves — rendering it
+        triggers a discovery pass — so a server that was perfectly alive but busy answered too
+        slowly, the probe gave up, and a scenario started a second cockpit over the same suite and
+        leaked the first. Under a fixed order the cockpit scenarios run together and it rarely
+        happened; under `pytest-randomly` they interleave and it happened constantly. The suite took
+        four times as long, and the orphaned servers I found earlier were these.
+
+        A subprocess that has not exited is running. That is the whole question, it costs nothing,
+        and it cannot time out.
+        """
+        process = self._running.get(url)
+        return process is not None and process.poll() is None
 
 
 def _free_port() -> int:

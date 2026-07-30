@@ -157,7 +157,7 @@ only be broken by somebody editing the repository cannot regress on its own.
 
 - **No hardcoded credentials, and no blanket `type: ignore`.** Enforced by ruff (`S105`–`S107`,
   `PGH`), named in `pyproject.toml`.
-- **No literal `http://` or `https://` under `src/atf/` except `scaffold.py`.** A host belongs in a
+- **No literal `http://` or `https://` under `src/atf/` except `suite/scaffold.py`.** A host belongs in a
   manifest, behind a `*_env` pointer. Review's job.
 - **No Node, no build step, one semantic CSS file.** The cockpit is server-rendered with htmx
   vendored into `src/atf/cockpit/static/` — which *is* tested, because a vendored third-party file

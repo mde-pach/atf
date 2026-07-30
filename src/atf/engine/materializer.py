@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
-from .adapters import (
+from ..adapters import (
     Actionable,
     Adapter,
     Browsable,
@@ -22,8 +22,11 @@ from .adapters import (
     close_adapter,
     registered_systems,
 )
-from .catalog import Catalog, Node, load_catalog
-from .engine.status import (
+from ..model.catalog import Catalog, Node, load_catalog
+from ..model.placeholders import Unresolved, references
+from ..model.placeholders import resolve as resolve_placeholders
+from ..model.typespec import BUILT_IN_ACTIONS, DATA, EPHEMERAL, REFERENCE, TypeSpec
+from .status import (
     ABSENT,
     BLOCKED,
     CREATED,
@@ -37,9 +40,6 @@ from .engine.status import (
     ResourceStatus,
     Statuses,
 )
-from .placeholders import Unresolved, references
-from .placeholders import resolve as resolve_placeholders
-from .typespec import BUILT_IN_ACTIONS, DATA, EPHEMERAL, REFERENCE, TypeSpec
 
 log = logging.getLogger("atf.materializer")
 

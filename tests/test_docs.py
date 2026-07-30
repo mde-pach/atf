@@ -14,11 +14,11 @@ over a scenario one of whose rows did not.
 
 import pytest
 
-from atf.discovery import Spec
-from atf.docs import state_of
+from atf.run.runner import ERROR, FAILED, PASSED, SKIPPED
+from atf.run.runner import TestResult as Result  # `Test*` at module level is something pytest collects
 from atf.run.verdict import FAILING, NEVER_RUN, PASSING, SKIPPED_STATE
-from atf.runner import ERROR, FAILED, PASSED, SKIPPED
-from atf.runner import TestResult as Result  # `Test*` at module level is something pytest collects
+from atf.suite.discovery import Spec
+from atf.suite.docs import state_of
 
 
 def _spec(*, skipped: bool = False) -> Spec:
@@ -58,6 +58,6 @@ def test_the_default_output_directory_is_written_down_once():
     Two spellings of one default is how drift starts, and this is the whole of the guard against it.
     """
     from atf.cli import DEFAULT_DOCS_OUT
-    from atf.docs import DEFAULT_OUT
+    from atf.suite.docs import DEFAULT_OUT
 
     assert DEFAULT_DOCS_OUT == DEFAULT_OUT

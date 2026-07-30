@@ -4,7 +4,7 @@ The plan for this file was to become a Scenario Outline. It should not, and the 
 writing down rather than rediscovering.
 
 What these functions decide is *already* said as scenarios wherever it can be. Every generic claim
-in `steps.py` runs on `written_matches`, and `test_steps.py` pairs each of them with a line that
+in `spec/steps.py` runs on `written_matches`, and `test_steps.py` pairs each of them with a line that
 holds against a real project — so the behaviour has a scenario, and what is left here is the table
 underneath it: `("42", 42)` matches, `(None, "")` does not, `false` and `no` and `0` are all the
 same written word.
@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from atf.compare import MISSING, describe, field_matches, matches, same_instant, written_matches
+from atf.model.compare import MISSING, describe, field_matches, matches, same_instant, written_matches
 
 # ---- matches: what an adapter's `find` uses --------------------------------
 

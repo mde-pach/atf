@@ -25,9 +25,9 @@ import yaml
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 
 from ...adapters import registered_systems
-from ...authoring import AuthoringError, Derived, check_name, derive, diff, insert, remove, replace
-from ...catalog import TYPES_FILE, Catalog, CatalogError, Node, load_catalog
-from ...materializer import Materializer, ScopeRequired
+from ...engine.materializer import Materializer, ScopeRequired
+from ...model.catalog import TYPES_FILE, Catalog, CatalogError, Node, load_catalog
+from ...suite.authoring import AuthoringError, Derived, check_name, derive, diff, insert, remove, replace
 from ..view import cockpit as app
 from ..view import current_env, page, partial, require_confirmation, type_views
 from .catalog import BROWSE_LIMIT, context, instance_files

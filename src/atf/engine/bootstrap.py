@@ -14,10 +14,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .adapters import Adapter, build
-from .config import Manifest, load_manifest, resolve_env, resolve_env_refs
+from ..adapters import Adapter, build
+from ..model.manifest import Manifest, load_manifest, resolve_env, resolve_env_refs
+from ..model.providers import configure as configure_providers
 from .materializer import Materializer
-from .providers import configure as configure_providers
 
 
 @dataclass

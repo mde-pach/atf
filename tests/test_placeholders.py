@@ -20,8 +20,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from atf import providers
-from atf.placeholders import Unresolved, references, resolve
+from atf.model import providers
+from atf.model.placeholders import Unresolved, references, resolve
 
 
 def lookup(known: dict[str, object]):

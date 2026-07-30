@@ -27,9 +27,9 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from .context import Slot
-from .run import events
-from .run.events import ERROR, FAILED, PASSED, SKIPPED, StepResult
+from ..spec import events
+from ..spec.context import Slot
+from ..spec.events import ERROR, FAILED, PASSED, SKIPPED, StepResult
 
 DEFAULT_TIMEOUT = 1800
 _LOCK = threading.Lock()

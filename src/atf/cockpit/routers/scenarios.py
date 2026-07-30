@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from ...jobs import RUN
+from ...run.jobs import RUN
 from ..view import BLOCKED, FAILING, NEVER_RUN, PASSING, ScenarioView, current_env, page, partial, scenario_views
 from ..view import cockpit as app
 

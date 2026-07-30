@@ -30,7 +30,7 @@ import logging
 import pytest
 
 from atf.adapters import build, register, registered_systems, unregister
-from atf.materializer import Materializer, ProvisioningError, UnknownResource
+from atf.engine.materializer import Materializer, ProvisioningError, UnknownResource
 
 # ---- the registry -----------------------------------------------------------
 
@@ -126,7 +126,7 @@ def test_teardown_reports_what_it_swallowed_rather_than_raising(engine, fake, ca
         raise RuntimeError("backend down")
 
     fake.delete = explode  # ty: ignore[invalid-assignment]
-    with caplog.at_level(logging.WARNING, logger="atf.materializer"):
+    with caplog.at_level(logging.WARNING, logger="atf.engine.materializer"):
         engine.teardown(outcome.records)
 
     assert "teardown of leads.walkin failed" in caplog.text

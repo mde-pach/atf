@@ -31,8 +31,8 @@ from typing import Any
 import httpx
 
 from atf.adapters import Context, Record, register
-from atf.catalog import Node
-from atf.materializer import EPHEMERAL
+from atf.engine.materializer import EPHEMERAL
+from atf.model.catalog import Node
 
 HERE = Path(__file__).parent
 REPO = HERE.parent

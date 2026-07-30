@@ -27,8 +27,8 @@ import pytest
 from atf.adapters import build, registered_systems
 from atf.adapters.reference import ReferenceAdapter
 from atf.adapters.rest import RestAdapter
+from atf.engine.materializer import Materializer, ProvisioningError
 from atf.engine.status import ResourceStatus
-from atf.materializer import Materializer, ProvisioningError
 from tests.stub_api import StubAPI
 
 TYPES = """
@@ -320,7 +320,7 @@ def test_pagination_stops_on_a_short_page(catalog):
 
 def test_pagination_gives_up_on_a_backend_that_ignores_the_offset(catalog, api):
     """Reproduces a loop that never terminated: same page returned for every request."""
-    import atf.http as http_module
+    import atf.adapters.http as http_module
 
     def always_page_one(client, method, url, retries=0, backoff=0.2, **kwargs):
         class Response:
@@ -357,7 +357,7 @@ def test_record_key_unwraps_an_enveloped_create_response(write_catalog, api):
     )
     materializer = engine(catalog, api)
 
-    import atf.http as http_module
+    import atf.adapters.http as http_module
 
     original = http_module.request
 
@@ -428,7 +428,7 @@ def test_custom_pagination_parameter_names(catalog, api):
 
 def test_a_create_is_never_retried(catalog, api):
     """Retrying a POST that already succeeded would duplicate the record."""
-    import atf.http as http_module
+    import atf.adapters.http as http_module
 
     attempts: list[str] = []
     original = http_module.request
@@ -465,7 +465,7 @@ def test_retries_do_apply_to_reads(api):
     """The retry knob is real for idempotent methods."""
     import httpx
 
-    import atf.http as http_module
+    import atf.adapters.http as http_module
 
     calls: list[int] = []
 

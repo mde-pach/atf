@@ -76,8 +76,8 @@ import pytest
 import yaml
 from _pytest.outcomes import Failed
 
+from ..model.placeholders import PLACEHOLDER_RE, Unresolved
 from .patterns import CAPTURE_RE, fill, pattern_regex
-from .placeholders import PLACEHOLDER_RE, Unresolved
 
 # pytest-bdd has no public way to run one step from inside another, and a phrase is exactly that.
 # These are its internals, imported in one place so that a version which moves them breaks here,

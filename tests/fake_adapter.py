@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from atf.adapters import Context, Record, register
-from atf.catalog import Node
+from atf.model.catalog import Node
 
 
 class FakeAdapter:
@@ -52,7 +52,7 @@ class FakeAdapter:
     # ---- helpers ----
 
     def _criteria(self, node: Node, ctx: Context) -> dict[str, Any] | None:
-        from atf.placeholders import Unresolved
+        from atf.model.placeholders import Unresolved
 
         keys = node.config.get("natural_key")
         if isinstance(keys, str):

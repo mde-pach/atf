@@ -21,15 +21,15 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from ..bootstrap import Boot, bootstrap
-from ..config import Manifest
-from ..discovery import Discovery, discover
-from ..jobs import RUN, Job, JobRunner
-from ..materializer import Materializer
-from ..runner import RunRecord, RunSummary, TestResult
-from ..runner import run as run_tests
-from ..store import RunStore
-from .status import Statuses
+from .engine.bootstrap import Boot, bootstrap
+from .engine.materializer import Materializer
+from .engine.status import Statuses
+from .model.manifest import Manifest
+from .run.jobs import RUN, Job, JobRunner
+from .run.runner import RunRecord, RunSummary, TestResult
+from .run.runner import run as run_tests
+from .run.store import RunStore
+from .suite.discovery import Discovery, discover
 
 # How far back to look for a finished job whose results are not in the cache yet.
 MAX_FOLD = 20

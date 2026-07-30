@@ -1,1 +1,1 @@
-pytest_plugins = ["atf.plugin"]
+pytest_plugins = ["atf.spec.plugin"]

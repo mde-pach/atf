@@ -1,10 +1,10 @@
 # Specs and fixtures reference
 
-`atf.plugin` is a pytest plugin. It is enabled from a `conftest.py` at the root of a suite — pytest
+`atf.spec.plugin` is a pytest plugin. It is enabled from a `conftest.py` at the root of a suite — pytest
 only honours `pytest_plugins` there:
 
 ```python
-pytest_plugins = ["atf.plugin"]
+pytest_plugins = ["atf.spec.plugin"]
 ```
 
 At import it loads the manifest, builds the adapters for the active environment, and loads the
@@ -513,7 +513,7 @@ value decides how the written one is read, never the other way round:
 
 Reading the *written* side first is how `"0"` starts matching `false`, so ATF does not. The same
 rule decides whether an adapter's `find` recognised an existing resource — one comparison, in
-`atf.compare`.
+`atf.model.compare`.
 
 ### What they say when they fail {#failures}
 
@@ -559,7 +559,7 @@ A field assertion on a slot needs *one* record — a listing of five has no one 
 refused rather than guessed at, and the message points at `contains`. A slot that was never set
 names the ones the scenario is actually holding, so a mistyped name is one line to fix.
 
-**What counts as a record** is one decision, made in `atf.records`: a mapping, a dataclass, a
+**What counts as a record** is one decision, made in `atf.model.records`: a mapping, a dataclass, a
 `NamedTuple`, or an object offering `to_dict()` / `model_dump()`. A dataclass's public properties
 are fields too — `Outcome` keeping `stdout` and `stderr` and joining them in an `output` property is
 exactly the case, and `the result field "output" contains "…"` is what a suite would otherwise have
@@ -583,7 +583,7 @@ nothing added to it.
 
 | Fixture | Scope | Value |
 |---|---|---|
-| [`context`](#context) | function | An empty `atf.context.Context`, the per-scenario scratchpad. |
+| [`context`](#context) | function | An empty `atf.spec.context.Context`, the per-scenario scratchpad. |
 | [`<resource_type>`](#resource-type-fixtures) | function | `Callable[[str], Record]` — provisions that type by instance name. |
 | [`materializer`](#materializer-fixture) | session | The `Materializer` for the active environment. |
 | [`env`](#env) | session | The active environment name. |
@@ -667,7 +667,7 @@ directory.
 An autouse, function-scoped fixture calls `materializer.teardown(context._ephemeral)` after every
 test.
 
-Deletion is best-effort: failures are logged under the `atf.materializer` logger, never raised. A
+Deletion is best-effort: failures are logged under the `atf.engine.materializer` logger, never raised. A
 test that passed has told you something true, and a broken deletion endpoint should not overturn
 that verdict. Persistent resources are left in place.
 
@@ -712,20 +712,20 @@ continue toward.
 
 | Exception | Module | Raised when |
 |---|---|---|
-| `ConfigError` | `atf.config` | The manifest is missing, invalid, or names an unset environment variable. |
-| `CatalogError` | `atf.catalog` | The catalog fails validation. Carries `.problems`, a list of every problem found. |
-| `ProvisioningError` | `atf.materializer` | `ensure` could not provision a resource. Carries `.node_id` and `.detail`. |
-| `UnknownResource` | `atf.materializer` | A type and name do not match any node. Subclasses `LookupError`. |
-| `Unresolved` | `atf.placeholders` | A `${...}` placeholder cannot be resolved. Carries `.expression`. |
-| `AuthError` | `atf.http` | An auth scheme is unknown or incomplete, or a session login failed. |
+| `ConfigError` | `atf.model.manifest` | The manifest is missing, invalid, or names an unset environment variable. |
+| `CatalogError` | `atf.model.catalog` | The catalog fails validation. Carries `.problems`, a list of every problem found. |
+| `ProvisioningError` | `atf.engine.materializer` | `ensure` could not provision a resource. Carries `.node_id` and `.detail`. |
+| `UnknownResource` | `atf.engine.materializer` | A type and name do not match any node. Subclasses `LookupError`. |
+| `Unresolved` | `atf.model.placeholders` | A `${...}` placeholder cannot be resolved. Carries `.expression`. |
+| `AuthError` | `atf.adapters.http` | An auth scheme is unknown or incomplete, or a session login failed. |
 
 ## Timeouts {#timeouts}
 
 | Operation | Limit | Constant |
 |---|---|---|
-| Discovery (`pytest --collect-only`) | 300 s | `atf.discovery._COLLECT_TIMEOUT` |
-| A synchronous run (`atf run`) | 1800 s | `atf.runner.DEFAULT_TIMEOUT` |
-| A cockpit background run | 1800 s | `atf.jobs.DEFAULT_JOB_TIMEOUT` |
+| Discovery (`pytest --collect-only`) | 300 s | `atf.suite.discovery._COLLECT_TIMEOUT` |
+| A synchronous run (`atf run`) | 1800 s | `atf.run.runner.DEFAULT_TIMEOUT` |
+| A cockpit background run | 1800 s | `atf.run.jobs.DEFAULT_JOB_TIMEOUT` |
 
 None are settable from the manifest. A run that exceeds its limit is killed, reported as timed out,
 and releases the environment's run slot.

@@ -10,9 +10,9 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from ...discovery import Discovery
 from ...engine.status import PRESENT
-from ...text import plural
+from ...model.text import plural
+from ...suite.discovery import Discovery
 from ..view import (
     BLOCKED,
     FAILING,

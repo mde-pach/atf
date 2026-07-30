@@ -32,9 +32,9 @@ import contextlib
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..accessible import Control
-from ..catalog import Node
+from ..model.catalog import Node
 from . import Context, NoopDelete, Record
+from .control import Control
 
 # Where a page node says to go. A path is joined to the adapter's `base_url`; anything absolute is
 # taken as it stands, which is what lets one suite reach two hosts.

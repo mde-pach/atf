@@ -18,8 +18,8 @@ import sys
 import pytest
 
 from atf.adapters.command import CommandAdapter
-from atf.catalog import Node
-from atf.typespec import EPHEMERAL, TypeSpec
+from atf.model.catalog import Node
+from atf.model.typespec import EPHEMERAL, TypeSpec
 
 
 def node(**body) -> Node:

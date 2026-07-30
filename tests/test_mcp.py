@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import pytest
 
+from atf.agent.mcp import Tools, unavailable
 from atf.cockpit.deps import set_session
-from atf.engine.session import Session
-from atf.mcp import Tools, unavailable
+from atf.session import Session
 from tests.sample_project import write_sample_project
 
 
@@ -77,7 +77,7 @@ def test_with_the_sdk_installed_the_server_offers_exactly_the_three_verbs(tools)
     """Three tools, and they do not grow when the vocabulary does — that is the whole design."""
     import asyncio
 
-    from atf.mcp import server
+    from atf.agent.mcp import server
 
     built = server(tools.session)
     assert built.name == "atf"

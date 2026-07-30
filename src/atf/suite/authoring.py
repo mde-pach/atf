@@ -19,8 +19,8 @@ from typing import Any
 import yaml
 from typing_extensions import override
 
-from .catalog import Node
-from .typespec import TypeSpec
+from ..model.catalog import Node
+from ..model.typespec import TypeSpec
 
 # Fields a backend owns rather than the catalog: they appear in a record but must never be declared,
 # because the backend will assign them again on the next create.

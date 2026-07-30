@@ -134,8 +134,8 @@ counter without any of them resetting between values.
 One method, registered the way an adapter is:
 
 ```python
-# providers.py, listed under `adapters:` in the manifest — the same import hook loads both
-from atf.providers import register
+# model/providers.py, listed under `adapters:` in the manifest — the same import hook loads both
+from atf.model.providers import register
 
 
 class Sequence:

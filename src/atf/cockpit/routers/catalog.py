@@ -21,11 +21,11 @@ from fastapi import APIRouter, HTTPException, Request
 from markupsafe import Markup
 
 from ...adapters import can_browse
-from ...catalog import TYPES_FILE, Catalog, Node
+from ...engine.materializer import Materializer, ScopeRequired
 from ...engine.status import Statuses
-from ...materializer import Materializer, ScopeRequired
-from ...placeholders import Unresolved, references
-from ...text import plural
+from ...model.catalog import TYPES_FILE, Catalog, Node
+from ...model.placeholders import Unresolved, references
+from ...model.text import plural
 from ..view import (
     TypeView,
     build_graph,

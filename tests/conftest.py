@@ -26,13 +26,13 @@ import pytest
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
-pytest_plugins = ["atf.plugin", "pytester"]
+pytest_plugins = ["atf.spec.plugin", "pytester"]
 
 # Complete suites on disk, for the `workspace` adapter to copy. Not this suite's tests.
 collect_ignore_glob = ["suites/*"]
 
 from atf.adapters import unregister  # noqa: E402 - after this directory is on the path
-from atf.materializer import Materializer  # noqa: E402
+from atf.engine.materializer import Materializer  # noqa: E402
 from tests.fake_adapter import register_fake  # noqa: E402
 from tests.sample_project import write_sample_project  # noqa: E402
 

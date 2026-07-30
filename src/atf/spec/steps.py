@@ -36,10 +36,11 @@ from typing import Any
 import pytest
 from pytest_bdd import parsers, then, when
 
-from .adapters import Record, can_browse
-from .adapters.command import CommandAdapter
-from .catalog import Node
-from .compare import (
+from ..adapters import Record, can_browse
+from ..adapters.command import CommandAdapter
+from ..engine.materializer import Materializer, ProvisioningError, ScopeRequired
+from ..model.catalog import Node
+from ..model.compare import (
     MARKERS,
     MISSING,
     Uncontainable,
@@ -51,12 +52,11 @@ from .compare import (
     written_contains,
     written_matches,
 )
+from ..model.placeholders import Unresolved
+from ..model.records import as_records
+from ..model.text import plural
 from .context import RESULT, Slot, ephemeral_record
-from .materializer import Materializer, ProvisioningError, ScopeRequired
 from .patterns import PROVISION, PROVISION_FRESH, PROVISION_FRESH_VARIED, PROVISION_VARIED
-from .placeholders import Unresolved
-from .records import as_records
-from .text import plural
 
 # ---- the vocabulary --------------------------------------------------------
 

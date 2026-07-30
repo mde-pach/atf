@@ -51,11 +51,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..model.text import plural
+from ..run import verdict
+from ..run.runner import TestResult
+from ..spec.events import ERROR, FAILED
 from .discovery import Question, Spec, Step, parse_questions, parse_specs
-from .run import verdict
-from .run.events import ERROR, FAILED
-from .runner import TestResult
-from .text import plural
 
 # Where the pages land when nobody says otherwise: inside the docs tree, in a directory of their
 # own, so a generated page is never mixed in with a hand-written one.

@@ -29,10 +29,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from ...catalog import Catalog
-from ...compare import MARKERS
-from ...discovery import Discovery, Spec, StepDef, matching_step, parse_feature, slug
-from ...introspect import (
+from ...agent.introspect import (
     KEYWORDS,
     NODE_SUBJECT,
     Outside,
@@ -61,13 +58,16 @@ from ...introspect import (
     type_options,
     usable,
 )
-from ...introspect import binding_module as _binding_module
-from ...introspect import features as _features
-from ...introspect import features_dir as _features_dir
-from ...introspect import inside as _inside_of
-from ...introspect import offered_steps as _offered_steps
-from ...patterns import CAPTURE_RE, GIVEN, PROVISION_RE
-from ...steps import ACTION, FIELD, NAME, TYPE, VALUE, comparison, generic
+from ...agent.introspect import binding_module as _binding_module
+from ...agent.introspect import features as _features
+from ...agent.introspect import features_dir as _features_dir
+from ...agent.introspect import inside as _inside_of
+from ...agent.introspect import offered_steps as _offered_steps
+from ...model.catalog import Catalog
+from ...model.compare import MARKERS
+from ...spec.patterns import CAPTURE_RE, GIVEN, PROVISION_RE
+from ...spec.steps import ACTION, FIELD, NAME, TYPE, VALUE, comparison, generic
+from ...suite.discovery import Discovery, Spec, StepDef, matching_step, parse_feature, slug
 from ..view import cockpit as app
 from ..view import current_env, page, partial, require_confirmation, require_mutable
 

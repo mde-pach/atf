@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .events import ERROR, FAILED, PASSED, SKIPPED
+from ..spec.events import ERROR, FAILED, PASSED, SKIPPED
 
 PASSING = "passing"
 FAILING = "failing"

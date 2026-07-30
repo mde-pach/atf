@@ -28,11 +28,11 @@ import re
 
 import pytest
 
-from atf.catalog import load_catalog
-from atf.discovery import Discovery, StepDef, context_use, discover, matching_step, parse_feature, slug
-from atf.discovery import _step_defs as step_defs
-from atf.patterns import PROVISION, fill, pattern_regex
-from atf.steps import EXISTS, GENERIC_STEPS, SLOT_CONTAINS
+from atf.model.catalog import load_catalog
+from atf.spec.patterns import PROVISION, fill, pattern_regex
+from atf.spec.steps import EXISTS, GENERIC_STEPS, SLOT_CONTAINS
+from atf.suite.discovery import Discovery, StepDef, context_use, discover, matching_step, parse_feature, slug
+from atf.suite.discovery import _step_defs as step_defs
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
@@ -274,7 +274,7 @@ def test_the_read_and_compare_steps_are_part_of_every_suites_vocabulary(found):
     reading = next(step for step in found.steps if step.pattern == EXISTS)
     assert reading.params == ["resource_type", "name"]
     assert reading.docstring
-    assert reading.file.endswith("steps.py")
+    assert reading.file.endswith("spec/steps.py")
 
 
 def test_a_step_declares_what_it_touches_on_the_context_by_being_read(found):
@@ -465,7 +465,7 @@ def test_a_phrase_is_part_of_the_vocabulary_a_scenario_may_be_written_in(phrased
 
 
 def test_a_phrase_says_it_came_from_the_phrasebook_not_from_atfs_own_source(phrased):
-    """Otherwise the interface would send someone to `atf/plugin.py` to change a line of YAML."""
+    """Otherwise the interface would send someone to `atf/spec/plugin.py` to change a line of YAML."""
     phrase = next(step for step in phrased.steps if step.pattern == "the account is on the standard plan")
     assert phrase.file.endswith(os.path.join("specs", "phrasebook.yaml"))
 

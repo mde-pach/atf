@@ -84,7 +84,7 @@ from pathlib import Path
 from typing import Any
 
 from atf.adapters import Context, Record, register
-from atf.catalog import Node
+from atf.model.catalog import Node
 
 # ATF imports this module before it resolves the manifest's `*_env` pointers, so it is the one
 # place that can stand a backend up for every entry point alike — `atf run`, `atf status`,
@@ -206,7 +206,7 @@ def send(handler: BaseHTTPRequestHandler, status: int, payload: Any) -> None:
 '''
 
 CONFTEST = """\
-pytest_plugins = ["atf.plugin"]
+pytest_plugins = ["atf.spec.plugin"]
 """
 
 SPECS_CONFTEST = """\

@@ -72,9 +72,9 @@ from typing import Any
 
 import yaml
 
+from ..model.catalog import RESERVED_FIXTURE_NAMES, TYPES_FILE
+from ..model.typespec import TypeSpec
 from .authoring import diff
-from .catalog import RESERVED_FIXTURE_NAMES, TYPES_FILE
-from .typespec import TypeSpec
 
 # Every type an OpenAPI schema describes is served over a JSON API, which is the one system ATF
 # ships an adapter for out of the box. Nothing in a schema could say otherwise.

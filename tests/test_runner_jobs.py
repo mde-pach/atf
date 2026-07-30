@@ -26,10 +26,10 @@ from typing import Any
 
 import pytest
 
-from atf import runner
-from atf.bootstrap import bootstrap
-from atf.jobs import PENDING, PROVISION, RUN, RUNNING, JobRunner
-from atf.store import RunStore
+from atf.engine.bootstrap import bootstrap
+from atf.run import runner
+from atf.run.jobs import PENDING, PROVISION, RUN, RUNNING, JobRunner
+from atf.run.store import RunStore
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")

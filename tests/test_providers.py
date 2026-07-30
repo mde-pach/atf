@@ -16,8 +16,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from atf import providers
-from atf.placeholders import generated, resolve
+from atf.model import providers
+from atf.model.placeholders import generated, resolve
 
 LOOKUP = dict.get
 

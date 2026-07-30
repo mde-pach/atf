@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from atf.report import as_ctrf
-from atf.runner import (
+from atf.run.report import as_ctrf
+from atf.run.runner import (
     ERROR,
     FAILED,
     PASSED,
@@ -22,7 +22,7 @@ from atf.runner import (
     keyword_expression,
     tag_expression,
 )
-from atf.runner import TestResult as Result  # not `TestResult`: pytest tries to collect the name
+from atf.run.runner import TestResult as Result  # not `TestResult`: pytest tries to collect the name
 
 
 def record(**results: Result) -> RunRecord:

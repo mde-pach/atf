@@ -15,8 +15,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .context import Slot
-from .run.events import DETAIL_CHARS, ERROR, FAILED, PASSED, SKIPPED, StepResult, slots_from
+from ..spec.context import Slot
+from ..spec.events import DETAIL_CHARS, ERROR, FAILED, PASSED, SKIPPED, StepResult, slots_from
 from .runner import RunRecord, RunSummary, TestResult
 
 DEFAULT_KEEP = 50

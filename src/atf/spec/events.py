@@ -16,12 +16,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..context import Slot
+from .context import Slot
 
 PROGRESS_OUT = "ATF_PROGRESS_OUT"
 
-# The plugin, named as pytest loads it: `-p atf.run.progress_plugin`.
-PLUGIN = "atf.run.progress_plugin"
+# The plugin, named as pytest loads it: `-p atf.spec.progress_plugin`.
+PLUGIN = "atf.spec.progress_plugin"
 
 COLLECTED = "collected"
 START = "start"

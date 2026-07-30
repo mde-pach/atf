@@ -22,12 +22,12 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from atf.accessible import Page
-from atf.catalog import load_catalog
+from atf.adapters.control import Page
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import set_session
 from atf.cockpit.routers.authoring import Proposal, apply, literal
-from atf.engine.session import Session
+from atf.model.catalog import load_catalog
+from atf.session import Session
 from tests.sample_project import write_sample_project
 from tests.test_cockpit import catalog, provisioning_engine  # noqa: F401 - shared, and documented there
 

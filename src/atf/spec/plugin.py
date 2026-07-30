@@ -2,7 +2,7 @@
 
 Enable it from a consuming project's `conftest.py`:
 
-    pytest_plugins = ["atf.plugin"]
+    pytest_plugins = ["atf.spec.plugin"]
 """
 
 from __future__ import annotations
@@ -14,19 +14,18 @@ import pytest
 from pytest_bdd import given, parsers
 from pytest_bdd import step as register_step
 
-from . import collect, phrasebook
-from .adapters import Record, can_show, why_unavailable
-from .bootstrap import Boot, bootstrap
+from ..adapters import Record, can_show, why_unavailable
+from ..engine.bootstrap import Boot, bootstrap
+from ..engine.materializer import Materializer
+from ..model.placeholders import PLACEHOLDER_RE, Unresolved
+from . import collect, events, phrasebook
 from .context import EPHEMERAL_ATTR, Context, Recogniser
-from .materializer import Materializer
 from .patterns import PROVISION, PROVISION_FRESH, PROVISION_FRESH_VARIED, PROVISION_VARIED, fill
-from .placeholders import PLACEHOLDER_RE, Unresolved
-from .run import events
 
 # The read-and-compare steps, and the ones that act on an interface, are plugins of their own so
 # that their step definitions land in their own module namespaces. pytest reads `pytest_plugins`
-# from any plugin it registers, so a suite that enables `atf.plugin` gets them without naming more.
-pytest_plugins = ["atf.steps", "atf.ui"]
+# from any plugin it registers, so a suite that enables `atf.spec.plugin` gets them without naming more.
+pytest_plugins = ["atf.spec.steps", "atf.spec.interface"]
 
 _BOOT: Boot = bootstrap()
 

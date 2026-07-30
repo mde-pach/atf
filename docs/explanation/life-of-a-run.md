@@ -39,7 +39,7 @@ The rest of this page walks that diagram one box at a time.
 
 ## 1. Collect {#collect}
 
-`pytest_plugins = ["atf.plugin"]` in the root `conftest.py` makes pytest import ATF's plugin, and
+`pytest_plugins = ["atf.spec.plugin"]` in the root `conftest.py` makes pytest import ATF's plugin, and
 importing it **bootstraps the suite**: the manifest is located and parsed, every `*_env` pointer is
 read from the environment, an adapter is built for each system configured in the active
 environment, and the catalog is loaded and validated.

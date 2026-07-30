@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing_extensions import override
 
-from ..catalog import Node
+from ..model.catalog import Node
 from . import Context, Record
 from .rest import RestAdapter
 

@@ -12,7 +12,7 @@ ATF's plugin must be enabled from the **root** `conftest.py` — pytest only hon
 
 ```python
 # conftest.py at the repository root
-pytest_plugins = ["atf.plugin"]
+pytest_plugins = ["atf.spec.plugin"]
 ```
 
 If that file already exists, add the line; if `pytest_plugins` is already defined, append to it.

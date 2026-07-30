@@ -37,8 +37,8 @@ import importlib
 from dataclasses import dataclass
 from typing import Any
 
-from . import __version__
-from .engine.session import Session
+from .. import __version__
+from ..session import Session
 from .introspect import Composition, Surface, compose, describe, try_scenario
 
 # The module the server class lives in. Named here, once, so that an SDK which moves it fails

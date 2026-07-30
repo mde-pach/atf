@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from atf.accessible import Page
+from atf.adapters.control import Page
 
 
 def names(page: Page, role: str) -> list[str]:

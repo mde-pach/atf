@@ -21,7 +21,7 @@ import json
 import pytest
 from _pytest.outcomes import Failed
 
-from atf.steps import (
+from atf.spec.steps import (
     ACT,
     COUNT,
     EXISTS,
@@ -522,8 +522,8 @@ def test_counting_says_so_when_the_adapter_cannot_list():
     """`browse` is optional SPI, so the claim has to degrade with the reason, not an AttributeError."""
     from types import SimpleNamespace
 
-    from atf.steps import _listing
-    from atf.typespec import TypeSpec
+    from atf.model.typespec import TypeSpec
+    from atf.spec.steps import _listing
 
     spec = TypeSpec(name="thing", system="flat")
     engine = SimpleNamespace(

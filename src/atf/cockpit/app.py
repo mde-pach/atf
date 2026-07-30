@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import __version__
-from ..engine.session import Session
+from ..session import Session
 from .deps import get_session, set_session
 from .routers import activity, authoring, catalog, compose, overview, scenarios, search
 from .view import STATIC_DIR, templates
@@ -27,7 +27,7 @@ def create_app(
     set_session(session or Session(env))
 
     if mcp_host is not None:
-        from ..mcp import MOUNT, endpoint
+        from ..agent.mcp import MOUNT, endpoint
 
         served, lifespan = endpoint(get_session(), mcp_host)
         # Assigned rather than passed to `FastAPI(...)`: the endpoint needs the cockpit, which is

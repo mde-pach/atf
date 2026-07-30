@@ -7,11 +7,10 @@ from typing import Any
 
 import httpx
 
-from .. import http
-from ..catalog import Node
-from ..compare import matches as _matches
-from ..placeholders import Unresolved
-from . import Context, Record
+from ..model.catalog import Node
+from ..model.compare import matches as _matches
+from ..model.placeholders import Unresolved
+from . import Context, Record, http
 
 DEFAULT_SUCCESS = (200, 201, 202, 204)
 

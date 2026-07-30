@@ -90,13 +90,13 @@ usually enough. When it is not, turn on httpx's logging:
 ```sh
 ATF_ENV=dev python -c "
 import logging; logging.basicConfig(level=logging.DEBUG)
-from atf.bootstrap import bootstrap
+from atf.engine.bootstrap import bootstrap
 boot = bootstrap()
 print(boot.materializer.status())
 "
 ```
 
-ATF's own engine logs under the `atf.materializer` logger — that is where teardown failures go,
+ATF's own engine logs under the `atf.engine.materializer` logger — that is where teardown failures go,
 since they are deliberately swallowed rather than raised.
 
 ## When the spec fails but the resource is fine

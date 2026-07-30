@@ -39,9 +39,9 @@ from typing import Any
 import pytest
 from pytest_bdd import parsers, then, when
 
-from .adapters import Control, can_show
-from .adapters.browser import BrowserAdapter
-from .materializer import Materializer
+from ..adapters import Control, can_show
+from ..adapters.browser import BrowserAdapter
+from ..engine.materializer import Materializer
 
 # What a scenario may say about a control. Role first, because role is what the thing *is* and the
 # name is which one — the same order a screen reader announces them in.

@@ -40,9 +40,9 @@ from typing import Any
 
 import httpx
 
-from ..accessible import Control, Page
-from ..catalog import Node
+from ..model.catalog import Node
 from . import Context, NoopDelete, Record
+from .control import Control, Page
 
 # Where a page node says to look. A path is joined to the adapter's `base_url`; anything absolute is
 # taken as it stands, which is what lets one suite reach two hosts.

@@ -8,9 +8,9 @@ from functools import partial
 from importlib import import_module
 from typing import Any, Protocol
 
-from ..accessible import Control
-from ..catalog import Node
-from ..records import Record
+from ..model.catalog import Node
+from ..model.records import Record
+from .control import Control
 
 
 class Context(Protocol):
@@ -19,7 +19,7 @@ class Context(Protocol):
     env: str
 
     def resolve(self, value: Any) -> Any:
-        """Resolve `${...}` placeholders; raises `atf.placeholders.Unresolved`."""
+        """Resolve `${...}` placeholders; raises `atf.model.placeholders.Unresolved`."""
         ...
 
     def cached(self, key: str, loader: Callable[[], Any]) -> Any:

@@ -158,7 +158,7 @@ refuses to load and names the offender.
 | ATF's own fixtures | `api`, `client_config`, `context`, `env`, `materializer` |
 | pytest built-ins | `cache`, `capfd`, `capfdbinary`, `caplog`, `capsys`, `capsysbinary`, `doctest_namespace`, `monkeypatch`, `pytestconfig`, `record_property`, `record_testsuite_property`, `recwarn`, `request`, `tmp_path`, `tmp_path_factory`, `tmpdir`, `tmpdir_factory` |
 
-Separately, generated factories land in the `atf.plugin` module's namespace, so a type whose name
+Separately, generated factories land in the `atf.spec.plugin` module's namespace, so a type whose name
 matches something that module already defines raises at import time with the same advice: rename the
 type. Instance names are unconstrained.
 

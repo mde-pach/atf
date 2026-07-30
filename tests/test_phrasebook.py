@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from atf.phrasebook import MARKER, Line, Phrase, PhrasebookError, load, make_step, path_for
+from atf.spec.phrasebook import MARKER, Line, Phrase, PhrasebookError, load, make_step, path_for
 from tests.sample_project import run_pytest, write_spec
 
 

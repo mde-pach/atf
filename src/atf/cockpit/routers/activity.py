@@ -10,8 +10,8 @@ from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Request
 
-from ...jobs import RUN, Job, Row
-from ...runner import TestResult
+from ...run.jobs import RUN, Job, Row
+from ...run.runner import TestResult
 from ..view import cockpit as app
 from ..view import current_env, partial, require_confirmation, require_mutable
 

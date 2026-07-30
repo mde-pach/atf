@@ -30,7 +30,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .text import plural
+from ..model.text import plural
 
 # The keywords, and what each one starts. Read as text rather than through a Gherkin library
 # because `atf lint` has to work in a checkout with nothing configured — the same seam

@@ -19,13 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from atf import steps as atf_steps
-
-# `Test` under another name: pytest tries to collect anything called `Test*` and warns.
-from atf.discovery import Discovery, Spec, StepDef
-from atf.discovery import Test as Collected
-from atf.engine.status import PRESENT, ResourceStatus, Statuses
-from atf.introspect import (
+from atf.agent.introspect import (
     FROM_ATF,
     FROM_PHRASEBOOK,
     FROM_SUITE,
@@ -44,7 +38,13 @@ from atf.introspect import (
     subject_options,
     usable,
 )
-from atf.steps import GENERIC_STEPS
+from atf.engine.status import PRESENT, ResourceStatus, Statuses
+from atf.spec import steps as atf_steps
+from atf.spec.steps import GENERIC_STEPS
+
+# `Test` under another name: pytest tries to collect anything called `Test*` and warns.
+from atf.suite.discovery import Discovery, Spec, StepDef
+from atf.suite.discovery import Test as Collected
 
 # The feature the fixture below binds to a steps module. Named, because which feature a scenario is
 # being written into is what decides whether that module's steps are reachable at all.

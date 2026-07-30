@@ -7,7 +7,7 @@ at a project of its own.
 
 from __future__ import annotations
 
-from ..engine.session import Session
+from ..session import Session
 
 _session: Session | None = None
 

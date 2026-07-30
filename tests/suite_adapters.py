@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from atf.adapters import Context, Record, register
-from atf.catalog import Node
+from atf.model.catalog import Node
 
 HERE = Path(__file__).parent
 ROOT = HERE.parent
@@ -44,7 +44,7 @@ ROOT = HERE.parent
 # once, holding nothing an `atf` walking upwards could mistake for a project.
 NOWHERE = Path(tempfile.mkdtemp(prefix="atf-tests-nowhere-"))
 
-# The same marker `atf.compare` uses to say a field is not there, said about a file.
+# The same marker `atf.model.compare` uses to say a field is not there, said about a file.
 ABSENT = "#absent"
 
 # What a variation writes where the file on disk must hold a literal `${...}`.

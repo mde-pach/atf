@@ -49,7 +49,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..catalog import Node
+from ..model.catalog import Node
 from . import Context, NoopDelete, Record
 
 # What a node may say about the invocation. The command line is the whole of it; `cwd` and `env` are

@@ -9,20 +9,20 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import openapi
-from .bootstrap import bootstrap
-from .catalog import CatalogError
-from .config import ConfigError, load_manifest, resolve_env, resolve_env_refs, resolve_manifest
+from .engine.bootstrap import bootstrap
 from .engine.status import BLOCKED, CREATED, PRESENT, ProvisionResult
-from .lint import check as lint_specs
-from .lint import report as lint_report
-from .report import as_ctrf
-from .runner import ERROR, FAILED, RunRecord, failed_ids
-from .runner import run as run_tests
-from .scaffold import MANIFEST_FILE, scaffold
-from .store import ReportError, RunStore
-from .text import plural
-from .typespec import DATA, EPHEMERAL, REFERENCE
+from .model.catalog import CatalogError
+from .model.manifest import ConfigError, load_manifest, resolve_env, resolve_env_refs, resolve_manifest
+from .model.text import plural
+from .model.typespec import DATA, EPHEMERAL, REFERENCE
+from .run.report import as_ctrf
+from .run.runner import ERROR, FAILED, RunRecord, failed_ids
+from .run.runner import run as run_tests
+from .run.store import ReportError, RunStore
+from .suite import openapi
+from .suite.lint import check as lint_specs
+from .suite.lint import report as lint_report
+from .suite.scaffold import MANIFEST_FILE, scaffold
 
 # `atf docs` is the only command that needs [discovery](discovery.py), and discovery is the most
 # expensive module in the framework to import. So it is imported inside the handler that uses it,
@@ -188,7 +188,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     url = f"http://{args.host}:{args.port}"
     answering = ""
     if args.mcp:
-        from .mcp import MOUNT, unavailable
+        from .agent.mcp import MOUNT, unavailable
 
         reason = unavailable()
         if reason:
@@ -419,7 +419,7 @@ def cmd_docs(args: argparse.Namespace) -> int:
     env = args.env or resolve_env(manifest)
     manifest.env(env)  # raises ConfigError, with the known environments, when it is not one
 
-    from . import docs as living
+    from .suite import docs as living
 
     specs = living.read(manifest.specs_dir)
     if not specs:

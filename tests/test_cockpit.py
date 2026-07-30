@@ -30,12 +30,12 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from atf.accessible import Page
+from atf.adapters.control import Page
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import set_session
 from atf.cockpit.view import build_graph, closure_of, lineage_sentence, neighbourhood, readiness, scenario_views
-from atf.engine.session import Session
 from atf.engine.status import ABSENT, UNSUPPORTED, ResourceStatus, Statuses
+from atf.session import Session
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")

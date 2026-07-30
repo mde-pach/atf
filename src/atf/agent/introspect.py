@@ -36,16 +36,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .catalog import Catalog, Node
-from .compare import MARKERS
-from .context import RESULT
-from .discovery import Discovery, StepDef
-from .engine.status import ResourceStatus, Statuses
-from .materializer import Materializer
-from .patterns import GIVEN, THEN, WHEN, fill
-from .runner import ERROR, PASSED, TestResult
-from .runner import run as run_tests
-from .steps import (
+from ..engine.materializer import Materializer
+from ..engine.status import ResourceStatus, Statuses
+from ..model.catalog import Catalog, Node
+from ..model.compare import MARKERS
+from ..model.text import plural
+from ..model.typespec import DATA, REFERENCE
+from ..run.runner import ERROR, PASSED, TestResult
+from ..run.runner import run as run_tests
+from ..spec.context import RESULT
+from ..spec.patterns import GIVEN, THEN, WHEN, fill
+from ..spec.steps import (
     COMPARISONS,
     FIELD,
     NAME,
@@ -60,8 +61,7 @@ from .steps import (
     comparisons_for,
     generic,
 )
-from .text import plural
-from .typespec import DATA, REFERENCE
+from ..suite.discovery import Discovery, StepDef
 
 KEYWORDS = (GIVEN, WHEN, THEN)
 

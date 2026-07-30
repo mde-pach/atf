@@ -247,7 +247,7 @@ from pathlib import Path
 
 import pytest
 
-pytest_plugins = ["atf.plugin"]
+pytest_plugins = ["atf.spec.plugin"]
 
 STORE = Path(__file__).parent / "store.json"
 

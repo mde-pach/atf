@@ -18,15 +18,15 @@ from urllib.parse import urlencode
 from fastapi import HTTPException, Request
 from fastapi.templating import Jinja2Templates
 
-from ..catalog import Node
-from ..discovery import Spec, Step, Test
-from ..engine.session import Session
 from ..engine.status import ABSENT, ERROR, PRESENT, UNSUPPORTED, Statuses
 from ..engine.status import TONES as STATUS_TONES
+from ..model.catalog import Node
+from ..model.text import plural
+from ..model.typespec import DATA, REFERENCE, TypeSpec
+from ..run.runner import FAILED, PASSED, SKIPPED, StepResult, TestResult
 from ..run.verdict import FAILING, NEVER_RUN, PASSING, SKIPPED_STATE, fold, state_of
-from ..runner import FAILED, PASSED, SKIPPED, StepResult, TestResult
-from ..text import plural
-from ..typespec import DATA, REFERENCE, TypeSpec
+from ..session import Session
+from ..suite.discovery import Spec, Step, Test
 from .deps import get_session
 from .glossary import TERMS, Term, docs_url
 

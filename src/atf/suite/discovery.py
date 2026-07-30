@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .catalog import Catalog, Node
-from .patterns import (
+from ..model.catalog import Catalog, Node
+from ..spec.patterns import (
     ANY_KEYWORD,
     GIVEN,
     KEYWORDS,
@@ -319,7 +319,7 @@ def _context_names(function: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[li
 
 def _attach_context_use(steps: list[StepDef]) -> None:
     """Read each module once, not once per step it declares."""
-    from .steps import generic as _generic
+    from ..spec.steps import generic as _generic
 
     by_file: dict[str, list[StepDef]] = {}
     for step in steps:

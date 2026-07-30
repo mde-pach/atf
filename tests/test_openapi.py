@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from atf.openapi import (
+from atf.suite.openapi import (
     Collection,
     Guess,
     collections,

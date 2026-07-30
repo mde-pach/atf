@@ -97,7 +97,7 @@ def test_the_suite_is_still_a_meaningful_self_test_without_a_browser():
     ("module", "find", "replace", "expected_failure"),
     [
         pytest.param(
-            "materializer.py",
+            "engine/materializer.py",
             "        for nid in self.topo(wanted):",
             "        for nid in wanted:",
             "dependency_chain_in_order",
@@ -111,7 +111,7 @@ def test_the_suite_is_still_a_meaningful_self_test_without_a_browser():
             id="mutable_envs gate",
         ),
         pytest.param(
-            "plugin.py",
+            "spec/plugin.py",
             "    materializer.teardown(getattr(context, EPHEMERAL_ATTR, []))",
             "    pass",
             "torn_down_afterwards",

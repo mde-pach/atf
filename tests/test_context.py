@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from atf.context import BOOLEAN, NOTHING, NUMBER, RECORD, RECORDS, TEXT, Context, describe, ephemeral_record
+from atf.spec.context import BOOLEAN, NOTHING, NUMBER, RECORD, RECORDS, TEXT, Context, describe, ephemeral_record
 
 # ---- it is still the namespace every existing step was written against ------
 

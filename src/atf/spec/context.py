@@ -22,7 +22,7 @@ from typing import Any
 
 from typing_extensions import override
 
-from .records import Record, as_record, as_records
+from ..model.records import Record, as_record, as_records
 
 # The attribute the provisioning step records ephemeral resources on, read by teardown. Steps that
 # assert on an ephemeral resource read it too: an ephemeral resource is never looked up — that is

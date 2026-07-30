@@ -129,7 +129,7 @@ usually a sign the difference belongs in the manifest instead.
 ### `resolve(value)` {#ctx-resolve}
 
 `(value: Any) -> Any` — resolves `${...}` placeholders in a string, list or mapping. Raises
-`atf.placeholders.Unresolved` when a referenced identity is unknown.
+`atf.model.placeholders.Unresolved` when a referenced identity is unknown.
 
 `create` receives an already-resolved body. `find` does not — it is given only `node`, whose `body`
 is raw — so an adapter matching on body fields must resolve them itself.
@@ -202,7 +202,7 @@ most often:
 
 ## HTTP helpers {#http-helpers}
 
-`atf.http` holds the plumbing the built-in adapters use. It is public, and it applies the same auth
+`atf.adapters.http` holds the plumbing the built-in adapters use. It is public, and it applies the same auth
 schemes the manifest describes — so an adapter building its own client authenticates the same way
 the `rest` adapter does.
 

@@ -18,7 +18,7 @@ ATF's own source.
 
 **Two assertions about artefacts stay**, and they are deliberate exceptions rather than an oversight:
 the vendored htmx is checked for a pinned version and a hash, because it is a third-party file
-shipped to users and no linter reads it; and `mcp.py` is checked to import nothing from the modules
+shipped to users and no linter reads it; and `agent/mcp.py` is checked to import nothing from the modules
 that hold the vocabulary, because it is the guard that makes the coverage test above it impossible to
 defeat by moving a list. Both are named here so a reader knows the difference.
 """
@@ -133,11 +133,11 @@ def test_the_introspection_api_reaches_every_word_the_framework_knows(tmp_path, 
     """
     import sys
 
-    from atf.bootstrap import bootstrap
-    from atf.compare import MARKERS
-    from atf.discovery import discover
-    from atf.introspect import FROM_ATF, Surface, describe
-    from atf.steps import COMPARISONS, GENERIC_STEPS
+    from atf.agent.introspect import FROM_ATF, Surface, describe
+    from atf.engine.bootstrap import bootstrap
+    from atf.model.compare import MARKERS
+    from atf.spec.steps import COMPARISONS, GENERIC_STEPS
+    from atf.suite.discovery import discover
     from tests.sample_project import write_sample_project
 
     root = write_sample_project(tmp_path / "suite")
@@ -178,19 +178,19 @@ def test_the_introspection_api_reaches_every_word_the_framework_knows(tmp_path, 
 def test_the_mcp_layer_cannot_hold_a_copy_of_the_vocabulary():
     """Why the guard above can never be defeated by editing the MCP layer instead.
 
-    `mcp.py` does not import the tables that define ATF's words, so it has no way to enumerate them
+    `agent/mcp.py` does not import the tables that define ATF's words, so it has no way to enumerate them
     and no way to hold a stale copy of one. Everything it can say about the vocabulary it has to ask
-    `introspect.py` for. That is what makes three tools enough forever: a tool per step would have
+    `agent/introspect.py` for. That is what makes three tools enough forever: a tool per step would have
     needed editing every time the framework learnt a word, and this cannot.
     """
-    tree = ast.parse((SRC / "mcp.py").read_text(encoding="utf-8"))
+    tree = ast.parse((SRC / "agent/mcp.py").read_text(encoding="utf-8"))
     reached = {
         node.module
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom) and node.module
     }
     assert not reached & {"steps", "compare", "discovery", "catalog"}, (
-        f"mcp.py reaches for the vocabulary directly: {sorted(reached)}"
+        f"agent/mcp.py reaches for the vocabulary directly: {sorted(reached)}"
     )
 
 
@@ -205,9 +205,46 @@ def test_htmx_is_vendored_with_a_pinned_version_and_no_cdn_reference():
         assert "unpkg" not in body and "cdn" not in body.lower()
 
 
+# The layers, innermost first. A module may import from its own layer and from any layer before it.
+LAYERS = ("model", "adapters", "engine", "spec", "run", "suite", "agent", "cockpit")
+
+
+def test_every_import_points_downward():
+    """The direction is the design: what a layer may know about is what is under it.
+
+    `cli.py` and `session.py` sit outside the layers on purpose — composing them is what they are
+    for — so they are the two modules this does not constrain.
+    """
+    import ast
+
+    rank = {name: index for index, name in enumerate(LAYERS)}
+    upward: list[str] = []
+    for path in sorted(SRC.rglob("*.py")):
+        parts = path.relative_to(SRC).parts
+        if len(parts) == 1:
+            continue
+        here = parts[0]
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.ImportFrom) or not node.level:
+                continue
+            base = list(parts[:-1])
+            up = node.level - 1
+            named = (base[: len(base) - up] if up else base) + (node.module or "").split(".")
+            there = named[0] if named and named[0] in rank else None
+            if there and there != here and rank[there] > rank[here]:
+                upward.append(f"{'/'.join(parts)} imports {there}.{node.module}")
+    assert upward == [], "these imports point outward, which makes the layering a suggestion"
+
+
 @pytest.mark.parametrize(
     "name",
-    ["config.py", "catalog.py", "materializer.py", "placeholders.py", "adapters/__init__.py"],
+    [
+        "model/manifest.py",
+        "model/catalog.py",
+        "model/placeholders.py",
+        "engine/materializer.py",
+        "adapters/__init__.py",
+    ],
 )
 def test_core_modules_are_import_safe(name):
     """Importing the engine must never open a socket."""
@@ -238,7 +275,7 @@ def test_core_modules_are_import_safe(name):
 
 
 def test_loading_a_catalog_touches_nothing_but_the_filesystem(good_catalog, monkeypatch):
-    """Importing `catalog.py` is guarded above; *calling* its loader is guarded here.
+    """Importing `model/catalog.py` is guarded above; *calling* its loader is guarded here.
 
     The loader's promise is that a catalog can be read, and every problem in it reported, in a
     checkout with no environment anywhere near it — which is what lets `atf lint` and the cockpit's
@@ -248,7 +285,7 @@ def test_loading_a_catalog_touches_nothing_but_the_filesystem(good_catalog, monk
     """
     import socket
 
-    from atf.catalog import load_catalog
+    from atf.model.catalog import load_catalog
 
     def explode(*args, **kwargs):
         raise AssertionError("catalog loader must not touch the network")

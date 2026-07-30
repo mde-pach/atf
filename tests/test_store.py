@@ -27,11 +27,11 @@ import json
 
 import pytest
 
-from atf.context import Slot
-from atf.run.events import StepResult
-from atf.runner import RunRecord
-from atf.runner import TestResult as Result
-from atf.store import RunStore
+from atf.run.runner import RunRecord
+from atf.run.runner import TestResult as Result
+from atf.run.store import RunStore
+from atf.spec.context import Slot
+from atf.spec.events import StepResult
 
 
 def result(nodeid: str, outcome: str = "passed", **extra) -> Result:

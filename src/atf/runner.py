@@ -1,182 +1,71 @@
-"""Synchronous test runs -> structured results.
+"""Launching a suite, and the results a run comes back as.
 
-Runs pytest in a subprocess with `ATF_ENV` set and parses its JSON report. Serialized by a
-process-wide lock and guarded by a timeout: one run at a time, and never an unbounded wait.
-Use `jobs.JobRunner` instead when progress must be observable while the run is in flight.
+One launcher: pytest in a subprocess with `ATF_ENV` set, reporting itself over the progress channel
+as it goes. A caller that wants to watch passes `on_event`; `run` is that launcher waited on.
+Guarded by a timeout, so never an unbounded wait, and serialised by a process-wide lock.
 
 The result model lives here because every producer fills the same shape: this module, the job
 runner, and a report imported from CI. For a BDD suite the useful unit of failure is the Gherkin
-step, not the tail of a traceback, so both execution paths inject `PROGRESS_PLUGIN` into the
-pytest process to report steps and provisioning as they happen.
+step, not the tail of a traceback, which is what the progress channel carries.
 """
 
 from __future__ import annotations
 
-import json
+import contextlib
 import os
 import re
 import secrets
+import signal
 import subprocess
 import sys
 import tempfile
 import threading
 import time
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any
+
+from .context import Slot
+from .run import events
+from .run.events import ERROR, FAILED, PASSED, SKIPPED, StepResult
 
 DEFAULT_TIMEOUT = 1800
 _LOCK = threading.Lock()
 
-PASSED = "passed"
-FAILED = "failed"
-SKIPPED = "skipped"
-ERROR = "error"
+# How often the drain loop looks for more of what the child has said.
+_TICK = 0.05
 
-PLUGIN_MODULE = "atf_progress"
-PROGRESS_OUT = "ATF_PROGRESS_OUT"
-
-# Injected into the pytest process by both execution paths, as a module on PYTHONPATH loaded with
-# `-p`. It appends one JSON object per line to the file `ATF_PROGRESS_OUT` names; the reader tails
-# that file. Every hook swallows its own errors: observing a run must never fail one. The
-# pytest-bdd hooks live on a separate plugin object registered only when pytest-bdd is importable,
-# because pytest rejects a plugin declaring hooks no installed plugin specifies.
-PROGRESS_PLUGIN = '''
-"""Reports a pytest run as it happens, one JSONL event per line. Written by ATF, not by the user."""
-
-import json
-import os
-import re
-import time
-
-_PATH = os.environ["ATF_PROGRESS_OUT"]
-
-
-def _emit(event):
-    try:
-        with open(_PATH, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(event) + "\\n")
-    except Exception:
-        pass
-
-
-def pytest_collection_modifyitems(session, config, items):
-    _emit({"event": "collected", "nodeids": [item.nodeid for item in items]})
-
-
-def pytest_runtest_logstart(nodeid, location):
-    _emit({"event": "start", "nodeid": nodeid, "at": time.time()})
-
-
-def pytest_runtest_logreport(report):
-    if report.when == "call" or (report.when == "setup" and report.outcome != "passed"):
-        outcome = report.outcome
-        if report.when == "setup" and outcome == "failed":
-            outcome = "error"
-        _emit(
-            {
-                "event": "result",
-                "nodeid": report.nodeid,
-                "outcome": outcome,
-                "duration": getattr(report, "duration", 0.0),
-                "detail": str(report.longrepr)[-600:] if report.longrepr else "",
-                "at": time.time(),
-            }
-        )
-
-
-def pytest_sessionfinish(session, exitstatus):
-    _emit({"event": "finished", "exitstatus": int(exitstatus), "at": time.time()})
-
-
-def _step(request, step, state, error=""):
-    try:
-        _emit(
-            {
-                "event": "step",
-                "nodeid": request.node.nodeid,
-                "keyword": str(getattr(step, "keyword", "") or "").strip(),
-                "text": str(getattr(step, "name", "") or ""),
-                "state": state,
-                "error": error[:500],
-            }
-        )
-    except Exception:
-        pass
-
-
-def _skip_rest(request, scenario, failed):
-    """A failed step abandons the scenario; report what it never got to."""
-    try:
-        steps = list(getattr(scenario, "steps", []))
-        remaining = steps[steps.index(failed) + 1 :]
-    except Exception:
-        return
-    for step in remaining:
-        _step(request, step, "skipped")
-
-
-class _Steps:
-    """Gherkin step outcomes. Registered only when pytest-bdd is installed."""
-
-    def pytest_bdd_after_step(self, request, feature, scenario, step, step_func, step_func_args):
-        _step(request, step, "passed")
-
-    def pytest_bdd_step_error(self, request, feature, scenario, step, step_func, step_func_args, exception):
-        _step(request, step, "failed", f"{type(exception).__name__}: {exception}".strip())
-        _skip_rest(request, scenario, step)
-
-    def pytest_bdd_step_func_lookup_error(self, request, feature, scenario, step, exception):
-        _step(request, step, "failed", "no step definition matches this step")
-        _skip_rest(request, scenario, step)
-
-
-def pytest_configure(config):
-    try:
-        __import__("pytest_bdd")
-    except Exception:
-        return
-    config.pluginmanager.register(_Steps(), "atf_progress_steps")
-'''
-
-
-@dataclass
-class StepResult:
-    keyword: str
-    text: str
-    state: str
-    error: str = ""
-
-
-@dataclass
-class Held:
-    """What the scenario's context was holding when it finished — its shape, never its contents.
-
-    The answer to "what was there to assert on?", which nothing could give while the context was a
-    namespace that forgot. Values are deliberately absent: this is written to run history on disk,
-    and a record carries a token as readily as a title. See `atf.context`.
-    """
-
-    name: str
-    kind: str
-    fields: list[str] = field(default_factory=list)
-    count: int = 0
-    resource_type: str = ""
-    node_id: str = ""
-    guessed: bool = False
+STRANDED = "the run ended before this test reported"
 
 
 @dataclass
 class TestResult:
+    """One test, as a run reported it — and the row a job's progress view reads while it runs."""
+
     nodeid: str
     outcome: str
+    label: str = ""
     duration: float = 0.0
     detail: str = ""
     finished_at: float = 0.0
     steps: list[StepResult] = field(default_factory=list)
     provisioned: list[str] = field(default_factory=list)
-    held: list[Held] = field(default_factory=list)
+    held: list[Slot] = field(default_factory=list)
+
+    @property
+    def id(self) -> str:
+        return self.nodeid
+
+    @property
+    def state(self) -> str:
+        """Its outcome, under the word a job's progress view uses for either kind of work."""
+        return self.outcome
+
+    @property
+    def done(self) -> bool:
+        return self.outcome not in events.BUSY_STATES
 
     @property
     def failed_step(self) -> StepResult | None:
@@ -239,6 +128,116 @@ def new_run_id() -> str:
     return secrets.token_hex(4)
 
 
+@dataclass
+class Launched:
+    """What became of a launched run, whatever it said while it was running."""
+
+    returncode: int = 0
+    output: str = ""
+    timed_out: bool = False
+
+
+def launch(
+    targets: Sequence[str],
+    env: str,
+    root: Path,
+    specs_dir: Path | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    keyword: str = "",
+    tags: Sequence[str] = (),
+    on_event: Callable[[Mapping[str, Any]], None] | None = None,
+) -> Launched:
+    """Run pytest against `env`, handing every progress event to `on_event` as it arrives.
+
+    `keyword` and `tags` narrow what runs. They are separate arguments rather than one bag of
+    pytest flags because a caller of this function is choosing *which scenarios*, and that is a
+    thing ATF can describe; letting arbitrary flags through would make the command surface pytest's
+    entire interface by accident, which is the opposite of `atf run` becoming the only dev loop.
+
+    Output goes to a file, never a pipe: a pipe fills at ~64KB and the child blocks forever, because
+    nothing reads it until the drain loop sees the process exit.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        environment = child_env(root, env)
+        stream = events.channel_in(work, environment)
+        command = [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            events.PLUGIN,
+            *(["-k", keyword_expression(keyword)] if keyword else []),
+            *(["-m", tag_expression(tags)] if tags else []),
+            *(list(targets) or ([str(specs_dir)] if specs_dir else [])),
+        ]
+
+        log = work / "output.log"
+        with log.open("w", encoding="utf-8") as sink:
+            process = subprocess.Popen(
+                command,
+                cwd=root,
+                env=environment,
+                stdout=sink,
+                stderr=subprocess.STDOUT,
+                text=True,
+                start_new_session=True,
+            )
+            timed_out = _drain(process, stream, timeout, on_event)
+            returncode = process.poll()
+
+        output = _tail(log.read_text(encoding="utf-8", errors="replace"))
+        if timed_out:
+            output = f"run timed out after {timeout}s\n{output}".strip()
+        # A killed process reports the signal that killed it, which says nothing a caller can use.
+        return Launched(returncode=-1 if timed_out else (returncode or 0), output=output, timed_out=timed_out)
+
+
+def _drain(
+    process: subprocess.Popen[str],
+    stream: Path,
+    timeout: int,
+    on_event: Callable[[Mapping[str, Any]], None] | None,
+) -> bool:
+    """Fold progress events until the run ends. Returns True if it had to be killed."""
+    offset = 0
+    deadline = time.time() + timeout
+    while True:
+        offset = _consume(stream, offset, on_event)
+        if process.poll() is not None:
+            _consume(stream, offset, on_event)
+            return False
+        if time.time() > deadline:
+            _kill(process)
+            _consume(stream, offset, on_event)
+            return True
+        time.sleep(_TICK)
+
+
+def _consume(stream: Path, offset: int, on_event: Callable[[Mapping[str, Any]], None] | None) -> int:
+    """Read whatever is complete beyond `offset`, and say where to read from next."""
+    with stream.open("r", encoding="utf-8") as handle:
+        handle.seek(offset)
+        for line in handle:
+            if not line.endswith("\n"):
+                return handle.tell() - len(line)
+            if on_event is not None:
+                for event in events.read(line):
+                    on_event(event)
+        return handle.tell()
+
+
+def _kill(process: subprocess.Popen[str]) -> None:
+    """Kill the whole process group — pytest may have spawned children of its own."""
+    try:
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        process.kill()
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        process.wait(timeout=10)
+
+
 def run(
     nodeids: Iterable[str] | None,
     env: str,
@@ -248,47 +247,45 @@ def run(
     keyword: str = "",
     tags: Sequence[str] = (),
 ) -> RunSummary:
-    """Run pytest in a subprocess with `ATF_ENV` set and parse its JSON report.
+    """One launch, waited on: the same run a job reports live, read at the end instead."""
+    results: dict[str, TestResult] = {}
+    rows = partial(_row, results)
+    started = time.time()
+    with _LOCK:
+        launched = launch(
+            list(nodeids or []),
+            env,
+            root,
+            specs_dir,
+            timeout,
+            keyword,
+            tags,
+            on_event=lambda event: events.apply(event, rows),
+        )
+    finished = time.time()
 
-    `keyword` and `tags` narrow what runs. They are separate arguments rather than one bag of
-    pytest flags because a caller of this function is choosing *which scenarios*, and that is a
-    thing ATF can describe; letting arbitrary flags through would make the command surface pytest's
-    entire interface by accident, which is the opposite of `atf run` becoming the only dev loop.
-    """
-    targets = list(nodeids or [])
-    with _LOCK, tempfile.TemporaryDirectory() as tmp:
-        report = Path(tmp) / "report.json"
-        environment = child_env(root, env)
-        events = inject_progress_plugin(Path(tmp), environment)
-        command = [
-            sys.executable,
-            "-m",
-            "pytest",
-            "--json-report",
-            f"--json-report-file={report}",
-            "-q",
-            "-p",
-            PLUGIN_MODULE,
-            *(["-k", keyword_expression(keyword)] if keyword else []),
-            *(["-m", tag_expression(tags)] if tags else []),
-            *(targets or ([str(specs_dir)] if specs_dir else [])),
-        ]
-        started = time.time()
-        completed = _launch(command, root, environment, timeout)
-        if completed is None:
-            return RunSummary(
-                returncode=-1,
-                output=f"run timed out after {timeout}s",
-                started_at=started,
-                finished_at=time.time(),
-            )
-        summary = parse_report(report)
-        summary.returncode = completed.returncode
-        summary.output = _tail(completed.stdout + completed.stderr)
-        summary.started_at = summary.started_at or started
-        summary.finished_at = summary.finished_at or time.time()
-        fold_events(summary.results, events)
-        return summary
+    for result in results.values():
+        if not result.done:
+            result.outcome = ERROR
+            result.detail = result.detail or STRANDED
+        result.finished_at = finished
+    return RunSummary(
+        results=results,
+        returncode=launched.returncode,
+        output=launched.output,
+        duration=finished - started,
+        started_at=started,
+        finished_at=finished,
+    )
+
+
+def _row(results: dict[str, TestResult], nodeid: str) -> TestResult:
+    """Where one test's progress is recorded, made the first time it is heard of."""
+    result = results.get(nodeid)
+    if result is None:
+        result = TestResult(nodeid=nodeid, outcome=events.PENDING)
+        results[nodeid] = result
+    return result
 
 
 # The words pytest reads as operators in a `-k` expression. Text containing one of them is an
@@ -332,10 +329,6 @@ def failed_ids(record: RunRecord) -> list[str]:
     return sorted(nodeid for nodeid, result in record.results.items() if result.outcome in {FAILED, ERROR})
 
 
-def pytest_command(nodeids: Sequence[str], specs_dir: Path | None) -> list[str]:
-    return [sys.executable, "-m", "pytest", "-q", *(list(nodeids) or ([str(specs_dir)] if specs_dir else []))]
-
-
 def child_env(root: Path, env: str) -> dict[str, str]:
     environment = dict(os.environ)
     environment["ATF_ENV"] = env
@@ -343,144 +336,6 @@ def child_env(root: Path, env: str) -> dict[str, str]:
     if manifest.is_file():
         environment["ATF_MANIFEST"] = str(manifest)
     return environment
-
-
-def inject_progress_plugin(directory: Path, environment: dict[str, str]) -> Path:
-    """Write the progress plugin into `directory`, point `environment` at it, return its event file."""
-    (directory / f"{PLUGIN_MODULE}.py").write_text(PROGRESS_PLUGIN, encoding="utf-8")
-    events = directory / "events.jsonl"
-    events.touch()
-    environment[PROGRESS_OUT] = str(events)
-    environment["PYTHONPATH"] = os.pathsep.join(
-        [str(directory), *filter(None, [environment.get("PYTHONPATH")])]
-    )
-    return events
-
-
-def read_events(path: Path) -> Iterator[dict[str, Any]]:
-    """Every complete event in the file. A truncated or unparseable line is ignored."""
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return
-    for line in text.splitlines():
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(event, dict):
-            yield event
-
-
-def fold_events(results: dict[str, TestResult], events: Path) -> None:
-    """Enrich parsed results with the step outcomes and provisioning the plugin reported."""
-    for event in read_events(events):
-        result = results.get(str(event.get("nodeid", "")))
-        if result is None:
-            continue
-        if event.get("event") == "step":
-            result.steps.append(step_from(event))
-        elif event.get("event") == "provisioned":
-            result.provisioned.extend(nid for nid in _ids(event) if nid not in result.provisioned)
-        elif event.get("event") == "held":
-            result.held = held_from(event.get("slots"))
-
-
-def step_from(event: dict[str, Any]) -> StepResult:
-    return StepResult(
-        keyword=str(event.get("keyword", "")),
-        text=str(event.get("text", "")),
-        state=str(event.get("state", PASSED)),
-        error=str(event.get("error", "")),
-    )
-
-
-def held_from(raw: Any) -> list[Held]:
-    """Slot descriptions as reported or as read back from history — the same shape either way."""
-    if not isinstance(raw, list):
-        return []
-    return [
-        Held(
-            name=str(entry.get("name", "")),
-            kind=str(entry.get("kind", "")),
-            fields=[str(item) for item in entry.get("fields") or [] if isinstance(item, str)],
-            count=int(_number(entry.get("count"))),
-            resource_type=str(entry.get("resource_type", "")),
-            node_id=str(entry.get("node_id", "")),
-            guessed=bool(entry.get("guessed")),
-        )
-        for entry in raw
-        if isinstance(entry, dict)
-    ]
-
-
-def parse_report(report: Path) -> RunSummary:
-    """Read a pytest `--json-report` file. An absent or unreadable one yields an empty summary."""
-    summary = RunSummary()
-    if not report.exists():
-        return summary
-    try:
-        payload = json.loads(report.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return summary
-    if not isinstance(payload, dict):
-        return summary
-
-    summary.duration = _number(payload.get("duration"))
-    summary.finished_at = _number(payload.get("created"))
-    summary.started_at = max(summary.finished_at - summary.duration, 0.0)
-    for entry in payload.get("tests", []):
-        if not isinstance(entry, dict):
-            continue
-        nodeid = str(entry.get("nodeid", ""))
-        if not nodeid:
-            continue
-        duration = sum(_phase_duration(entry.get(phase)) for phase in ("setup", "call", "teardown"))
-        summary.results[nodeid] = TestResult(
-            nodeid=nodeid,
-            outcome=str(entry.get("outcome", ERROR)),
-            duration=duration,
-            detail=_detail(entry),
-            finished_at=summary.finished_at,
-        )
-    return summary
-
-
-def _launch(
-    command: list[str], root: Path, environment: dict[str, str], timeout: int
-) -> subprocess.CompletedProcess[str] | None:
-    try:
-        return subprocess.run(
-            command,
-            cwd=root,
-            env=environment,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        return None
-
-
-def _detail(entry: dict[str, object]) -> str:
-    for phase in ("call", "setup", "teardown"):
-        stage = entry.get(phase)
-        if not isinstance(stage, dict):
-            continue
-        crash = stage.get("crash")
-        message = stage.get("longrepr") or (crash.get("message") if isinstance(crash, dict) else None)
-        if message:
-            return _tail(str(message), 600)
-    return ""
-
-
-def _ids(event: dict[str, Any]) -> list[str]:
-    raw = event.get("ids")
-    return [str(item) for item in raw] if isinstance(raw, list) else []
-
-
-def _phase_duration(stage: Any) -> float:
-    return _number(stage.get("duration")) if isinstance(stage, dict) else 0.0
 
 
 def _number(value: Any) -> float:

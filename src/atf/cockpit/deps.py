@@ -10,6 +10,7 @@ from __future__ import annotations
 import secrets
 import threading
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from ..bootstrap import Boot, bootstrap
@@ -147,7 +148,7 @@ class Cockpit:
         active = state.jobs.active(state.boot.env)
         if active is None or active.kind != RUN:
             return state.results
-        return {**state.results, **active.merged()}
+        return {**state.results, **active.results()}
 
     def result_for(self, nodeid: str, env: str | None = None) -> TestResult | None:
         return self.results(env).get(nodeid)
@@ -175,9 +176,13 @@ class Cockpit:
             if entry.missing and engine.provisionable(nid)[0]
         ]
 
-    def start_run(self, nodeids: list[str], env: str | None = None) -> Job:
+    def start_run(
+        self, nodeids: list[str], env: str | None = None, keyword: str = "", tags: Sequence[str] = ()
+    ) -> Job:
         state = self.state(env)
-        return state.jobs.start_run(nodeids, state.boot.env, labels=_labels(state))
+        return state.jobs.start_run(
+            nodeids, state.boot.env, labels=_labels(state), keyword=keyword, tags=tags
+        )
 
     def start_provision(self, node_ids: list[str], env: str | None = None) -> Job:
         state = self.state(env)
@@ -219,7 +224,7 @@ class Cockpit:
         )
         for job in pending:
             if job.kind == RUN:
-                state.results.update(job.merged())
+                state.results.update(job.results())
             # Either kind moves the environment on, so the cached status is now a claim about a
             # world that no longer exists. A run provisions too — naming a resource in a scenario
             # is what creates it — so it invalidates exactly as provisioning does.

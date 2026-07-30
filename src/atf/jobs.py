@@ -1,9 +1,9 @@
 """Background work with live per-item progress: test runs and provisioning, in one model.
 
-A run happens in a pytest subprocess that writes one JSONL event per phase; a drain thread folds
-those events into per-item state the cockpit polls. Provisioning happens in-process — the
-materializer holds the adapters — on a thread reporting through the same item states. One shape,
-so one progress view renders both.
+A run happens in a pytest subprocess reporting itself over the progress channel; provisioning
+happens in-process, on a thread, because the materializer holds the adapters. What they have in
+common is a `Row` per unit of work — a test, or a catalog node — so one progress view renders both
+without either pretending to be the other.
 
 At most one job is active per environment *across both kinds*: provisioning an environment while
 tests run against it would race the very resources they read.
@@ -12,36 +12,19 @@ tests run against it would race the very resources they read.
 from __future__ import annotations
 
 import contextlib
-import json
-import os
-import signal
-import subprocess
-import sys
-import tempfile
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from .engine.status import BLOCKED, CREATED, EXISTS, ProvisionResult
 from .materializer import Materializer
-from .runner import (
-    ERROR,
-    FAILED,
-    PASSED,
-    PLUGIN_MODULE,
-    SKIPPED,
-    Held,
-    RunSummary,
-    StepResult,
-    TestResult,
-    child_env,
-    held_from,
-    inject_progress_plugin,
-    step_from,
-)
+from .run import events
+from .run.events import BUSY_STATES, ERROR, FAILED, PASSED, PENDING, RUNNING, SKIPPED
+from .runner import STRANDED, RunSummary, TestResult, launch
 from .store import RunStore
 from .typespec import REFERENCE
 
@@ -51,37 +34,56 @@ MAX_HISTORY = 50
 RUN = "run"
 PROVISION = "provision"
 
-PENDING = "pending"
-RUNNING = "running"
-# Everything that is not pending or running is a verdict, whatever kind of job produced it.
-BUSY_STATES = frozenset({PENDING, RUNNING})
-
 _COUNTED = {
     RUN: (PENDING, RUNNING, PASSED, FAILED, SKIPPED, ERROR),
     PROVISION: (PENDING, RUNNING, CREATED, EXISTS, REFERENCE, BLOCKED, ERROR),
 }
 
 
-@dataclass
-class ItemState:
-    """One row of a job: a test in a run, a catalog node in a provision."""
+class Row(Protocol):
+    """One unit of a job's work, as the progress view reads it.
 
-    id: str
-    label: str
-    state: str
+    What a test result and a node being provisioned have in common, and no more than that: a single
+    row type would have to hold a run outcome and a provisioning action in one field, and every
+    reader would need to know which kind of job it was looking at to know what that field meant.
+    """
+
+    duration: float
+    detail: str
+
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def label(self) -> str: ...
+
+    @property
+    def state(self) -> str: ...
+
+    @property
+    def done(self) -> bool: ...
+
+
+@dataclass
+class Provisioning:
+    """One catalog node's turn in a provisioning job."""
+
+    node_id: str
+    state: str = PENDING
     duration: float = 0.0
     detail: str = ""
-    steps: list[StepResult] = field(default_factory=list)
-    provisioned: list[str] = field(default_factory=list)
-    held: list[Held] = field(default_factory=list)
+
+    @property
+    def id(self) -> str:
+        return self.node_id
+
+    @property
+    def label(self) -> str:
+        return self.node_id
 
     @property
     def done(self) -> bool:
         return self.state not in BUSY_STATES
-
-    @property
-    def failed_step(self) -> StepResult | None:
-        return next((step for step in self.steps if step.state == FAILED), None)
 
 
 @dataclass
@@ -90,7 +92,7 @@ class Job:
     env: str
     kind: str
     started_at: float
-    items: dict[str, ItemState]
+    items: dict[str, Row]
     done: bool = False
     finished_at: float = 0.0
     returncode: int | None = None
@@ -115,27 +117,15 @@ class Job:
     def elapsed(self) -> float:
         return (self.finished_at or time.time()) - self.started_at
 
-    def merged(self) -> dict[str, TestResult]:
-        """Finished tests as run results, for folding into the cached results."""
-        finished = self.finished_at or time.time()
+    def results(self) -> dict[str, TestResult]:
+        """The finished tests of a run job — what the cockpit folds into its cached results."""
         return {
-            item.id: TestResult(
-                nodeid=item.id,
-                outcome=item.state,
-                duration=item.duration,
-                detail=item.detail,
-                finished_at=finished,
-                steps=list(item.steps),
-                provisioned=list(item.provisioned),
-                held=list(item.held),
-            )
-            for item in list(self.items.values())
-            if item.done
+            item.nodeid: item for item in list(self.items.values()) if isinstance(item, TestResult) and item.done
         }
 
     def summary(self) -> RunSummary:
         return RunSummary(
-            results=self.merged(),
+            results=self.results(),
             returncode=self.returncode or 0,
             output=self.output,
             duration=self.elapsed,
@@ -176,17 +166,24 @@ class JobRunner:
     def history(self, limit: int = 10) -> list[Job]:
         return list(reversed(self._history[-limit:]))
 
-    def start_run(self, nodeids: Sequence[str], env: str, labels: Mapping[str, str] | None = None) -> Job:
+    def start_run(
+        self,
+        nodeids: Sequence[str],
+        env: str,
+        labels: Mapping[str, str] | None = None,
+        keyword: str = "",
+        tags: Sequence[str] = (),
+    ) -> Job:
         """Run `nodeids` (everything, when empty). Returns the active job if one already holds `env`."""
         targets = list(nodeids)
         names = labels or {}
-        items = {
-            nodeid: ItemState(id=nodeid, label=names.get(nodeid) or humanize(nodeid), state=PENDING)
+        items: dict[str, Row] = {
+            nodeid: TestResult(nodeid=nodeid, outcome=PENDING, label=names.get(nodeid) or humanize(nodeid))
             for nodeid in targets
         }
         job, fresh = self._begin(env, RUN, items)
         if fresh:
-            self._spawn(self._run, job, targets)
+            self._spawn(self._run, job, targets, keyword, tags)
         return job
 
     def start_provision(
@@ -200,8 +197,8 @@ class JobRunner:
         wanted: list[str] = []
         for nid in node_ids:
             wanted.extend(item for item in engine.closure(nid) if item not in wanted)
-        items = {
-            nid: ItemState(id=nid, label=nid, state=PENDING)
+        items: dict[str, Row] = {
+            nid: Provisioning(node_id=nid)
             for nid in engine.topo(wanted)  # display order is provisioning order
         }
         job, fresh = self._begin(env, PROVISION, items)
@@ -211,7 +208,7 @@ class JobRunner:
 
     # ---- internals --------------------------------------------------------
 
-    def _begin(self, env: str, kind: str, items: dict[str, ItemState]) -> tuple[Job, bool]:
+    def _begin(self, env: str, kind: str, items: dict[str, Row]) -> tuple[Job, bool]:
         with self._lock:
             running = self.active(env)
             if running is not None:
@@ -235,16 +232,13 @@ class JobRunner:
             self._finish(job)
 
     def _finish(self, job: Job) -> None:
-        stranded = (
-            "the run ended before this test reported"
-            if job.kind == RUN
-            else "the job ended before this resource was attempted"
-        )
+        stranded = STRANDED if job.kind == RUN else "the job ended before this resource was attempted"
+        job.finished_at = time.time()
         for item in list(job.items.values()):
             if not item.done:
-                item.state = ERROR
-                item.detail = item.detail or stranded
-        job.finished_at = time.time()
+                _abandon(item, stranded)
+            if isinstance(item, TestResult):
+                item.finished_at = job.finished_at
         if job.kind == RUN:
             # A run the cockpit started is history the next `atf serve` must still know about.
             with contextlib.suppress(OSError):
@@ -257,97 +251,19 @@ class JobRunner:
 
     # ---- test runs --------------------------------------------------------
 
-    def _run(self, job: Job, targets: list[str]) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            plugin_dir = Path(tmp)
-            environment = child_env(self.root, job.env)
-            events = inject_progress_plugin(plugin_dir, environment)
-
-            selected = targets or ([str(self.specs_dir)] if self.specs_dir else [])
-            # Output goes to a file, never a pipe: a pipe fills at ~64KB and the child blocks
-            # forever, because nothing reads it until the drain loop sees the process exit.
-            log = plugin_dir / "output.log"
-            with log.open("w", encoding="utf-8") as sink:
-                process = subprocess.Popen(
-                    [sys.executable, "-m", "pytest", "-q", "-p", PLUGIN_MODULE, *selected],
-                    cwd=self.root,
-                    env=environment,
-                    stdout=sink,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    start_new_session=True,
-                )
-                timed_out = self._drain(job, events, process)
-                job.returncode = process.poll()
-
-            job.output = log.read_text(encoding="utf-8", errors="replace").strip()[-2000:]
-            if timed_out:
-                job.output = f"run timed out after {self.timeout}s\n{job.output}".strip()
-
-    def _drain(self, job: Job, events: Path, process: subprocess.Popen[str]) -> bool:
-        """Fold progress events until the run ends. Returns True if it had to be killed."""
-        offset = 0
-        deadline = time.time() + self.timeout
-        while True:
-            offset = self._consume(job, events, offset)
-            if process.poll() is not None:
-                self._consume(job, events, offset)
-                return False
-            if time.time() > deadline:
-                self._kill(process)
-                self._consume(job, events, offset)
-                return True
-            time.sleep(0.05)
-
-    @staticmethod
-    def _kill(process: subprocess.Popen[str]) -> None:
-        """Kill the whole process group — pytest may have spawned children of its own."""
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError, OSError):
-            process.kill()
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            process.wait(timeout=10)
-
-    def _consume(self, job: Job, events: Path, offset: int) -> int:
-        with events.open("r", encoding="utf-8") as handle:
-            handle.seek(offset)
-            for line in handle:
-                if not line.endswith("\n"):
-                    return handle.tell() - len(line)
-                self._apply(job, line)
-            return handle.tell()
-
-    def _apply(self, job: Job, line: str) -> None:
-        try:
-            event = json.loads(line)
-        except ValueError:
-            return
-
-        kind = event.get("event")
-        if kind == "collected":
-            for nodeid in event.get("nodeids", []):
-                _item(job, str(nodeid))
-            return
-
-        nodeid = event.get("nodeid")
-        if not nodeid:
-            return
-        item = _item(job, str(nodeid))
-        if kind == "start" and not item.done:
-            item.state = RUNNING
-        elif kind == "result":
-            item.state = str(event.get("outcome", ERROR))
-            item.duration = float(event.get("duration", 0.0))
-            item.detail = str(event.get("detail", ""))
-        elif kind == "step":
-            item.steps.append(step_from(event))
-        elif kind == "provisioned":
-            item.provisioned.extend(
-                str(nid) for nid in event.get("ids", []) if str(nid) not in item.provisioned
-            )
-        elif kind == "held":
-            item.held = held_from(event.get("slots"))
+    def _run(self, job: Job, targets: list[str], keyword: str, tags: Sequence[str]) -> None:
+        launched = launch(
+            targets,
+            job.env,
+            self.root,
+            self.specs_dir,
+            self.timeout,
+            keyword,
+            tags,
+            on_event=lambda event: events.apply(event, partial(_test, job)),
+        )
+        job.returncode = launched.returncode
+        job.output = launched.output
 
     # ---- provisioning -----------------------------------------------------
 
@@ -356,11 +272,10 @@ class JobRunner:
 
         def on_start(nid: str) -> None:
             started[nid] = time.time()
-            item = _item(job, nid)
-            item.state = RUNNING
+            _node(job, nid).state = RUNNING
 
         def on_result(result: ProvisionResult) -> None:
-            item = _item(job, result.node_id)
+            item = _node(job, result.node_id)
             item.state = result.state
             item.detail = result.detail
             item.duration = time.time() - started.get(result.node_id, job.started_at)
@@ -389,9 +304,27 @@ def humanize(nodeid: str) -> str:
     return text[:1].upper() + text[1:] + (f" [{params}" if bracket else "")
 
 
-def _item(job: Job, item_id: str) -> ItemState:
-    item = job.items.get(item_id)
-    if item is None:
-        item = ItemState(id=item_id, label=humanize(item_id) if job.kind == RUN else item_id, state=PENDING)
-        job.items[item_id] = item
+def _test(job: Job, nodeid: str) -> TestResult:
+    """Where one test's progress is recorded — made the first time the run mentions it."""
+    item = job.items.get(nodeid)
+    if not isinstance(item, TestResult):
+        item = TestResult(nodeid=nodeid, outcome=PENDING, label=humanize(nodeid))
+        job.items[nodeid] = item
     return item
+
+
+def _node(job: Job, node_id: str) -> Provisioning:
+    item = job.items.get(node_id)
+    if not isinstance(item, Provisioning):
+        item = Provisioning(node_id=node_id)
+        job.items[node_id] = item
+    return item
+
+
+def _abandon(item: Row, why: str) -> None:
+    """Say what became of a row nothing ever reported, in whichever word its kind uses."""
+    if isinstance(item, TestResult):
+        item.outcome = ERROR
+    elif isinstance(item, Provisioning):
+        item.state = ERROR
+    item.detail = item.detail or why

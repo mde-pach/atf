@@ -27,7 +27,9 @@ import json
 
 import pytest
 
-from atf.runner import Held, RunRecord, StepResult
+from atf.context import Slot
+from atf.run.events import StepResult
+from atf.runner import RunRecord
 from atf.runner import TestResult as Result
 from atf.store import RunStore
 
@@ -72,7 +74,7 @@ def test_a_saved_run_comes_back_whole(store):
             StepResult(keyword="Then", text="the plan is right", state="failed", error="AssertionError: boom"),
         ],
         provisioned=["accounts.primary"],
-        held=[Held(name="result", kind="records", fields=["id", "slug"], count=2, resource_type="project")],
+        held=[Slot(name="result", kind="records", fields=["id", "slug"], count=2, resource_type="project")],
     )
     store.save(saved)
 

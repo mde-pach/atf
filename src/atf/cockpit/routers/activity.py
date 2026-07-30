@@ -10,6 +10,8 @@ from typing import Any
 
 from fastapi import APIRouter, Form, HTTPException, Request
 
+from ...jobs import RUN, Job, Row
+from ...runner import TestResult
 from ..view import cockpit as app
 from ..view import current_env, partial, require_confirmation, require_mutable
 
@@ -78,22 +80,25 @@ def _context(env: str) -> dict[str, Any]:
     return {"env": env, "job": job, "items": _items(env, job), "poll_ms": POLL_MS}
 
 
-def _items(env: str, job: Any) -> list[Any]:
-    """Job items with labels a person recognises, resolved here rather than stored on the job."""
+def _items(env: str, job: Job | None) -> list[Row]:
+    """A job's rows, the unfinished ones first, with a run's tests named as a person recognises them.
+
+    A provisioning row is already called what it is — its node id — so only a run needs naming, and
+    only here: a job can be started before discovery has run, so the name is resolved at render.
+    """
     if job is None:
         return []
-    cockpit = app()
-    if job.kind == "provision":
-        labels = {node_id: node_id for node_id in cockpit.state(env).materializer.nodes}
-    else:
-        found = cockpit.discovery(env)
-        by_spec = {spec.id: spec.scenario for spec in found.specs}
-        labels = {
-            test.nodeid: f"{by_spec.get(test.covers, test.name)}{f' [{test.params}]' if test.params else ''}"
-            for test in found.tests
-        }
-
     ordered = sorted(job.items.values(), key=lambda item: (item.done, item.id))
+    if job.kind != RUN:
+        return ordered
+
+    found = app().discovery(env)
+    by_spec = {spec.id: spec.scenario for spec in found.specs}
+    named = {
+        test.nodeid: f"{by_spec.get(test.covers, test.name)}{f' [{test.params}]' if test.params else ''}"
+        for test in found.tests
+    }
     for item in ordered:
-        item.label = labels.get(item.id, item.label or item.id.rsplit("::", 1)[-1])
+        if isinstance(item, TestResult):
+            item.label = named.get(item.nodeid) or item.label or item.nodeid.rsplit("::", 1)[-1]
     return ordered

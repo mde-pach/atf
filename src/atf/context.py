@@ -22,8 +22,7 @@ from typing import Any
 
 from typing_extensions import override
 
-from .adapters import Record
-from .records import as_record, as_records
+from .records import Record, as_record, as_records
 
 # The attribute the provisioning step records ephemeral resources on, read by teardown. Steps that
 # assert on an ephemeral resource read it too: an ephemeral resource is never looked up — that is
@@ -91,6 +90,19 @@ class Slot:
             "node_id": self.node_id,
             "guessed": self.guessed,
         }
+
+    @classmethod
+    def from_dict(cls, entry: dict[str, Any]) -> Slot:
+        """The same description, read back from a run's history or off the progress channel."""
+        return cls(
+            name=str(entry.get("name", "")),
+            kind=str(entry.get("kind", "")),
+            fields=[item for item in entry.get("fields") or [] if isinstance(item, str)],
+            count=int(entry.get("count") or 0),
+            resource_type=str(entry.get("resource_type", "")),
+            node_id=str(entry.get("node_id", "")),
+            guessed=bool(entry.get("guessed")),
+        )
 
 
 class Context:

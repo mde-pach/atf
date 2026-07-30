@@ -284,7 +284,7 @@ def test_job_results_fold_into_run_results(project):
     job = jobs.start_run([], "dev")
     wait_for(lambda: job.done)
 
-    merged = job.merged()
+    merged = job.results()
     assert len(merged) == len(job.items), "a job's results and its items are the same tests"
     assert all(result.outcome in {"passed", "failed", "skipped", "error"} for result in merged.values())
     assert job.summary().counts["passed"] == job.counts["passed"]
@@ -298,7 +298,7 @@ def test_a_job_captures_steps_and_provisioning_too(project):
     item = next(item for item in job.items.values() if "project_belongs" in item.id)
     assert [step.keyword for step in item.steps] == ["Given", "And", "When", "Then"]
     assert item.provisioned == ["accounts.primary", "projects.alpha"]
-    assert job.merged()[item.id].steps == item.steps
+    assert job.results()[item.id].steps == item.steps
 
 
 def test_only_one_active_job_per_env(project):

@@ -7,8 +7,6 @@ Enable it from a consuming project's `conftest.py`:
 
 from __future__ import annotations
 
-import json
-import os
 from collections.abc import Callable
 from typing import Any
 
@@ -22,7 +20,7 @@ from .bootstrap import Boot, bootstrap
 from .context import EPHEMERAL_ATTR, Context, Recogniser
 from .materializer import Materializer
 from .placeholders import PLACEHOLDER_RE, Unresolved
-from .runner import PROGRESS_OUT
+from .run import events
 
 # The read-and-compare steps, and the ones that act on an interface, are plugins of their own so
 # that their step definitions land in their own module namespaces. pytest reads `pytest_plugins`
@@ -82,7 +80,7 @@ def _make_factory(resource_type: str) -> Any:
             record, provisioned = materializer.ensure_closure(resource_type, name, overrides)
             _track_ephemeral(context, materializer, provisioned)
             if provisioned:
-                _emit({"event": "provisioned", "nodeid": request.node.nodeid, "ids": sorted(provisioned)})
+                events.emit({"event": events.PROVISIONED, "nodeid": request.node.nodeid, "ids": sorted(provisioned)})
             return record
 
         return provision
@@ -228,7 +226,7 @@ def _make_fresh(
     # the scenario is the whole of what was asked for.
     _track_ephemeral(context, engine, provisioned)
     _remember(context, [(node_id, record)])
-    _emit({"event": "provisioned", "nodeid": request.node.nodeid, "ids": [node_id]})
+    events.emit({"event": events.PROVISIONED, "nodeid": request.node.nodeid, "ids": [node_id]})
 
     setattr(context, resource_type, record)
     context.note(resource_type, resource_type=resource_type, node_id=node_id)
@@ -350,22 +348,6 @@ def pytest_bdd_before_step_call(request, feature, scenario, step, step_func, ste
             pytest.fail(f"{step.name!r}: {exc}")
 
 
-def _emit(event: dict[str, Any]) -> None:
-    """Tell whoever is watching this run what just happened.
-
-    Only when `ATF_PROGRESS_OUT` names the channel the run was launched with — under a plain
-    `pytest`, nothing is written and nothing changes.
-    """
-    path = os.environ.get(PROGRESS_OUT)
-    if not path:
-        return
-    try:
-        with open(path, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(event) + "\n")
-    except OSError:
-        pass
-
-
 def _track_ephemeral(
     context: Context,
     materializer: Materializer,
@@ -390,9 +372,9 @@ def _teardown(request: pytest.FixtureRequest, materializer: Materializer, contex
     # the answer to "what was there to assert on?", which nothing could say while the context was a
     # namespace that forgot.
     if isinstance(context, Context) and context.slots:
-        _emit(
+        events.emit(
             {
-                "event": "held",
+                "event": events.HELD,
                 "nodeid": request.node.nodeid,
                 "slots": [slot.as_dict() for slot in context.slots.values()],
             }

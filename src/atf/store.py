@@ -15,19 +15,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .runner import (
-    ERROR,
-    FAILED,
-    PASSED,
-    SKIPPED,
-    Held,
-    RunRecord,
-    StepResult,
-    TestResult,
-    held_from,
-    parse_report,
-    step_from,
-)
+from .context import Slot
+from .run.events import DETAIL_CHARS, ERROR, FAILED, PASSED, SKIPPED, StepResult, slots_from
+from .runner import RunRecord, RunSummary, TestResult
 
 DEFAULT_KEEP = 50
 STORE_DIR = ".atf"
@@ -203,18 +193,71 @@ def _result_from(nodeid: str, entry: dict[str, Any]) -> TestResult:
         finished_at=_number(entry.get("finished_at")),
         steps=_steps_from(steps),
         provisioned=[str(item) for item in provisioned] if isinstance(provisioned, list) else [],
-        held=held_from(entry.get("held")),
+        held=slots_from(entry.get("held")),
     )
 
 
 def _steps_from(raw: Any) -> list[StepResult]:
     if not isinstance(raw, list):
         return []
-    return [step_from(item) for item in raw if isinstance(item, dict)]
+    return [StepResult.from_event(item) for item in raw if isinstance(item, dict)]
+
+
+def parse_report(report: Path) -> RunSummary:
+    """Read a pytest `--json-report` file. An absent or unreadable one yields an empty summary."""
+    summary = RunSummary()
+    if not report.exists():
+        return summary
+    try:
+        payload = json.loads(report.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return summary
+    if not isinstance(payload, dict):
+        return summary
+
+    summary.duration = _number(payload.get("duration"))
+    summary.finished_at = _number(payload.get("created"))
+    summary.started_at = max(summary.finished_at - summary.duration, 0.0)
+    for entry in payload.get("tests", []):
+        if not isinstance(entry, dict):
+            continue
+        nodeid = str(entry.get("nodeid", ""))
+        if not nodeid:
+            continue
+        duration = sum(_phase_duration(entry.get(phase)) for phase in ("setup", "call", "teardown"))
+        summary.results[nodeid] = TestResult(
+            nodeid=nodeid,
+            outcome=str(entry.get("outcome", ERROR)),
+            duration=duration,
+            detail=_detail(entry),
+            finished_at=summary.finished_at,
+        )
+    return summary
+
+
+def _detail(entry: dict[str, object]) -> str:
+    for phase in ("call", "setup", "teardown"):
+        stage = entry.get(phase)
+        if not isinstance(stage, dict):
+            continue
+        crash = stage.get("crash")
+        message = stage.get("longrepr") or (crash.get("message") if isinstance(crash, dict) else None)
+        if message:
+            return _tail(str(message), DETAIL_CHARS)
+    return ""
+
+
+def _phase_duration(stage: Any) -> float:
+    return _number(stage.get("duration")) if isinstance(stage, dict) else 0.0
 
 
 def _number(value: Any) -> float:
     return float(value) if isinstance(value, (int, float)) else 0.0
 
 
-__all__ = ["DEFAULT_KEEP", "Held", "ReportError", "RunRecord", "RunStore", "StepResult", "TestResult"]
+__all__ = ["DEFAULT_KEEP", "ReportError", "RunRecord", "RunStore", "Slot", "StepResult", "TestResult"]
+
+
+def _tail(text: str, limit: int) -> str:
+    stripped = text.strip()
+    return stripped[-limit:] if len(stripped) > limit else stripped

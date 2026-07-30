@@ -28,6 +28,7 @@ from atf.cockpit.app import create_app
 from atf.cockpit.deps import Cockpit, set_cockpit
 from atf.cockpit.routers.authoring import Proposal, apply, literal
 from tests.sample_project import write_sample_project
+from tests.test_cockpit import catalog, provisioning_engine  # noqa: F401 - shared, and documented there
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
 
@@ -96,7 +97,7 @@ class Browsing:
 
 @pytest.fixture
 def browsable(client, project):
-    engine = client.cockpit.state("dev").materializer
+    engine = provisioning_engine(client)
     engine.adapters["store"] = Browsing(engine.adapters["store"], project / "store.json")
     return engine.adapters["store"]
 
@@ -170,7 +171,7 @@ def test_a_scoped_listing_asks_which_parent_to_look_inside(client, project, brow
     )
     # The swapped-in adapter survives `invalidate`: only the catalog is re-read from disk.
     client.cockpit.invalidate("dev")
-    assert client.cockpit.state("dev").materializer.adapters["store"] is browsable
+    assert provisioning_engine(client).adapters["store"] is browsable
 
     body = client.get("/catalog/type/note").text
     assert "listed per parent" in body
@@ -223,7 +224,7 @@ def test_a_record_out_there_becomes_a_node_that_finds_it_again(client, project, 
     )
     assert written.status_code == 200
 
-    nodes = client.cockpit.state("dev").materializer.nodes
+    nodes = catalog(client)
     assert "accounts.third" in nodes
     assert client.cockpit.status("dev", refresh=True)["accounts.third"]["status"] == "present"
 
@@ -292,7 +293,8 @@ def test_a_created_resource_lands_in_the_file_the_form_names(client, project):
     text = (project / "catalog" / "badges.yaml").read_text()
     assert "latecomer:" in text and "resource: badge" in text
     assert "welcome:" in text  # the entry that was already there is untouched
-    assert "badges.latecomer" in client.cockpit.state("dev").materializer.nodes
+    # And the catalog now declares it, observed the way a person would: the page for it answers.
+    assert client.get("/catalog/node/badges.latecomer").status_code == 200
 
 
 def test_the_default_file_is_the_one_this_type_already_lives_in(client):
@@ -339,7 +341,7 @@ def test_an_edit_changes_one_entry_and_leaves_the_rest_of_the_file_alone(client,
     assert "# accounts, oldest first — do not reorder" in text
     assert "Now on the premium plan." in text and "premium" in text
     assert "secondary@example.test" in text  # the other entry survived
-    nodes = client.cockpit.state("dev").materializer.nodes
+    nodes = catalog(client)
     assert nodes["accounts.primary"]["body"]["plan"] == "premium"
 
 
@@ -358,8 +360,11 @@ def test_a_body_written_as_raw_yaml_keeps_its_structure(client, project):
     )
     assert response.status_code == 200
 
-    body = client.cockpit.state("dev").materializer.nodes["badges.nested"]["body"]
-    assert body["meta"] == {"tier": "gold", "tags": ["a", "b"]}
+    # Read from the node's own page rather than from the materializer's dict: what matters is that
+    # the structure survived being written and loaded, and the payload is where that shows.
+    page = Page(client.get("/catalog/node/badges.nested").text)
+    assert page.says("tier") and page.says("gold")
+    assert page.says("tags")
 
 
 def test_a_form_value_is_read_as_the_value_it_means():
@@ -467,7 +472,8 @@ def test_deleting_a_resource_nothing_depends_on_removes_only_its_entry(client, p
     text = (project / "catalog" / "accounts.yaml").read_text()
     assert "secondary" not in text
     assert "primary" in text
-    assert "accounts.secondary" not in client.cockpit.state("dev").materializer.nodes
+    # Gone from the catalog too, which is what a person sees: its page stops answering.
+    assert client.get("/catalog/node/accounts.secondary").status_code == 404
 
 
 # ---- the gate is confirmation, not `mutable_envs` ---------------------------

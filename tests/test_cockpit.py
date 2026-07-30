@@ -99,7 +99,7 @@ def test_an_absent_resource_is_not_a_blocker(client):
     Only states running cannot fix — no adapter, an adapter that raised, or a missing reference
     resource — actually stand between a scenario and its first `When`.
     """
-    nodes = client.cockpit.state("dev").materializer.nodes
+    nodes = catalog(client)
     status = client.cockpit.status("dev")
     assert status["accounts.primary"]["status"] == "absent"
 
@@ -109,7 +109,7 @@ def test_an_absent_resource_is_not_a_blocker(client):
 
 
 def test_a_missing_reference_resource_does_block(client):
-    nodes = client.cockpit.state("dev").materializer.nodes
+    nodes = catalog(client)
     # The sample project's conftest seeds the widget, so state it absent to reach the other case.
     status = {**client.cockpit.status("dev"), "widgets.imported": {"status": "absent"}}
 
@@ -121,7 +121,7 @@ def test_a_missing_reference_resource_does_block(client):
 
 
 def test_an_unreachable_system_blocks(client):
-    nodes = client.cockpit.state("dev").materializer.nodes
+    nodes = catalog(client)
     status = {**client.cockpit.status("dev"), "accounts.primary": {"status": "unsupported"}}
 
     ready = readiness(["projects.alpha"], nodes, status)
@@ -129,7 +129,7 @@ def test_an_unreachable_system_blocks(client):
 
 
 def test_readiness_covers_the_whole_dependency_closure(client):
-    nodes = client.cockpit.state("dev").materializer.nodes
+    nodes = catalog(client)
     assert closure_of("projects.alpha", nodes) == ["projects.alpha", "accounts.primary"]
 
 
@@ -396,6 +396,25 @@ def test_a_type_says_nothing_about_settings_that_are_the_default(client):
     assert "never creates it" in reference
 
 
+def catalog(client) -> dict:
+    """This project's catalog, as the cockpit loaded it — an *input* to the tests below, not an
+    observation.
+
+    The functions under test here are pure ones over a dependency graph: readiness, closure,
+    lineage, the diagram's layout. They need a real catalog to be about, and this is the realistic
+    one to hand. Named in one place rather than spelled out at every call site, because reaching
+    through `state(env).materializer` eight times reads like eight tests verifying through
+    internals — and a test that *checks* something this way is a different and worse thing. Those
+    ask the cockpit, and there are none left.
+    """
+    return provisioning_engine(client).nodes
+
+
+def provisioning_engine(client):
+    """The materializer the cockpit is driving, for the handful of tests that need the engine."""
+    return client.cockpit.state("dev").materializer
+
+
 def reading_order(page: Page) -> list[str]:
     """Everything on a page with a name, in the order a reader meets it.
 
@@ -432,7 +451,7 @@ def test_the_inspector_states_the_closure_the_action_will_create(client):
 
 
 def test_the_lineage_is_also_stated_in_words(client):
-    nodes = client.cockpit.state("dev").materializer.nodes
+    nodes = catalog(client)
     sentence = lineage_sentence(nodes["projects.alpha"], nodes)
     assert "alpha needs primary" in sentence and "2 resources" in sentence
     assert "nothing has to exist first" in lineage_sentence(nodes["accounts.primary"], nodes).lower()
@@ -523,13 +542,13 @@ def test_search_with_no_query_and_no_match(client):
 
 
 def test_neighbourhood_walks_both_directions(client):
-    nodes = client.cockpit.state("dev").materializer.nodes
+    nodes = catalog(client)
     assert neighbourhood(nodes, "accounts.primary")["projects.alpha"] == 1
     assert neighbourhood(nodes, "projects.alpha")["accounts.primary"] == -1
 
 
 def test_the_graph_places_columns_by_depth_with_bezier_edges(client):
-    nodes = client.cockpit.state("dev").materializer.nodes
+    nodes = catalog(client)
     graph = build_graph(nodes, "projects.alpha", client.cockpit.status("dev"))
 
     boxes = {box.id: box for box in graph.boxes}
@@ -541,7 +560,7 @@ def test_the_graph_places_columns_by_depth_with_bezier_edges(client):
 
 
 def test_an_isolated_node_is_a_single_box(client):
-    nodes = client.cockpit.state("dev").materializer.nodes
+    nodes = catalog(client)
     graph = build_graph(nodes, "widgets.imported", {})
     assert [box.id for box in graph.boxes] == ["widgets.imported"]
     assert graph.edges == []

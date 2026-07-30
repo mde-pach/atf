@@ -26,6 +26,7 @@ from atf.cockpit.deps import Cockpit, set_cockpit
 from atf.discovery import parse_feature
 from atf.steps import COUNT, FIELD_IS, FIELD_IS_NOT, SHAPE_IS
 from tests.sample_project import write_sample_project
+from tests.test_cockpit import provisioning_engine
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
 
@@ -417,7 +418,7 @@ def test_a_marker_is_offered_rather_than_remembered(client):
 
 def test_the_composed_gherkin_is_read_back_by_the_same_parser(client, project):
     """The preview is not a mock-up: it is the text that will be written, and it parses."""
-    engine = client.cockpit.state("dev").materializer
+    engine = provisioning_engine(client)
     body = client.post("/compose/preview", data=draft()).text
 
     candidate = project / "specs" / "features" / "candidate.feature"
@@ -605,7 +606,7 @@ def test_appending_to_a_feature_leaves_every_other_byte_alone(client, project):
     assert after.startswith(before.rstrip("\n"))
     assert after.endswith('    Then the plan is "standard"\n')
 
-    engine = client.cockpit.state("dev").materializer
+    engine = provisioning_engine(client)
     titles = [spec.scenario for spec in parse_feature(path, engine.nodes, set(engine.types))]
     assert "A standard account reports its plan" in titles  # the file's original scenarios survive
     assert "A brand new behaviour" in titles

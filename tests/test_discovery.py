@@ -29,19 +29,9 @@ import re
 import pytest
 
 from atf.catalog import load_catalog
-from atf.discovery import (
-    PROVISION_PATTERN,
-    Discovery,
-    StepDef,
-    context_use,
-    discover,
-    fill,
-    matching_step,
-    parse_feature,
-    pattern_regex,
-    slug,
-)
+from atf.discovery import Discovery, StepDef, context_use, discover, matching_step, parse_feature, slug
 from atf.discovery import _step_defs as step_defs
+from atf.patterns import PROVISION, fill, pattern_regex
 from atf.steps import EXISTS, GENERIC_STEPS, SLOT_CONTAINS
 from tests.sample_project import write_sample_project
 
@@ -262,14 +252,14 @@ def test_steps_no_scenario_uses_yet_are_still_discovered(found):
 
 def test_the_generic_provisioning_step_is_a_given_and_only_a_given(found):
     """It is offered as the resource picker instead, and twice would teach the wrong model."""
-    provisioning = next(step for step in found.steps if step.pattern == PROVISION_PATTERN)
+    provisioning = next(step for step in found.steps if step.pattern == PROVISION)
     assert provisioning.keyword == "given"
     assert provisioning.params == ["resource_type", "name"]
     assert "provisions accounts.primary" in provisioning.docstring
 
-    assert PROVISION_PATTERN in {step.pattern for step in found.steps_for("given")}
+    assert PROVISION in {step.pattern for step in found.steps_for("given")}
     for keyword in ("when", "then"):
-        assert PROVISION_PATTERN not in {step.pattern for step in found.steps_for(keyword)}
+        assert PROVISION not in {step.pattern for step in found.steps_for(keyword)}
 
 
 def test_the_read_and_compare_steps_are_part_of_every_suites_vocabulary(found):

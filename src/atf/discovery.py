@@ -18,26 +18,18 @@ from pathlib import Path
 from typing import Any
 
 from .catalog import Catalog, Node
+from .patterns import (
+    ANY_KEYWORD,
+    GIVEN,
+    KEYWORDS,
+    PROVISION,
+    PROVISION_RE,
+    literal_length,
+    pattern_regex,
+)
 
-# A resource named in a step. Both articles, because both name the same catalog node: `the todo_list
-# "groceries"` is the shared one and `a fresh todo_list "groceries"` is an instance of it — and a
-# scenario that builds its own copy is still a scenario about that node, which is what the cockpit
-# has to be able to say.
-PROVISION_RE = re.compile(r'\b(?:the|a fresh) ([A-Za-z_][A-Za-z0-9_]*) "([^"]+)"')
 _STEP_KEYWORDS = ("Given", "When", "Then", "And", "But", "*")
 _COLLECT_TIMEOUT = 300
-
-# ATF's own generic provisioning step, defined in `plugin.py`. It is the only step definition the
-# framework itself contributes, and the composer offers it as a resource picker rather than as a
-# line of wording, so it must be recognisable by pattern here.
-PROVISION_PATTERN = 'the {resource_type} "{name}"'
-
-GIVEN, WHEN, THEN = "given", "when", "then"
-ANY_KEYWORD = "*"
-_KEYWORDS = frozenset({GIVEN, WHEN, THEN, ANY_KEYWORD})
-
-# A `{capture}` in a step pattern, with the optional `:format` pytest-bdd's parse parser allows.
-CAPTURE_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::[^{}]*)?\}")
 
 
 @dataclass
@@ -171,7 +163,7 @@ class Discovery:
         offered = [step for step in self.steps if step.keyword in {wanted, ANY_KEYWORD}]
         if wanted == GIVEN:
             return offered
-        return [step for step in offered if step.pattern != PROVISION_PATTERN]
+        return [step for step in offered if step.pattern != PROVISION]
 
     def spec(self, spec_id: str) -> Spec | None:
         return next((spec for spec in self.specs if spec.id == spec_id), None)
@@ -222,25 +214,6 @@ def discover(
 # ---- step patterns ---------------------------------------------------------
 
 
-def fill(pattern: str, values: dict[str, str]) -> str:
-    """A step pattern with its `{captures}` replaced by the values chosen for them.
-
-    A capture with no value keeps its placeholder, so a half-built step reads as a half-built step
-    rather than as a sentence with a hole silently closed up.
-    """
-    return CAPTURE_RE.sub(lambda match: values.get(match.group(1)) or match.group(0), pattern)
-
-
-def pattern_regex(pattern: str) -> str:
-    """A step pattern as a regular expression: literals escaped, every capture a wildcard."""
-    pieces = CAPTURE_RE.split(pattern)
-    out = [re.escape(pieces[0])]
-    for index in range(1, len(pieces), 2):
-        out.append("(.+?)")
-        out.append(re.escape(pieces[index + 1]))
-    return "".join(out)
-
-
 def matching_step(text: str, steps: list[StepDef]) -> StepDef | None:
     """The definition a step's wording resolves to, or None if this suite defines no such step.
 
@@ -266,13 +239,8 @@ def matching_step(text: str, steps: list[StepDef]) -> StepDef | None:
             except re.error:
                 continue
         if fitting:
-            return max(fitting, key=lambda step: _literal_length(step.pattern))
+            return max(fitting, key=lambda step: literal_length(step.pattern))
     return None
-
-
-def _literal_length(pattern: str) -> int:
-    """How much of a pattern is wording rather than a hole for a value."""
-    return len(CAPTURE_RE.sub("", pattern))
 
 
 # ---- what a step touches on the context ------------------------------------
@@ -414,7 +382,7 @@ def _step_defs(observed: dict[str, Any]) -> list[StepDef]:
     for entry in observed.get("steps") or []:
         keyword = str(entry.get("keyword", "")).lower()
         pattern = str(entry.get("pattern", ""))
-        if not pattern or keyword not in _KEYWORDS:
+        if not pattern or keyword not in KEYWORDS:
             continue
         seen.setdefault(
             (keyword, pattern),

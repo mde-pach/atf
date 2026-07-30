@@ -76,7 +76,7 @@ import pytest
 import yaml
 from _pytest.outcomes import Failed
 
-from .discovery import CAPTURE_RE, fill, pattern_regex
+from .patterns import CAPTURE_RE, fill, pattern_regex
 from .placeholders import PLACEHOLDER_RE, Unresolved
 
 # pytest-bdd has no public way to run one step from inside another, and a phrase is exactly that.

@@ -19,6 +19,7 @@ from .adapters import Record, can_show, why_unavailable
 from .bootstrap import Boot, bootstrap
 from .context import EPHEMERAL_ATTR, Context, Recogniser
 from .materializer import Materializer
+from .patterns import PROVISION, PROVISION_FRESH, PROVISION_FRESH_VARIED, PROVISION_VARIED, fill
 from .placeholders import PLACEHOLDER_RE, Unresolved
 from .run import events
 
@@ -101,13 +102,13 @@ for _type in _BOOT.materializer.resource_types():
     globals()[_type] = _make_factory(_type)
 
 
-@given(parsers.parse('the {resource_type} "{name}"'))
+@given(parsers.parse(PROVISION))
 def _provision(context: Context, request: pytest.FixtureRequest, resource_type: str, name: str) -> Record:
     """`Given the account "primary"` -> provisions accounts.primary onto `context.account`."""
     return _make(context, request, resource_type, name, None)
 
 
-@given(parsers.parse('the {resource_type} "{name}" but:'))
+@given(parsers.parse(PROVISION_VARIED))
 def _provision_varied(
     context: Context, request: pytest.FixtureRequest, resource_type: str, name: str, datatable: Any = None
 ) -> Record:
@@ -120,13 +121,13 @@ def _provision_varied(
     return _make(context, request, resource_type, name, _overrides(datatable, resource_type, name))
 
 
-@given(parsers.parse('a fresh {resource_type} "{name}"'))
+@given(parsers.parse(PROVISION_FRESH))
 def _provision_fresh(context: Context, request: pytest.FixtureRequest, resource_type: str, name: str) -> Record:
     """`Given a fresh todo_list "groceries"` -> a groceries list this scenario alone holds."""
     return _make_fresh(context, request, resource_type, name, None)
 
 
-@given(parsers.parse('a fresh {resource_type} "{name}" but:'))
+@given(parsers.parse(PROVISION_FRESH_VARIED))
 def _provision_fresh_varied(
     context: Context, request: pytest.FixtureRequest, resource_type: str, name: str, datatable: Any = None
 ) -> Record:
@@ -140,11 +141,16 @@ def _provision_fresh_varied(
     return _make_fresh(context, request, resource_type, name, _overrides(datatable, resource_type, name))
 
 
+def _said(pattern: str, resource_type: str, name: str) -> str:
+    """A step pattern with this scenario's words in it, for a message telling somebody what to type."""
+    return fill(pattern, {"resource_type": resource_type, "name": name})
+
+
 def _overrides(datatable: Any, resource_type: str, name: str) -> Record:
     if not datatable:
         pytest.fail(
-            f'the {resource_type} "{name}" but: — `but` needs a table of what to write differently, '
-            "below it."
+            f"{_said(PROVISION_VARIED, resource_type, name)} — `but` needs a table of what to write "
+            "differently, below it."
         )
     varied: Record = {}
     for row in datatable:
@@ -208,16 +214,16 @@ def _make_fresh(
         # of, and `provisionable` is where ATF already decides that — including for the cockpit's
         # "create it" button, which is the same question asked by a different surface.
         pytest.fail(
-            f'a fresh {resource_type} "{name}": {why}. '
-            f'Say `Given the {resource_type} "{name}"`, which is how this one is asked for.'
+            f"{_said(PROVISION_FRESH, resource_type, name)}: {why}. "
+            f"Say `Given {_said(PROVISION, resource_type, name)}`, which is how this one is asked for."
         )
 
     fields, cannot = engine.key_of_its_own(engine.node(node_id))
     if not fields and not overrides:
         pytest.fail(
-            f'a fresh {resource_type} "{name}": {cannot}. '
-            f"Give the type a `natural_key` ATF can vary, or say what makes this one different with "
-            f'`Given a fresh {resource_type} "{name}" but:` and a table under it.'
+            f"{_said(PROVISION_FRESH, resource_type, name)}: {cannot}. "
+            "Give the type a `natural_key` ATF can vary, or say what makes this one different with "
+            f"`Given {_said(PROVISION_FRESH_VARIED, resource_type, name)}` and a table under it."
         )
 
     record, provisioned = engine.ensure_fresh(resource_type, name, overrides)

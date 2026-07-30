@@ -39,9 +39,10 @@ from typing import Any
 from .catalog import Catalog, Node
 from .compare import MARKERS
 from .context import RESULT
-from .discovery import GIVEN, THEN, WHEN, Discovery, StepDef, fill
+from .discovery import Discovery, StepDef
 from .engine.status import ResourceStatus, Statuses
 from .materializer import Materializer
+from .patterns import GIVEN, THEN, WHEN, fill
 from .runner import ERROR, PASSED, TestResult
 from .runner import run as run_tests
 from .steps import (

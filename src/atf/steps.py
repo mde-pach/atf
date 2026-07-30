@@ -53,31 +53,16 @@ from .compare import (
 )
 from .context import RESULT, Slot, ephemeral_record
 from .materializer import Materializer, ProvisioningError, ScopeRequired
+from .patterns import PROVISION, PROVISION_FRESH, PROVISION_FRESH_VARIED, PROVISION_VARIED
 from .placeholders import Unresolved
 from .records import as_records
 
 # ---- the vocabulary --------------------------------------------------------
 
-# ATF's own provisioning step, defined in `plugin.py` beside the factories it drives. It is listed
-# here because this table is what the composer reads to know which of a step's parameters it can
+# ATF's own provisioning steps are defined in `plugin.py`, beside the factories they drive, and
+# spelled in [patterns.py](patterns.py) so that both say the same thing. They are listed in the
+# table below because it is what the composer reads to know which of a step's parameters it can
 # offer a real choice for, and that is as true of the Given as of the assertions.
-PROVISION = 'the {resource_type} "{name}"'
-PROVISION_VARIED = 'the {resource_type} "{name}" but:'
-
-# The same resource, isolated. `the todo_list "groceries"` is the shared one — found once, left in
-# place, the same list for every scenario that names it. `a fresh todo_list "groceries"` is an
-# instance of that node this scenario alone holds, torn down with it, and the catalog says nothing
-# about it: isolation is a thing a *scenario* needs, and the type it needs one of is often the same
-# type another scenario is happy to share.
-#
-# Read as English rather than as a lifecycle keyword. "A fresh one" is what a person says about a
-# glass, and the article is what carries the difference from "the" — the one everybody uses.
-PROVISION_FRESH = 'a fresh {resource_type} "{name}"'
-PROVISION_FRESH_VARIED = 'a fresh {resource_type} "{name}" but:'
-# Like the two above, these are defined in `plugin.py` beside the factories they drive, and written
-# out there rather than imported from here: importing this module into the plugin would have pytest
-# import it before it registers it, and warn every consuming suite about assertion rewriting on
-# every run.
 
 EXISTS = 'the {resource_type} "{name}" exists'
 GONE = 'the {resource_type} "{name}" is gone'

@@ -24,6 +24,7 @@ from markupsafe import escape
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import Cockpit, set_cockpit
 from atf.discovery import parse_feature
+from atf.patterns import PROVISION
 from atf.steps import COUNT, FIELD_IS, FIELD_IS_NOT, SHAPE_IS
 from tests.sample_project import write_sample_project
 from tests.test_cockpit import provisioning_engine
@@ -31,7 +32,6 @@ from tests.test_cockpit import provisioning_engine
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
 
 PREVIEW = re.compile(r'<div class="preview">(.*?)</div>', re.DOTALL)
-PROVISION_PATTERN = 'the {resource_type} "{name}"'
 
 
 @pytest.fixture
@@ -187,14 +187,14 @@ def test_a_step_in_a_conftest_is_reachable_from_anywhere(client, project):
 def test_the_generic_provisioning_step_is_never_offered_as_a_when_or_then(client):
     """It is the resource picker. Offering the same step twice teaches the wrong model."""
     steps = client.cockpit.discovery("dev").steps
-    assert PROVISION_PATTERN in [step.pattern for step in steps if step.keyword == "given"]
+    assert PROVISION in [step.pattern for step in steps if step.keyword == "given"]
     for keyword in ("when", "then"):
-        assert PROVISION_PATTERN not in [
+        assert PROVISION not in [
             step.pattern for step in client.cockpit.discovery("dev").steps_for(keyword)
         ]
     # Checked as a whole option value, not as a substring: `the result contains the {resource_type}
     # "{name}"` legitimately ends with the provisioning wording and is a different step.
-    assert f'data-value="{esc(PROVISION_PATTERN)}"' not in client.get("/compose").text
+    assert f'data-value="{esc(PROVISION)}"' not in client.get("/compose").text
 
 
 def test_a_parameterised_step_of_this_suites_own_still_gets_an_input_per_capture(client):

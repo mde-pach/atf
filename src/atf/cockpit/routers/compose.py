@@ -31,17 +31,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ...catalog import Catalog
 from ...compare import MARKERS
-from ...discovery import (
-    CAPTURE_RE,
-    GIVEN,
-    PROVISION_RE,
-    Discovery,
-    Spec,
-    StepDef,
-    matching_step,
-    parse_feature,
-    slug,
-)
+from ...discovery import Discovery, Spec, StepDef, matching_step, parse_feature, slug
 from ...introspect import (
     KEYWORDS,
     NODE_SUBJECT,
@@ -76,6 +66,7 @@ from ...introspect import features as _features
 from ...introspect import features_dir as _features_dir
 from ...introspect import inside as _inside_of
 from ...introspect import offered_steps as _offered_steps
+from ...patterns import CAPTURE_RE, GIVEN, PROVISION_RE
 from ...steps import ACTION, FIELD, NAME, TYPE, VALUE, comparison, generic
 from ..view import cockpit as app
 from ..view import current_env, page, partial, require_confirmation, require_mutable

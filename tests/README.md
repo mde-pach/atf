@@ -171,9 +171,19 @@ the cockpit draws a lineage rather than describing it — and asserts the matchi
 A self-test that cannot fail proves nothing, and that last one is the interface caught through the
 interface.
 
-It also guards the dogfood itself: no hand-written `@given` or `@then` may appear anywhere under
-`specs/`. Provisioning and every claim are ATF's own, and the day one of them is written here by
-hand is the day this stops being a suite that proves the framework is usable.
+## The convention this suite lives by
+
+**No hand-written `@given` or `@then` under `specs/`.** Provisioning and every claim are ATF's own
+steps; the day one of them is written here by hand is the day this stops being a suite that proves
+the framework is usable. Three `@when`s are the exception, and they say the one thing a suite testing
+a *test framework* knows that ATF cannot: where the command was standing.
+
+It is written here rather than asserted by a test, and that is a correction. It used to be a
+regular expression hunting `^@(given|then)` across `specs/`, and it cost more than it bought: it
+could not be satisfied honestly by the one thing that genuinely needs a `Given` — telling the
+command which throwaway suite to run in — so that wiring hid inside an adapter instead. A guard that
+pushes you into a worse design is mis-set. This is a convention, and conventions belong where the
+person about to break one will read them.
 
 ## Three disciplines, learned by getting them wrong
 

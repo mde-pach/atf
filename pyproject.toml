@@ -58,7 +58,22 @@ packages = ["src/atf"]
 target-version = "py311"
 line-length = 120
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+# `S105`-`S107` are flake8-bandit's hardcoded-credential rules and `PGH` is pygrep-hooks. They are
+# here because tests used to do their job by reading ATF's own source with a regular expression: one
+# hunted `password = "…"`, another hunted `type: ignore`. A linter enforces a convention; a test
+# suite proves behaviour, and those two were wearing each other's clothes.
+#
+# Only the credential rules, not all of `S`. The rest of that family objects to `subprocess.run`
+# without a shell check and to `markupsafe.Markup` — which are, respectively, what ATF does for a
+# living and how its one template escapes. Enabling them would buy six suppressions, and a
+# suppression is the thing this convention exists to keep out.
+select = ["E", "F", "I", "UP", "B", "SIM", "S105", "S106", "S107", "PGH"]
+
+[tool.ruff.lint.per-file-ignores]
+# A fixture that writes a password is writing a fixture. These rules are aimed at the framework.
+"tests/**" = ["S105", "S106", "S107"]
+# The templates `atf init` writes are strings here and source code in somebody else's project.
+"src/atf/scaffold.py" = ["S105", "S106", "S107"]
 
 [tool.ty.src]
 include = ["src/atf"]

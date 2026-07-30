@@ -149,17 +149,19 @@ uv run atf serve                  # …then ATF, browsing the suite that tests i
   while it is in flight, a request refused. Every one of those modules opens with a docstring
   saying which it is and why it did not become a scenario; that split is the rule, not a habit.
 
-### Constraints the tests enforce
+### Conventions
 
-Four, and each has an acceptance test because each has caught a real mistake:
+Four, and they are conventions rather than tests. Three of them used to be tests that read ATF's own
+source with a regular expression, which is a linter's job wearing a test's costume — a rule that can
+only be broken by somebody editing the repository cannot regress on its own.
 
-- **No `type: ignore` and no `noqa: F...` anywhere under `src/atf/`.** A suppression is a claim
-  nobody checks.
+- **No hardcoded credentials, and no blanket `type: ignore`.** Enforced by ruff (`S105`–`S107`,
+  `PGH`), named in `pyproject.toml`.
 - **No literal `http://` or `https://` under `src/atf/` except `scaffold.py`.** A host belongs in a
-  manifest, behind a `*_env` pointer.
+  manifest, behind a `*_env` pointer. Review's job.
 - **No Node, no build step, one semantic CSS file.** The cockpit is server-rendered with htmx
-  vendored into `src/atf/cockpit/static/`. A build step is a thing that breaks between you and a
-  green suite.
+  vendored into `src/atf/cockpit/static/` — which *is* tested, because a vendored third-party file
+  shipped to users can be swapped and no linter reads it.
 - **The scaffold must run green.** CI scaffolds a suite with `atf init` and runs it with nothing
   else set up, because that is what a newcomer is handed.
 

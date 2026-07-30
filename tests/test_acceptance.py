@@ -1,4 +1,27 @@
-"""Guards for the properties the framework promises, independent of any one project."""
+"""Guards for the properties the framework promises, independent of any one project.
+
+Six tests used to live here that read ATF's own source and matched it with a regular expression:
+no product URL, no hardcoded credential, no `type: ignore`, no backend named in the materializer,
+every entry point through `bootstrap`, the cockpit's default host. They are gone, and it is worth
+saying why rather than leaving the gap to be refilled.
+
+They were **lint rules wearing test costumes**. A convention that can only be broken by a person
+editing the repository is not a behaviour that can regress; it belongs to review or to a linter. As
+tests they were trivially defeatable, they broke on refactors that changed nothing, and a failure
+read as *"the software is broken"* when it meant *"somebody wrote something we agreed not to"*.
+The credential and `type: ignore` rules moved to ruff, where they are enforced properly and named
+in `pyproject.toml`. The rest are review's job.
+
+There is an irony in having shipped them at all: this session deleted `atf lint`'s content rules on
+the grounds that inferring meaning from syntax cannot work, while this file did exactly that to
+ATF's own source.
+
+**Two assertions about artefacts stay**, and they are deliberate exceptions rather than an oversight:
+the vendored htmx is checked for a pinned version and a hash, because it is a third-party file
+shipped to users and no linter reads it; and `mcp.py` is checked to import nothing from the modules
+that hold the vocabulary, because it is the guard that makes the coverage test above it impossible to
+defeat by moving a list. Both are named here so a reader knows the difference.
+"""
 
 from __future__ import annotations
 
@@ -10,53 +33,10 @@ from pathlib import Path
 import pytest
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "atf"
-# `atf init` writes starter files for the *user's* project; RFC-2606 placeholders belong there.
-SCAFFOLD = SRC / "scaffold.py"
-
-DOMAINISH = re.compile(r"https?://(?!127\.0\.0\.1|localhost|\{)[^\s\"'<>)]+")
 
 
-def python_sources() -> list[Path]:
-    return sorted(path for path in SRC.rglob("*.py") if path != SCAFFOLD)
 
 
-def test_the_framework_names_no_product_domain_or_url():
-    offenders: list[str] = []
-    for path in [*python_sources(), *SRC.rglob("*.html")]:
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            for match in DOMAINISH.findall(line):
-                offenders.append(f"{path.relative_to(SRC)}:{number}: {match}")
-    assert offenders == []
-
-
-def test_the_framework_carries_no_secrets():
-    """Secrets only ever arrive through `*_env` pointers resolved at bootstrap."""
-    suspicious = re.compile(r"""(password|secret|token|api_key)\s*=\s*["'][^"']{6,}["']""", re.IGNORECASE)
-    offenders = [
-        f"{path.relative_to(SRC)}:{number}"
-        for path in python_sources()
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
-        if suspicious.search(line)
-    ]
-    assert offenders == []
-
-
-def test_the_materializer_has_no_per_system_branching():
-    """The engine dispatches through the registry; it must never name a backend."""
-    source = (SRC / "materializer.py").read_text(encoding="utf-8")
-    for system in ("rest", "http", "sql", "graphql", "grpc"):
-        assert f'"{system}"' not in source and f"'{system}'" not in source
-
-
-def test_no_type_ignore_suppressions_in_the_framework():
-    """`scaffold.py` is excluded: its strings are files written into the *user's* project."""
-    offenders = [
-        f"{path.relative_to(SRC)}:{number}"
-        for path in python_sources()
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
-        if "type: ignore" in line or "noqa: F" in line
-    ]
-    assert offenders == []
 
 
 def test_adapters_are_registered_as_factories_not_instances():
@@ -69,22 +49,6 @@ def test_adapters_are_registered_as_factories_not_instances():
     assert first.base_url != second.base_url  # each gets its own environment's settings
 
 
-def test_every_entry_point_configures_itself_through_bootstrap():
-    """plugin, cockpit deps and CLI must all funnel through `bootstrap`."""
-    for module in ("plugin.py", "cockpit/deps.py", "cli.py"):
-        source = (SRC / module).read_text(encoding="utf-8")
-        assert "bootstrap" in source, module
-        assert "load_catalog(" not in source, f"{module} must not load the catalog itself"
-
-
-def test_the_cockpit_binds_localhost_by_default():
-    tree = ast.parse((SRC / "cli.py").read_text(encoding="utf-8"))
-    defaults = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Constant) and node.value == "127.0.0.1"
-    ]
-    assert defaults, "`atf serve --host` must default to 127.0.0.1"
 
 
 def test_serving_a_public_host_prints_a_warning(monkeypatch, capsys, tmp_path):

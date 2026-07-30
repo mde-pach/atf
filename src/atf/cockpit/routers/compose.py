@@ -101,20 +101,8 @@ class Draft:
 
 
 def surface(env: str) -> Surface:
-    """This environment as everything that decides what can be said about it.
-
-    Assembled per request, each part of it already cached one layer down: the session hands back the
-    same materializer, discovery and status until something invalidates them.
-    """
-    cockpit = app()
-    return Surface(
-        env=env,
-        root=cockpit.manifest.root,
-        specs_dir=cockpit.manifest.specs_dir,
-        engine=cockpit.state(env).materializer,
-        found=cockpit.discovery.of(env),
-        status=cockpit.status.of(env),
-    )
+    """This environment as everything that decides what can be said about it."""
+    return Surface.of(app(), env)
 
 
 # ---- routes ----------------------------------------------------------------

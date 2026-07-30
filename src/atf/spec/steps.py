@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pytest_bdd import parsers, then, when
 
-from ..adapters import Record, can_browse
-from ..adapters.command import CommandAdapter
+from ..adapters import Record, Runnable, can_browse, can_run
 from ..engine.materializer import Materializer, ProvisioningError, ScopeRequired
 from ..model.catalog import Node
 from ..model.compare import (
@@ -25,8 +24,9 @@ from ..model.compare import (
     written_matches,
 )
 from ..model.placeholders import Unresolved
-from ..model.records import as_records
+from ..model.records import as_records, shared_fields
 from ..model.text import plural
+from .adapters import sole
 from .context import RESULT, Slot, ephemeral_record
 from .patterns import PROVISION, PROVISION_FRESH, PROVISION_FRESH_VARIED, PROVISION_VARIED
 
@@ -404,16 +404,15 @@ def _(request: pytest.FixtureRequest, context: Any, action: str, resource_type: 
 @when(parsers.parse(RUN))
 def _(request: pytest.FixtureRequest, context: Any, command: str) -> None:
     engine: Materializer = request.getfixturevalue("materializer")
-    runners = [one for one in engine.adapters.values() if isinstance(one, CommandAdapter)]
-    if not runners:
-        pytest.fail(
-            "this step runs a command, and this environment configures no `command` system. "
-            "Add one under `environments.<env>.adapters`."
-        )
-    if len(runners) > 1:
-        pytest.fail("more than one `command` system is configured here, so ATF cannot tell which to use.")
+    runner = sole(
+        engine,
+        can_run,
+        "this step runs a command, and this environment configures no system that can run one. "
+        "Add `command` under `environments.<env>.adapters`.",
+        "more than one system here can run a command, so ATF cannot tell which to use.",
+    )
     try:
-        context.result = runners[0].run(command)
+        context.result = cast("Runnable", runner).run(command)
     except ValueError as exc:
         pytest.fail(str(exc))
 
@@ -814,19 +813,12 @@ def _absent(engine: Materializer, node: Node) -> str:
 def _looked_for(engine: Materializer, node: Node, records: list[Record]) -> str:
     criteria = node.key_criteria(engine.resolve) or {}
     spelled = ", ".join(f"{key}={value!r}" for key, value in sorted(criteria.items())) or "its identity"
-    carried = _shared(records)
+    carried = ", ".join(shared_fields(records)) or "no fields in common"
     return (
         f"Looked for {spelled} among {len(records)} record"
         f"{'' if len(records) == 1 else 's'} carrying {carried}."
     )
 
-
-def _shared(records: list[Record]) -> str:
-    common: set[str] | None = None
-    for record in records:
-        keys = {str(key) for key in record}
-        common = keys if common is None else common & keys
-    return ", ".join(sorted(common or set())) or "no fields in common"
 
 
 class _Nothing:

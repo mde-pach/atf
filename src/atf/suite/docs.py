@@ -242,23 +242,11 @@ def _failure(found: list[TestResult]) -> list[str]:
     lines = ["> **This is not true right now.**"]
     if step is not None:
         lines.append(f"> It got as far as `{step.keyword} {step.text}`.")
-    reason = _said(failed.detail)
+    reason = verdict.said(failed.detail)
     if reason:
         lines += [">", f"> `{reason}`"]
     return lines
 
-
-def _said(detail: str) -> str:
-    """The line of a failure a reader wants: what it said, not the file it stopped in."""
-    lines = [line for line in detail.splitlines() if line.strip()]
-    if not lines:
-        return ""
-    said = [line for line in lines if line.lstrip().startswith("E ")]
-    if not said:
-        return lines[-1].strip()
-    # pytest marks the lines a failure *said* with a leading `E`. One character, dropped by index:
-    # `lstrip` would also eat the E of a message starting "Error".
-    return said[0].strip()[1:].strip()
 
 
 def _index_page(

@@ -8,7 +8,7 @@ from typing import Any
 
 from typing_extensions import override
 
-from ..model.records import Record, as_record, as_records
+from ..model.records import Record, as_record, as_records, shared_fields
 
 # The attribute the provisioning step records ephemeral resources on, read by teardown. Steps that
 # assert on an ephemeral resource read it too: an ephemeral resource is never looked up — that is
@@ -143,6 +143,18 @@ class Context:
         """A description of each of those, in the order they were first set."""
         return dict(self._slots)
 
+    def now_showing(self, adapter: Any) -> None:
+        """Remember the system this scenario is looking at, for the steps that claim about a page.
+
+        ATF's own bookkeeping: not a slot, so no claim can be made about it.
+        """
+        object.__setattr__(self, "_showing", adapter)
+
+    @property
+    def showing(self) -> Any:
+        """That system, or `None` where no step has opened a page."""
+        return getattr(self, "_showing", None)
+
     def note(self, name: str, resource_type: str = "", node_id: str = "") -> None:
         """Say what a slot is, when the setter knows more than its value shows.
 
@@ -187,7 +199,7 @@ def describe(name: str, value: Any, recognise: Recogniser | None = None) -> Slot
             return Slot(
                 name=name,
                 kind=RECORDS,
-                fields=_shared_fields(many),
+                fields=shared_fields(many),
                 count=len(many),
                 resource_type=looks_like,
                 guessed=bool(looks_like),
@@ -204,14 +216,6 @@ def describe(name: str, value: Any, recognise: Recogniser | None = None) -> Slot
         return Slot(name=name, kind=OTHER, count=len(value))
     return Slot(name=name, kind=OTHER)
 
-
-def _shared_fields(records: list[Any]) -> list[str]:
-    """The fields every record in the list carries — the ones an assertion can count on."""
-    common: set[str] | None = None
-    for record in records:
-        keys = {str(key) for key in record}
-        common = keys if common is None else common & keys
-    return sorted(common or set())
 
 
 def _guess(recognise: Recogniser | None, record: Record) -> str:

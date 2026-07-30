@@ -88,6 +88,11 @@ def require_confirmation(token: str | None) -> None:
 # ---- rendering -------------------------------------------------------------
 
 
+def is_htmx(request: Request) -> bool:
+    """Whether htmx asked for this, and so whether a fragment answers it."""
+    return request.headers.get("HX-Request") == "true"
+
+
 def page(request: Request, template: str, **context: Any) -> Any:
     app = cockpit()
     env = context.pop("env", None) or current_env(request)
@@ -102,7 +107,7 @@ def page(request: Request, template: str, **context: Any) -> Any:
         "display": app.manifest.display,
         "activity": app.jobs.active(env),
         "checked_at": _checked_at(app.status.age(env)),
-        "partial": request.headers.get("HX-Request") == "true",
+        "partial": is_htmx(request),
     }
     _rendering_env.set(env)
     response = templates.TemplateResponse(request, template, {**base, **context})

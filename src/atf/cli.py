@@ -19,6 +19,7 @@ from .run.report import as_ctrf
 from .run.runner import ERROR, FAILED, RunRecord, failed_ids
 from .run.runner import run as run_tests
 from .run.store import ReportError, RunStore
+from .run.verdict import said
 from .suite import openapi
 from .suite.lint import check as lint_specs
 from .suite.lint import report as lint_report
@@ -223,21 +224,6 @@ def cmd_seed(args: argparse.Namespace) -> int:
     return 1 if outcome.failures else 0
 
 
-def _reason(detail: str) -> str:
-    """The line of a failure worth showing: what it said, not where it stopped.
-
-    A pytest report ends with `file.py:164: Failed` — the location, which is the least useful line
-    in it and the one the nodeid above has already covered. What the failure *said* is on the lines
-    pytest marks with `E`, and the first of those is what a person reads. Printing the last line
-    instead meant a run could say a scenario failed and never say why, which is most of what a dev
-    loop is for.
-    """
-    lines = [line for line in detail.splitlines() if line.strip()]
-    if not lines:
-        return ""
-    said = [line for line in lines if line.lstrip().startswith("E ")]
-    return (said[0] if said else lines[-1]).strip()
-
 
 def _tally(results: list[ProvisionResult]) -> str:
     """A failure counts as failed whatever it was attempting."""
@@ -321,7 +307,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         if step is not None:
             print(f"           at: {step.keyword} {step.text}".rstrip())
         if result.detail:
-            print(f"           {_reason(result.detail)}")
+            print(f"           {said(result.detail)}")
 
     counts = summary.counts
     print(
@@ -445,8 +431,8 @@ def cmd_import_openapi(args: argparse.Namespace) -> int:
     names = max(len(one.name) for one in proposal.added)
     paths = max(len(one.path) for one in proposal.added)
     for one in proposal.added:
-        said = f"natural_key: {openapi.key_said(one.guess.key)}" if one.guess else "no natural_key yet"
-        print(f"  {one.name:<{names}}  {one.path:<{paths}}  {said}")
+        key = f"natural_key: {openapi.key_said(one.guess.key)}" if one.guess else "no natural_key yet"
+        print(f"  {one.name:<{names}}  {one.path:<{paths}}  {key}")
 
     print("\n" + proposal.as_diff(label).rstrip("\n"))
 

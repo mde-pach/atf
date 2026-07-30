@@ -7,6 +7,7 @@ from collections.abc import Callable, MutableMapping
 from typing import Any
 
 from . import providers
+from .text import first_line
 
 PLACEHOLDER_RE = re.compile(r"\$\{([^}]+)\}")
 _REF_RE = re.compile(r"^([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.id$")
@@ -96,13 +97,9 @@ def _resolve_expression(expression: str, lookup: Lookup, memo: Memo | None) -> A
     except providers.UnknownProvider as exc:
         raise Unresolved(expression, str(exc)) from None
     except Exception as exc:
-        raise Unresolved(expression, _short(exc)) from None
+        raise Unresolved(expression, first_line(exc)) from None
 
     if memo is not None:
         memo[expression] = made
     return made
 
-
-def _short(exc: BaseException) -> str:
-    text = str(exc).strip() or exc.__class__.__name__
-    return text.splitlines()[0]

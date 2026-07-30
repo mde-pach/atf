@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from pytest_bdd import parsers, then, when
 
-from ..adapters import Control, can_show
-from ..adapters.browser import BrowserAdapter
+from ..adapters import Control, Drivable, can_drive, can_show
 from ..engine.materializer import Materializer
+from .adapters import sole
 
 # What a scenario may say about a control. Role first: the role is what the thing *is*, and the
 # name is which one — the same order a screen reader announces them in.
@@ -157,23 +157,19 @@ def _shown(request: pytest.FixtureRequest) -> Any:
     is about — the resource it named already did.
     """
     context = request.getfixturevalue("context")
-    if (opened := getattr(context, "_showing", None)) is not None:
+    if (opened := getattr(context, "showing", None)) is not None:
         return opened
 
     engine: Materializer = request.getfixturevalue("materializer")
-    lookable = [one for one in engine.adapters.values() if can_show(one)]
-    if not lookable:
-        pytest.fail(
-            "this step reads an interface, and this environment configures no system that can be "
-            "looked at. Add `html` — or `browser`, for the claims that need a page to have run — "
-            "under `environments.<env>.adapters`."
-        )
-    if len(lookable) > 1:
-        pytest.fail(
-            "this environment configures more than one system that can be looked at, and no step "
-            'above this one has opened a page. Say which with `Given the <page type> "<name>"`.'
-        )
-    return lookable[0]
+    return sole(
+        engine,
+        can_show,
+        "this step reads an interface, and this environment configures no system that can be "
+        "looked at. Add `html` — or `browser`, for the claims that need a page to have run — "
+        "under `environments.<env>.adapters`.",
+        "this environment configures more than one system that can be looked at, and no step "
+        'above this one has opened a page. Say which with `Given the <page type> "<name>"`.',
+    )
 
 
 def _acting(request: pytest.FixtureRequest, role: str, name: str, doing: str) -> Any:
@@ -191,16 +187,15 @@ def _acting(request: pytest.FixtureRequest, role: str, name: str, doing: str) ->
 def _live(request: pytest.FixtureRequest, doing: str) -> Any:
     """The running page, for the steps that act on one — which is the half a browser is needed for."""
     engine: Materializer = request.getfixturevalue("materializer")
-    browsers = [one for one in engine.adapters.values() if isinstance(one, BrowserAdapter)]
-    if not browsers:
-        pytest.fail(
-            f"this step has to {doing} a control, which needs a page that is running — reading the "
-            "HTML a server sent can never do it. Add a `browser` system under "
-            "`environments.<env>.adapters`."
-        )
-    if len(browsers) > 1:
-        pytest.fail("more than one browser is configured here, so ATF cannot tell which page is meant.")
+    driver = sole(
+        engine,
+        can_drive,
+        f"this step has to {doing} a control, which needs a page that is running — reading the "
+        "HTML a server sent can never do it. Add a `browser` system under "
+        "`environments.<env>.adapters`.",
+        "more than one system here drives a page, so ATF cannot tell which one is meant.",
+    )
     try:
-        return browsers[0].showing()
+        return cast("Drivable", driver).showing()
     except ValueError as exc:
         pytest.fail(str(exc))

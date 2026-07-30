@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..model.catalog import Node
+from ..model.text import first_line
 from . import Context, NoopDelete, Record
 from .control import Control
 
@@ -46,7 +47,7 @@ class BrowserAdapter(NoopDelete):
             with sync_playwright() as play:
                 play.chromium.launch(headless=self.headless).close()
         except Exception as exc:  # noqa: BLE001 - "can we?" is never answered with an exception
-            return f"no browser to drive — `uv run playwright install chromium` ({_short(exc)})"
+            return f"no browser to drive — `uv run playwright install chromium` ({first_line(exc)})"
         return ""
 
     # ---- SPI ----------------------------------------------------------------
@@ -151,8 +152,4 @@ class BrowserAdapter(NoopDelete):
     def looking_at(self) -> str:
         return self._page.url if self._page is not None else ""
 
-
-def _short(exc: BaseException) -> str:
-    text = str(exc).strip() or exc.__class__.__name__
-    return text.splitlines()[0][:120]
 

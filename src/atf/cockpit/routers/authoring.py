@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from ...adapters import registered_systems
 from ...engine.materializer import Materializer, ScopeRequired
 from ...model.catalog import TYPES_FILE, Catalog, CatalogError, Node, load_catalog
+from ...model.text import first_line
 from ...suite.authoring import AuthoringError, Derived, check_name, derive, diff, insert, remove, replace
 from ..view import cockpit as app
 from ..view import current_env, page, partial, require_confirmation, type_views
@@ -215,7 +216,7 @@ def body_of(draft: Draft) -> dict[str, Any]:
         try:
             parsed = yaml.safe_load(text)
         except yaml.YAMLError as exc:
-            raise AuthoringError(f"the body is not valid YAML: {str(exc).splitlines()[0]}") from exc
+            raise AuthoringError(f"the body is not valid YAML: {first_line(exc)}") from exc
         if parsed is None:
             return {}
         if not isinstance(parsed, dict):

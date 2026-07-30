@@ -18,6 +18,7 @@ from ..model.text import plural
 from ..model.typespec import DATA, REFERENCE
 from ..run.runner import ERROR, PASSED, TestResult
 from ..run.runner import run as run_tests
+from ..session import Session
 from ..spec.context import RESULT
 from ..spec.patterns import GIVEN, THEN, WHEN, fill
 from ..spec.steps import (
@@ -85,6 +86,22 @@ class Surface:
     engine: Materializer
     found: Discovery
     status: Statuses = field(default_factory=Statuses)
+
+    @classmethod
+    def of(cls, session: Session, env: str) -> Surface:
+        """One environment of a live session, as everything that decides what can be said about it.
+
+        Assembled per question, each part of it already cached one layer down: a session hands back
+        the same materializer, discovery and status until something invalidates them.
+        """
+        return cls(
+            env=env,
+            root=session.manifest.root,
+            specs_dir=session.manifest.specs_dir,
+            engine=session.state(env).materializer,
+            found=session.discovery.of(env),
+            status=session.status.of(env),
+        )
 
     @property
     def catalog(self) -> Catalog:

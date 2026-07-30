@@ -196,14 +196,7 @@ class Tools:
         return environment
 
     def _surface(self, env: str) -> Surface:
-        return Surface(
-            env=env,
-            root=self.session.manifest.root,
-            specs_dir=self.session.manifest.specs_dir,
-            engine=self.session.state(env).materializer,
-            found=self.session.discovery.of(env),
-            status=self.session.status.of(env),
-        )
+        return Surface.of(self.session, env)
 
 
 def _as_answer(drafted: Composition) -> dict[str, Any]:

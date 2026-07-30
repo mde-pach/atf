@@ -7,7 +7,18 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from ...run.jobs import RUN
-from ..view import BLOCKED, FAILING, NEVER_RUN, PASSING, ScenarioView, current_env, page, partial, scenario_views
+from ..view import (
+    BLOCKED,
+    FAILING,
+    NEVER_RUN,
+    PASSING,
+    ScenarioView,
+    current_env,
+    is_htmx,
+    page,
+    partial,
+    scenario_views,
+)
 from ..view import cockpit as app
 
 router = APIRouter(prefix="/scenarios")
@@ -32,7 +43,7 @@ def index(request: Request):
 def detail(request: Request, spec_id: str):
     env = current_env(request)
     context = _context(env, spec_id)
-    if request.headers.get("HX-Request") == "true":
+    if is_htmx(request):
         return partial(request, "partials/scenario_detail.html", **context)
     return page(request, "scenarios.html", **context)
 

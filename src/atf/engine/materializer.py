@@ -20,6 +20,7 @@ from ..adapters import (
 from ..model.catalog import Catalog, Node, load_catalog
 from ..model.placeholders import Unresolved, references
 from ..model.placeholders import resolve as resolve_placeholders
+from ..model.text import first_line
 from ..model.typespec import BUILT_IN_ACTIONS, DATA, EPHEMERAL, REFERENCE, TypeSpec
 from .status import (
     ABSENT,
@@ -266,7 +267,7 @@ class Materializer:
         try:
             record = self.find_existing(node)
         except Exception as exc:
-            return ResourceStatus(ERROR, _short(exc))
+            return ResourceStatus(ERROR, first_line(exc))
         if record is None:
             return ResourceStatus(ABSENT)
         identity = record.get(node.id_field)
@@ -377,7 +378,7 @@ class Materializer:
         try:
             record, action = self._provision(node.varied_with(overrides), adapter, fresh)
         except Exception as exc:  # noqa: BLE001 - reported, not raised: callers read `results`
-            return ProvisionResult(nid, ERROR, ok=False, detail=_short(exc))
+            return ProvisionResult(nid, ERROR, ok=False, detail=first_line(exc))
 
         if record is None:
             # An absent observation is an answer, not a failure: `data` says "look at this", and
@@ -570,7 +571,7 @@ class Materializer:
             try:
                 adapter.delete(node, record, self)
             except Exception as exc:
-                log.warning("teardown of %s failed: %s", nid, _short(exc))
+                log.warning("teardown of %s failed: %s", nid, first_line(exc))
 
 
 def _is_own_text(value: Any) -> bool:
@@ -582,8 +583,3 @@ def _notify(callback: Callable[[_T], None] | None, value: _T) -> None:
     if callback is not None:
         callback(value)
 
-
-def _short(exc: BaseException) -> str:
-    text = str(exc).strip() or exc.__class__.__name__
-    first = text.splitlines()[0]
-    return first if len(first) <= 200 else first[:197] + "..."

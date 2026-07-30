@@ -17,12 +17,13 @@ from ...engine.materializer import Materializer, ScopeRequired
 from ...engine.status import Statuses
 from ...model.catalog import TYPES_FILE, Catalog, Node
 from ...model.placeholders import Unresolved, references
-from ...model.text import plural
+from ...model.text import first_line, plural
 from ..view import (
     TypeView,
     build_graph,
     closure_of,
     current_env,
+    is_htmx,
     lineage_sentence,
     page,
     partial,
@@ -68,7 +69,7 @@ def type_page(request: Request, type_name: str) -> Any:
     if type_name not in app().state(env).materializer.types:
         raise HTTPException(status_code=404, detail=f"no resource type {type_name!r} is declared in this catalog")
     context = _context(request, env, focus="", type_name=type_name)
-    if _hx(request):
+    if is_htmx(request):
         return partial(request, "partials/type_detail.html", **context)
     return page(request, "catalog.html", **context)
 
@@ -79,7 +80,7 @@ def node_page(request: Request, node_id: str) -> Any:
     if node_id not in app().state(env).materializer.nodes:
         raise HTTPException(status_code=404, detail=f"no resource {node_id!r} is declared in this catalog")
     context = _context(request, env, focus=node_id)
-    if _hx(request):
+    if is_htmx(request):
         return partial(request, "partials/catalog_focus.html", **context)
     return page(request, "catalog.html", **context)
 
@@ -307,7 +308,7 @@ def environment_records(env: str, view: TypeView | None, scope_id: str = "") -> 
         out.needs = list(exc.fields)
         return out
     except Exception as exc:  # noqa: BLE001 - reported beside the table; browsing must not 500 a page
-        out.error = _first_line(exc)
+        out.error = first_line(exc)
         return out
 
     out.columns = _columns(records, view.id_field, view.spec.natural_keys)
@@ -477,10 +478,6 @@ def _cell(value: Any) -> str:
     return text if len(text) <= CELL_CHARS else text[: CELL_CHARS - 1] + "…"
 
 
-def _first_line(exc: Exception) -> str:
-    text = str(exc).strip() or exc.__class__.__name__
-    return text.splitlines()[0]
-
 
 def _node_label(node: Node, closure: list[str]) -> str:
     """Provisioning always provisions the closure, so the button says so before you press it."""
@@ -500,6 +497,3 @@ def _payload(body: dict[str, Any]) -> Markup:
 def _param(request: Request, name: str, given: str | None) -> str:
     return given if given is not None else (request.query_params.get(name) or "")
 
-
-def _hx(request: Request) -> bool:
-    return request.headers.get("HX-Request") == "true"

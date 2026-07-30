@@ -38,3 +38,19 @@ def fold(outcomes: Iterable[str]) -> str:
     if len(unique) == 1:
         return said[0]
     return FAILED if unique & {FAILED, ERROR} else "mixed"
+
+
+def said(detail: str) -> str:
+    """The line of a failure a reader wants: what it said, not the file it stopped in.
+
+    pytest marks the lines a failure *said* with a leading `E`, and the first of those is the one.
+    Falls back to the last line, which is the location, where nothing said anything.
+    """
+    lines = [line for line in detail.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    marked = [line for line in lines if line.lstrip().startswith("E ")]
+    if not marked:
+        return lines[-1].strip()
+    # One character, dropped by index: `lstrip` would also eat the E of a message starting "Error".
+    return marked[0].strip()[1:].strip()

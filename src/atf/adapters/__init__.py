@@ -125,6 +125,32 @@ def can_show(adapter: Adapter) -> bool:
     return callable(getattr(adapter, "controls", None))
 
 
+class Runnable(Protocol):
+    """Optional: an adapter that can run a command line and say everything about what came back."""
+
+    def run(
+        self, command: Any, *, cwd: Any = None, env: dict[str, str] | None = None, called: str = ""
+    ) -> Record: ...
+
+
+def can_run(adapter: Adapter) -> bool:
+    return callable(getattr(adapter, "run", None))
+
+
+class Drivable(Protocol):
+    """Optional: an adapter holding a page that is *running*, which a step can act on.
+
+    `Showing` reads what is there; this is the half that needs a browser. Returns whatever the
+    driver's own page object is — the steps that act hand it straight back to the driver.
+    """
+
+    def showing(self) -> Any: ...
+
+
+def can_drive(adapter: Adapter) -> bool:
+    return callable(getattr(adapter, "showing", None))
+
+
 class Available(Protocol):
     """Optional: an adapter that can say it cannot work here, and why.
 
@@ -234,17 +260,21 @@ __all__ = [
     "Adapter",
     "Available",
     "Browsable",
+    "Drivable",
     "Closeable",
     "AdapterFactory",
     "Context",
     "Control",
     "NoopDelete",
     "Record",
+    "Runnable",
     "actions_of",
     "build",
     "Showing",
     "can_act",
     "can_browse",
+    "can_drive",
+    "can_run",
     "can_show",
     "close_adapter",
     "register",

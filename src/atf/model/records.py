@@ -38,6 +38,15 @@ def as_records(value: Any) -> list[Record] | None:
     return None
 
 
+def shared_fields(records: list[Any]) -> list[str]:
+    """The fields every record in the list carries — the ones an assertion can count on."""
+    common: set[str] | None = None
+    for record in records:
+        keys = {str(key) for key in record}
+        common = keys if common is None else common & keys
+    return sorted(common or set())
+
+
 def kind(value: Any) -> str:
     """What a failure message should call this value's shape, for a value that is not a record."""
     return type(value).__name__

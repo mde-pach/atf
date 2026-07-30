@@ -242,7 +242,7 @@ def _note_what_is_showing(context: Context, engine: Materializer, resource_type:
     spec = engine.catalog.spec(resource_type)
     adapter = None if spec is None else engine.adapters.get(spec.system)
     if adapter is not None and can_show(adapter):
-        context._showing = adapter  # noqa: SLF001 - `context` is ATF's own object, and this is ATF
+        context.now_showing(adapter)
 
 
 # ---- the phrasebook --------------------------------------------------------

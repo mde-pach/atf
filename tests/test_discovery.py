@@ -31,8 +31,7 @@ import pytest
 from atf.model.catalog import load_catalog
 from atf.spec.patterns import PROVISION, fill, pattern_regex
 from atf.spec.steps import EXISTS, GENERIC_STEPS, SLOT_CONTAINS, generic
-from atf.suite.discovery import Discovery, StepDef, context_use, discover, matching_step, parse_feature, slug
-from atf.suite.discovery import _step_defs as step_defs
+from atf.suite.discovery import Discovery, StepDef, context_use, discover, matching_step, parse_feature, slug, step_defs
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")

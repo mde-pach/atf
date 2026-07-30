@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from typing import Any
 
 import pytest
 
@@ -64,10 +65,13 @@ def wait_for(predicate, timeout: float = 120.0, interval: float = 0.02):
 
 
 def test_run_all_returns_structured_results(project):
+    """Derived, not written down. `passed == 7` and `skipped == 1` were the sample project's size
+    baked into an assertion: add a scenario to the reference project and this broke, for a reason
+    unrelated to whether a run comes back structured."""
     summary = runner.run(None, "dev", project, project / "specs")
     assert summary.returncode == 0
-    assert summary.counts["passed"] == 7
-    assert summary.counts["skipped"] == 1
+    assert sum(summary.counts.values()) == len(summary.results), summary.counts
+    assert summary.counts["passed"], f"a green run reported nothing passing: {summary.counts}"
     assert summary.counts["failed"] == 0
 
     result = next(r for r in summary.results.values() if "standard_account" in r.nodeid)
@@ -211,25 +215,42 @@ def test_what_a_context_held_never_carries_a_value(project):
 # ---- jobs -----------------------------------------------------------------
 
 
-def test_job_streams_queued_running_then_passed(project):
-    everything = runner.run(None, "dev", project, project / "specs")
-    nodeids = sorted(everything.results)
-
+def a_run_of_everything(project) -> tuple[JobRunner, Any, list[str]]:
+    """A job over every test the sample project has, started and not yet waited on."""
+    nodeids = sorted(runner.run(None, "dev", project, project / "specs").results)
     jobs = JobRunner(project, project / "specs")
-    job = jobs.start_run(nodeids, "dev")
+    return jobs, jobs.start_run(nodeids, "dev"), nodeids
 
+
+def test_a_job_starts_with_everything_queued_and_holds_its_environment(project):
+    """What a caller can see the moment it starts, before anything has run."""
+    jobs, job, nodeids = a_run_of_everything(project)
     assert job.kind == RUN
     assert job.counts[PENDING] == len(nodeids)
     assert jobs.active("dev") is job
 
+
+def test_a_finished_job_accounts_for_every_test_it_started(project):
+    """Nine assertions used to be one test called `streams_queued_running_then_passed`, which is
+    three claims in a coat. A failure gave a line number rather than a fact."""
+    _, job, nodeids = a_run_of_everything(project)
     wait_for(lambda: job.done)
 
-    assert job.done and job.returncode == 0
+    assert job.returncode == 0
     assert job.completed == len(nodeids)
     assert all(item.done for item in job.items.values())
-    assert job.counts["passed"] == 7
-    assert job.counts["skipped"] == 1
     assert job.elapsed > 0
+
+
+def test_a_finished_job_reports_the_outcome_of_each_test(project):
+    """The counts are what the activity dock reads, and they have to add up to what ran."""
+    _, job, nodeids = a_run_of_everything(project)
+    wait_for(lambda: job.done)
+
+    outcomes = {state: count for state, count in job.counts.items() if count}
+    assert sum(outcomes.values()) == len(nodeids), outcomes
+    assert outcomes.get("passed"), f"a green run reported nothing passing: {outcomes}"
+    assert not outcomes.get("failed"), f"the sample project is green, so this should be too: {outcomes}"
 
 
 def test_a_running_test_is_reported_as_running(project):
@@ -264,9 +285,9 @@ def test_job_results_fold_into_run_results(project):
     wait_for(lambda: job.done)
 
     merged = job.merged()
-    assert len(merged) == 8
+    assert len(merged) == len(job.items), "a job's results and its items are the same tests"
     assert all(result.outcome in {"passed", "failed", "skipped", "error"} for result in merged.values())
-    assert job.summary().counts["passed"] == 7
+    assert job.summary().counts["passed"] == job.counts["passed"]
 
 
 def test_a_job_captures_steps_and_provisioning_too(project):
@@ -386,7 +407,7 @@ def test_a_finished_run_job_is_persisted(project):
     record = store.latest("dev")
     assert record is not None
     assert record.env == "dev" and record.returncode == 0
-    assert record.counts["passed"] == 7
+    assert record.counts == job.summary().counts, "the run filed is not the run that happened"
     assert record.started_at == job.started_at
 
     result = next(r for r in record.results.values() if "project_belongs" in r.nodeid)

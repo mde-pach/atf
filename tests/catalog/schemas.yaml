@@ -1,0 +1,209 @@
+# ---- suites carrying an OpenAPI schema --------------------------------------
+#
+# The schema each import scenario reads, written once and named. These used to be pasted into a
+# table cell as one line of JSON — the longest was 391 characters, and the first was pasted four
+# times. A cell that nobody can read is a fixture nobody can check.
+#
+# YAML, not JSON, because `atf import openapi` reads either and this is the one a person can read.
+
+an_account_collection:
+  resource: workspace
+  represents: A bare suite with an OpenAPI schema beside it — an account collection.
+  body:
+    suite: bare
+    api.yaml: |
+      paths:
+        /accounts:
+          get:
+            parameters:
+            - name: email
+              in: query
+          post:
+            requestBody:
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    required:
+                    - email
+                    - name
+                    properties:
+                      email:
+                        type: string
+                        format: email
+                      name:
+                        type: string
+                      created_at:
+                        type: string
+                        format: date-time
+
+projects_under_an_account:
+  resource: workspace
+  represents: A bare suite with an OpenAPI schema beside it — projects under an account.
+  body:
+    suite: bare
+    api.yaml: |
+      paths:
+        /accounts/{account_id}/projects:
+          get:
+            parameters:
+            - name: slug
+              in: query
+          post:
+            requestBody:
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    required:
+                    - slug
+                    properties:
+                      slug:
+                        type: string
+
+a_label_collection:
+  resource: workspace
+  represents: A bare suite with an OpenAPI schema beside it — a label collection.
+  body:
+    suite: bare
+    api.yaml: |
+      paths:
+        /labels:
+          post:
+            requestBody:
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    required:
+                    - name
+                    - slug
+                    properties:
+                      name:
+                        type: string
+                      slug:
+                        type: string
+
+owners_and_accounts:
+  resource: workspace
+  represents: A bare suite with an OpenAPI schema beside it — owners and accounts.
+  body:
+    suite: bare
+    api.yaml: |
+      paths:
+        /owners:
+          post:
+            requestBody:
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    required:
+                    - name
+                    - slug
+                    properties:
+                      name:
+                        type: string
+                      slug:
+                        type: string
+        /accounts:
+          post:
+            requestBody:
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    required:
+                    - name
+                    - slug
+                    properties:
+                      name:
+                        type: string
+                      slug:
+                        type: string
+
+not_a_schema:
+  resource: workspace
+  represents: A bare suite with an OpenAPI schema beside it — not a schema.
+  body:
+    suite: bare
+    api.yaml: |
+      swagger: a page about our API
+
+# The same two collections, in a suite whose catalog already declares one of them — which is what
+# lets a scenario show the second import learning from the first correction.
+owners_beside_a_catalog:
+  resource: workspace
+  represents: A suite that already declares an owner keyed on slug, and a schema describing two.
+  body:
+    suite: bare
+    catalog/resources.yaml: |
+      owner:
+        system: rest
+        path: /owners
+        natural_key: slug
+    api.yaml: |
+      paths:
+        /owners:
+          post:
+            requestBody:
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    required:
+                    - name
+                    - slug
+                    properties:
+                      name:
+                        type: string
+                      slug:
+                        type: string
+        /accounts:
+          post:
+            requestBody:
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    required:
+                    - name
+                    - slug
+                    properties:
+                      name:
+                        type: string
+                      slug:
+                        type: string
+
+# The schema named by the manifest rather than passed on the command line.
+a_schema_the_manifest_names:
+  resource: workspace
+  represents: A suite whose manifest points `schemas.api` at a file beside it.
+  body:
+    suite: bare
+    atf.yaml: "{default_env: local, environments: {local: {}}, schemas: {api: {path: ./api.yaml}}}"
+    api.yaml: |
+      paths:
+        /accounts:
+          get:
+            parameters:
+            - name: email
+              in: query
+          post:
+            requestBody:
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    required:
+                    - email
+                    - name
+                    properties:
+                      email:
+                        type: string
+                        format: email
+                      name:
+                        type: string
+                      created_at:
+                        type: string
+                        format: date-time

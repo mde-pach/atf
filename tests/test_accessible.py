@@ -119,11 +119,25 @@ def test_a_decoration_the_author_hid_is_not_part_of_the_name():
     assert names(page, "link") == ["Overview"]
 
 
-def test_a_name_is_matched_whole_and_case_is_ignored():
-    """The reading a browser gives it, so a scenario means one thing wherever it runs."""
+def test_a_name_is_matched_as_a_substring_and_case_is_ignored():
+    """The reading a browser gives it, so a scenario means one thing wherever it runs.
+
+    Playwright's `get_by_role(role, name=…)` matches a substring unless told `exact=True`. Matching
+    whole names here meant `the link "Scenarios" is showing` was true through the `browser` system
+    and false through `html`, on the same page — which is the one thing the shared protocol exists
+    to prevent. It also lets a claim name a control that carries a count inside it.
+    """
     page = Page("<button>  Save   changes </button>")
     assert page.controls("button", "save changes")
-    assert not page.controls("button", "Save")
+    assert page.controls("button", "Save")
+    assert page.controls("button", "CHANGES")
+    assert not page.controls("button", "Discard")
+
+
+def test_a_name_a_count_is_written_into_is_still_findable_by_the_name():
+    """A rail link reads "Scenarios 7". A scenario naming the number breaks when the suite grows."""
+    page = Page('<a href="/s"><span>Scenarios</span><span class="count">7</span></a>')
+    assert [one.name for one in page.controls("link", "Scenarios")] == ["Scenarios 7"]
 
 
 # ---- what a person can see ---------------------------------------------------
@@ -178,3 +192,33 @@ def test_a_page_that_is_not_well_formed_is_still_read():
     page = Page("<div><p>one</div></p><button>Save</button>")
     assert names(page, "button") == ["Save"]
     assert page.says("one")
+
+
+# ---- the two systems must agree -----------------------------------------------
+
+
+def test_this_reading_and_a_browser_s_agree_on_what_a_name_matches():
+    """The promise of the shared protocol, checked against the other implementation of it.
+
+    `html` and `browser` answer the same claims, so `the link "Scenarios" is showing` has to mean one
+    thing through both. It did not: this matched whole names while Playwright matches substrings, so
+    the same page answered differently depending on which system a suite happened to configure.
+    Nothing caught it, because nothing asked them the same question.
+
+    Skipped where there is no browser, like every other scenario that needs one.
+    """
+    playwright = pytest.importorskip("playwright.sync_api")
+    markup = '<a href="/s"><span>Scenarios</span><span class="count">7</span></a><button>Save changes</button>'
+    asked = [("link", "Scenarios"), ("link", "scenarios"), ("button", "Save"), ("button", "Discard")]
+
+    with playwright.sync_playwright() as play:
+        browser = play.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(markup)
+            theirs = {(role, name): page.get_by_role(role, name=name).count() for role, name in asked}
+        finally:
+            browser.close()
+
+    ours = {(role, name): len(Page(markup).controls(role, name)) for role, name in asked}
+    assert ours == theirs

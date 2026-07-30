@@ -256,8 +256,16 @@ class Page:
     def controls(self, role: str = "", name: str = "") -> list[Control]:
         """Everything showing with this role, and this accessible name where one is given.
 
-        A name is matched whole, case-insensitively, with whitespace collapsed — the same reading
-        `get_by_role` gives it in a browser, so a scenario means one thing in both places.
+        A name is matched as a **substring**, case-insensitively, with whitespace collapsed —
+        which is what `get_by_role(role, name=…)` does in a browser, so a scenario means one thing
+        whichever system answers it. That is the whole promise of [`Showing`](adapters/__init__.py),
+        and this used to break it: matching whole names here while the browser matched substrings
+        meant `the link "Scenarios" is showing` was true through one adapter and false through the
+        other, on the same page.
+
+        It also decides what a claim can say. A control commonly carries a count or a badge inside
+        it — a rail link reads "Scenarios 7" — and a scenario that had to write the number down
+        would break every time the suite it is looking at grew by one.
         """
         wanted = _flat(name)
         found = []
@@ -268,7 +276,7 @@ class Page:
             if self.hidden(element):
                 continue
             its_name = self.name_of(element)
-            if wanted and _flat(its_name) != wanted:
+            if wanted and wanted not in _flat(its_name):
                 continue
             found.append(
                 Control(

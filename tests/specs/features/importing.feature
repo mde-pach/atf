@@ -13,8 +13,7 @@ Feature: Importing a catalog from a schema
     Scenario: What the schema says about a collection is written as a resource type
       # The whole of the blank page, removed: where the accounts are, what identifies one, and the
       # reason that field was chosen — none of it typed by anyone.
-      Given the workspace "bare" but:
-        | api.json | {"paths":{"/accounts":{"get":{"parameters":[{"name":"email","in":"query"}]},"post":{"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["email","name"],"properties":{"email":{"type":"string","format":"email"},"name":{"type":"string"},"created_at":{"type":"string","format":"date-time"}}}}}}}}}} |
+      Given the workspace "an_account_collection"
       When the developer imports the schema they were handed
       Then the command succeeds
       When the developer reads the resource types
@@ -24,8 +23,7 @@ Feature: Importing a catalog from a schema
     Scenario: The guess says what it was guessed from, where a reader will meet it
       # A guess whose reason lives somewhere else is a guess nobody checks. The one thing a person
       # has to look at is beside the answer, in the file they are about to keep.
-      Given the workspace "bare" but:
-        | api.json | {"paths":{"/accounts":{"get":{"parameters":[{"name":"email","in":"query"}]},"post":{"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["email","name"],"properties":{"email":{"type":"string","format":"email"},"name":{"type":"string"},"created_at":{"type":"string","format":"date-time"}}}}}}}}}} |
+      Given the workspace "an_account_collection"
       When the developer imports the schema they were handed
       And the developer reads the resource types
       Then the guess says it was made from what the service lets you search by
@@ -33,8 +31,7 @@ Feature: Importing a catalog from a schema
     Scenario: What a schema cannot say is said, rather than guessed
       # Whether ATF may create a resource, whether it survives the run, and what needs what: three
       # things a schema has no opinion about, and three things a wrong guess would be expensive.
-      Given the workspace "bare" but:
-        | api.json | {"paths":{"/accounts":{"get":{"parameters":[{"name":"email","in":"query"}]},"post":{"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["email","name"],"properties":{"email":{"type":"string","format":"email"},"name":{"type":"string"},"created_at":{"type":"string","format":"date-time"}}}}}}}}}} |
+      Given the workspace "an_account_collection"
       When the developer imports the schema they were handed
       Then the command succeeds
       And it says what a schema could not tell it
@@ -42,8 +39,7 @@ Feature: Importing a catalog from a schema
     Scenario: A collection nested under another is recognised within its parent, and says so
       # A project is only unique inside the account it belongs to, and the path is what says so —
       # which makes this the one dependency an import can honestly infer.
-      Given the workspace "bare" but:
-        | api.json | {"paths":{"/accounts/{account_id}/projects":{"get":{"parameters":[{"name":"slug","in":"query"}]},"post":{"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["slug"],"properties":{"slug":{"type":"string"}}}}}}}}}} |
+      Given the workspace "projects_under_an_account"
       When the developer imports the schema they were handed
       Then the command succeeds
       When the developer reads the resource types
@@ -56,8 +52,7 @@ Feature: Importing a catalog from a schema
       # The worst failure available here is a wrong key, because it is silent: nothing matches, so
       # every run makes another record and nobody finds out until they look at the environment.
       # A type that will not provision until somebody chooses costs an afternoon instead.
-      Given the workspace "bare" but:
-        | api.json | {"paths":{"/labels":{"post":{"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["name","slug"],"properties":{"name":{"type":"string"},"slug":{"type":"string"}}}}}}}}}} |
+      Given the workspace "a_label_collection"
       When the developer imports the schema they were handed
       Then the command succeeds
       When the developer reads the resource types
@@ -67,9 +62,7 @@ Feature: Importing a catalog from a schema
   Rule: A registry somebody has since edited belongs to them
 
     Scenario: A second import proposes what is missing and writes nothing
-      Given the workspace "bare" but:
-        | catalog/resources.yaml | owner:\n  system: rest\n  path: /owners\n  natural_key: slug\n |
-        | api.json               | {"paths":{"/owners":{"post":{"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["name","slug"],"properties":{"name":{"type":"string"},"slug":{"type":"string"}}}}}}}},"/accounts":{"post":{"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["name","slug"],"properties":{"name":{"type":"string"},"slug":{"type":"string"}}}}}}}}}} |
+      Given the workspace "owners_beside_a_catalog"
       When the developer imports the schema they were handed
       Then the command succeeds
       And it says nothing was written
@@ -80,9 +73,7 @@ Feature: Importing a catalog from a schema
     Scenario: A field this catalog already matches on decides the next close call
       # The point of the whole design: correcting one guess by hand is what makes the next one
       # right. Nothing about `name` or `slug` in the schema separates them — the catalog does.
-      Given the workspace "bare" but:
-        | catalog/resources.yaml | owner:\n  system: rest\n  path: /owners\n  natural_key: slug\n |
-        | api.json               | {"paths":{"/owners":{"post":{"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["name","slug"],"properties":{"name":{"type":"string"},"slug":{"type":"string"}}}}}}}},"/accounts":{"post":{"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["name","slug"],"properties":{"name":{"type":"string"},"slug":{"type":"string"}}}}}}}}}} |
+      Given the workspace "owners_beside_a_catalog"
       When the developer applies what the import proposed
       Then the command succeeds
       When the developer reads the resource types
@@ -92,9 +83,7 @@ Feature: Importing a catalog from a schema
   Rule: The schema is somewhere the manifest names, so re-importing takes no arguments
 
     Scenario: With the schema named in the manifest, the import needs nothing said
-      Given the workspace "bare" but:
-        | atf.yaml | {default_env: local, environments: {local: {}}, schemas: {api: {path: ./api.json}}} |
-        | api.json | {"paths":{"/accounts":{"get":{"parameters":[{"name":"email","in":"query"}]},"post":{"requestBody":{"content":{"application/json":{"schema":{"type":"object","required":["email","name"],"properties":{"email":{"type":"string","format":"email"},"name":{"type":"string"},"created_at":{"type":"string","format":"date-time"}}}}}}}}}} |
+      Given the workspace "a_schema_the_manifest_names"
       When the developer imports the schema the manifest names
       Then the command succeeds
       When the developer reads the resource types
@@ -107,7 +96,6 @@ Feature: Importing a catalog from a schema
       And it says where to name one so this never has to be said again
 
     Scenario: A document that is not a schema is refused, saying what was expected
-      Given the workspace "bare" but:
-        | api.json | {"swagger": "a page about our API"} |
+      Given the workspace "not_a_schema"
       When the developer imports the schema they were handed
       Then it is refused because "not an OpenAPI schema"

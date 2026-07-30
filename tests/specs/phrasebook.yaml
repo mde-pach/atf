@@ -401,7 +401,7 @@
 # what one is recognised by — and everything here knows how ATF spells it.
 
 'the developer imports the schema they were handed':
-  - I run "atf import openapi api.json"
+  - I run "atf import openapi api.yaml"
 
 'the developer imports the schema the manifest names':
   - I run "atf import openapi"
@@ -409,7 +409,7 @@
 # The flag that turns a proposal into a write. Named here, because a scenario's subject is that the
 # person chose to apply it, not how the command spells the choosing.
 'the developer applies what the import proposed':
-  - I run "atf import openapi api.json --apply"
+  - I run "atf import openapi api.yaml --apply"
 
 'the developer reads the resource types':
   - I run "cat catalog/resources.yaml"

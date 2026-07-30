@@ -183,11 +183,6 @@ class Discovery:
     def specs_for_resource(self, node_id: str) -> list[Spec]:
         return [spec for spec in self.specs if node_id in spec.resources]
 
-    def questions_under(self, feature: str, rule: str) -> list[Question]:
-        """What nobody could answer about this rule — the red cards, where they were written."""
-        return [one for one in self.questions if one.feature == feature and one.rule == rule]
-
-
 def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-") or "untitled"
 

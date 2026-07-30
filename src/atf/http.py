@@ -6,7 +6,7 @@ Adapters and system-under-test clients apply auth the same way, so both live her
 from __future__ import annotations
 
 import time
-from collections.abc import Generator, Iterable, Mapping
+from collections.abc import Generator, Mapping
 from typing import Any
 
 import httpx
@@ -227,6 +227,3 @@ def _records_from(payload: Any) -> list[dict[str, Any]]:
         return [item for item in payload if isinstance(item, dict)]
     raise ValueError(f"expected a list response, got {type(payload).__name__}")
 
-
-def as_query(values: Iterable[tuple[str, Any]]) -> dict[str, Any]:
-    return {name: value for name, value in values if value is not None}

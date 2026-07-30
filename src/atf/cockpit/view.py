@@ -540,11 +540,6 @@ def tone(status: str) -> str:
     return TONES.get(status, "idle")
 
 
-def outcome_of(nodeid: str, results: dict[str, Any]) -> str:
-    result = results.get(nodeid)
-    return result.outcome if result else "not run"
-
-
 def ago(when: float | None) -> str:
     """A timestamp as a reader thinks of it. Freshness is the whole point of this app."""
     if not when:

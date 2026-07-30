@@ -275,11 +275,6 @@ class EnvRecords:
     def declared(self) -> int:
         return sum(1 for row in self.rows if row.node is not None)
 
-    @property
-    def undeclared(self) -> int:
-        return len(self.rows) - self.declared
-
-
 def environment_records(env: str, view: TypeView | None, scope_id: str = "") -> EnvRecords:
     """Every record of `view`'s type that `env` already holds, marked with what the catalog declares.
 

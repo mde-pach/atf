@@ -271,6 +271,18 @@ def two_chains(write_catalog, fake):
     return Materializer(root, "test", {"fake": fake})
 
 
+def test_creating_everything_covers_the_whole_catalog(two_chains):
+    """`create_all` is public API for a suite seeding an empty environment from Python.
+
+    Named here because nothing else in the framework calls it: `atf seed` builds its own subset,
+    since it leaves ephemeral resources and observations out.
+    """
+    outcome = two_chains.create_all(keep_going=True)
+
+    assert set(outcome.records) == set(two_chains.nodes)
+    assert outcome.ok, [result.detail for result in outcome.failures]
+
+
 def test_data_mode_is_an_answer_when_absent_rather_than_a_failure(engine):
     outcome = engine.create_closure("sightings.watched")
     assert outcome.results[0].ok is True

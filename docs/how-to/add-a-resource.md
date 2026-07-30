@@ -20,8 +20,8 @@ subscription:
   natural_key: reference
 ```
 
-The `natural_key` is how ATF recognises an instance that already exists. Choose a field that is
-stable and unique — an email, a slug, an external reference.
+Choose a [`natural_key`](../reference/catalog.md#natural_key) that is stable and unique — that is
+what makes a re-run reuse the instance instead of duplicating it.
 
 If no single field identifies the resource, use several:
 

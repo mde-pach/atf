@@ -32,7 +32,8 @@ The system has no entry under `environments.dev.adapters`. The adapter may well 
 just has no settings for this environment. Add the block.
 
 **`no adapter registered for system 'x' (registered: rest, reference)`**
-A different failure with a similar shape: nothing called `register("x", …)`. Check that the module
+A different failure with a similar shape: nothing called
+[`register("x", …)`](../reference/adapter-spi.md#register). Check that the module
 defining it is listed under `adapters:` in the manifest, and that the `register` call runs at import
 time rather than inside a function.
 

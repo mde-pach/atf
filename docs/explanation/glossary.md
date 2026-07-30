@@ -264,9 +264,9 @@ See the [cockpit reference](../reference/cockpit.md#run-history) and
 
 ## Blocked {#blocked}
 
-The scenario names a resource, somewhere in its closure, that is in a state **running cannot fix**:
-no adapter for its system here, an adapter that raised while looking it up, or a missing
-[reference-mode](#reference-mode) resource ATF is never allowed to create.
+The scenario names a resource, somewhere in its closure, that is in a state **running cannot fix**.
+There are exactly three such states — see [readiness](../reference/cockpit.md#readiness) for the
+list.
 
 An *absent* resource is not a blocker. Naming a resource in a scenario is precisely what makes ATF
 create it, so absent-and-creatable is information — "running this provisions three resources" — not

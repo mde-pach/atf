@@ -41,14 +41,15 @@ Go to **Scenarios**. Two states look equally alarming and mean completely differ
 **`failing`** means it ran, and an assertion or a step raised.
 
 **`blocked`** means it has not run, and would not get as far as its first `When`, because something
-it names is in a state a run cannot fix. There are exactly three such states, and each has a
-different owner:
+it names is in a state a run cannot fix. There are exactly three such states — see
+[readiness](../reference/cockpit.md#readiness) for what each one is — and each has a different
+owner:
 
-| Blocker | What it means | Where the fix is |
-|---|---|---|
-| `unsupported` | No adapter is configured for that resource's system **in this environment** | the `adapters` block for that environment in `atf.yaml` |
-| `error` | The adapter raised while looking the resource up | the environment, the URL, or the credentials behind its `*_env` pointer |
-| a missing [reference](../reference/catalog.md#mode) resource | Something the environment is supposed to ship with is not there, and ATF will never create it | whatever process sets that environment up |
+| Blocker | Where the fix is |
+|---|---|
+| `unsupported` | the `adapters` block for that environment in `atf.yaml` |
+| `error` | the environment, the URL, or the credentials behind its `*_env` pointer |
+| a missing [reference](../reference/catalog.md#mode) resource | whatever process sets that environment up |
 
 !!! warning "An absent resource is not a blocker"
 

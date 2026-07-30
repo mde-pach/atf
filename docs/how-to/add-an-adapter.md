@@ -77,8 +77,11 @@ environments:
     adapters:
       queue:
         broker_url: amqp://localhost
-        token_env: QUEUE_TOKEN    # `*_env` reads an environment variable — never inline a secret
+        token_env: QUEUE_TOKEN    # *_env reads an environment variable — never inline a secret
 ```
+
+[`*_env` pointers](../reference/manifest.md#environment-variable-pointers) work the same way for
+any key, built in or your own.
 
 Then point a resource type at it:
 

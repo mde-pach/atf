@@ -10,7 +10,7 @@ from ...model.text import plural
 from ...model.typespec import DATA, REFERENCE
 from ...run.runner import TestResult
 from ...spec.context import RESULT
-from ...spec.steps import comparisons_for, generic
+from ...spec.vocabulary import comparisons_for, generic
 from ...suite.discovery import Discovery, StepDef
 from .fields import field_choices
 from .rows import Row

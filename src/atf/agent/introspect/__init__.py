@@ -12,7 +12,7 @@ from typing import Any
 from ...model.compare import MARKERS
 from ...run.runner import ERROR, PASSED
 from ...run.runner import run as run_tests
-from ...spec.steps import COMPARISONS, Comparison, generic
+from ...spec.vocabulary import COMPARISONS, Comparison, generic
 from ...suite.discovery import StepDef
 from .fields import FieldChoice, field_choices, written
 from .options import (

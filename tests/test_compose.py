@@ -25,7 +25,7 @@ from atf.cockpit.app import create_app
 from atf.cockpit.deps import set_session
 from atf.session import Session
 from atf.spec.patterns import PROVISION
-from atf.spec.steps import COUNT, FIELD_IS, FIELD_IS_NOT, SHAPE_IS
+from atf.spec.vocabulary import COUNT, FIELD_IS, FIELD_IS_NOT, SHAPE_IS
 from atf.suite.discovery import parse_feature
 from tests.sample_project import write_sample_project
 from tests.test_cockpit import provisioning_engine

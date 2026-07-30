@@ -21,7 +21,7 @@ import json
 import pytest
 from _pytest.outcomes import Failed
 
-from atf.spec.steps import (
+from atf.spec.vocabulary import (
     ACT,
     COUNT,
     EXISTS,

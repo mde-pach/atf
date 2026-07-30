@@ -8,7 +8,7 @@ from typing import Any
 from ...model.catalog import Catalog
 from ...model.text import plural
 from ...spec.patterns import GIVEN, THEN, fill
-from ...spec.steps import (
+from ...spec.vocabulary import (
     FIELD,
     NAME,
     SLOT,

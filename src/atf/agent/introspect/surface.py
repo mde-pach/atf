@@ -10,7 +10,7 @@ from ...engine.status import Statuses
 from ...model.catalog import Catalog, Node
 from ...session import Session
 from ...spec.patterns import GIVEN, THEN, WHEN
-from ...spec.steps import RESOURCE, SLOT_OF, TYPE_OF, generic
+from ...spec.vocabulary import RESOURCE, SLOT_OF, TYPE_OF, generic
 from ...suite.discovery import Discovery, StepDef
 
 KEYWORDS = (GIVEN, WHEN, THEN)

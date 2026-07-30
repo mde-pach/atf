@@ -40,7 +40,8 @@ from atf.agent.introspect import (
 )
 from atf.engine.status import PRESENT, ResourceStatus, Statuses
 from atf.spec import steps as atf_steps
-from atf.spec.steps import GENERIC_STEPS
+from atf.spec import vocabulary as said
+from atf.spec.vocabulary import GENERIC_STEPS
 
 # `Test` under another name: pytest tries to collect anything called `Test*` and warns.
 from atf.suite.discovery import Discovery, Spec, StepDef
@@ -159,8 +160,8 @@ def test_describe_answers_in_sections_that_do_not_depend_on_the_vocabulary(surfa
 @pytest.mark.parametrize(
     ("pattern", "expected"),
     [
-        (atf_steps.EXISTS, FROM_ATF),
-        (atf_steps.SLOT_FIELD_IS, FROM_ATF),
+        (said.EXISTS, FROM_ATF),
+        (said.SLOT_FIELD_IS, FROM_ATF),
         ("I invite a collaborator", FROM_SUITE),
         ("the invitation was accepted", FROM_PHRASEBOOK),
     ],
@@ -173,10 +174,10 @@ def test_a_step_says_whose_vocabulary_it_belongs_to(surface, pattern, expected):
 @pytest.mark.parametrize(
     ("pattern", "key", "value"),
     [
-        (atf_steps.ACT, "captures", ["action", "resource_type", "name"]),
-        (atf_steps.ACT, "produces", ["result"]),
-        (atf_steps.SLOT_FIELD_IS, "needs_slot", True),
-        (atf_steps.SHAPE_IS, "takes_table", True),
+        (said.ACT, "captures", ["action", "resource_type", "name"]),
+        (said.ACT, "produces", ["result"]),
+        (said.SLOT_FIELD_IS, "needs_slot", True),
+        (said.SHAPE_IS, "takes_table", True),
         ("I invite a collaborator", "produces", ["invitation"]),
         ("the invitation was accepted", "needs", ["invitation"]),
     ],
@@ -416,7 +417,7 @@ def test_a_repeated_keyword_is_written_as_and(surface):
                 GIVEN_PRIMARY,
                 {
                     "keyword": "then",
-                    "pattern": atf_steps.SHAPE_IS,
+                    "pattern": said.SHAPE_IS,
                     "params": {"resource_type": "account", "name": "primary"},
                 },
             ],
@@ -444,7 +445,7 @@ def test_a_table_is_written_under_its_step_with_its_columns_aligned(surface):
             GIVEN_PRIMARY,
             {
                 "keyword": "then",
-                "pattern": atf_steps.SHAPE_IS,
+                "pattern": said.SHAPE_IS,
                 "params": {"resource_type": "account", "name": "primary"},
                 "table": [["email", "primary@example.test"], ["id", "#int"]],
             },

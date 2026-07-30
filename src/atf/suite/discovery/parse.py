@@ -109,7 +109,7 @@ def _context_names(function: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[li
 
 def attach_context_use(steps: list[StepDef]) -> None:
     """Read each module once, not once per step it declares."""
-    from ...spec.steps import generic as _generic
+    from ...spec.vocabulary import generic as _generic
 
     by_file: dict[str, list[StepDef]] = {}
     for step in steps:

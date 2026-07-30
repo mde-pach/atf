@@ -136,7 +136,7 @@ def test_the_introspection_api_reaches_every_word_the_framework_knows(tmp_path, 
     from atf.agent.introspect import FROM_ATF, Surface, describe
     from atf.engine.bootstrap import bootstrap
     from atf.model.compare import MARKERS
-    from atf.spec.steps import COMPARISONS, GENERIC_STEPS
+    from atf.spec.vocabulary import COMPARISONS, GENERIC_STEPS
     from atf.suite.discovery import discover
     from tests.sample_project import write_sample_project
 

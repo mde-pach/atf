@@ -48,7 +48,7 @@ from ...agent.introspect import offered_steps as _offered_steps
 from ...model.catalog import Catalog
 from ...model.compare import MARKERS
 from ...spec.patterns import CAPTURE_RE, GIVEN, PROVISION_RE
-from ...spec.steps import ACTION, FIELD, NAME, TYPE, VALUE, comparison, generic
+from ...spec.vocabulary import ACTION, FIELD, NAME, TYPE, VALUE, comparison, generic
 from ...suite.discovery import Discovery, Spec, StepDef, matching_step, parse_feature, slug
 from ..view import cockpit as app
 from ..view import current_env, page, partial, require_confirmation, require_mutable

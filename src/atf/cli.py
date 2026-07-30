@@ -9,12 +9,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from . import console
 from .engine.bootstrap import bootstrap
-from .engine.status import BLOCKED, CREATED, PRESENT, ProvisionResult
+from .engine.status import BLOCKED, PRESENT, ProvisionResult
 from .model.catalog import CatalogError
 from .model.manifest import ConfigError, load_manifest, resolve_env, resolve_env_refs, resolve_manifest
 from .model.text import plural
-from .model.typespec import DATA, EPHEMERAL, REFERENCE
+from .model.typespec import DATA, EPHEMERAL
 from .run.report import as_ctrf
 from .run.runner import ERROR, FAILED, RunRecord, failed_ids
 from .run.runner import run as run_tests
@@ -45,8 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return int(args.handler(args))
     except (ConfigError, CatalogError, openapi.SchemaError) as exc:
-        print(f"atf: {exc}", file=sys.stderr)
-        return 2
+        return console.problem(f"atf: {exc}")
     except KeyboardInterrupt:
         return 130
 
@@ -141,22 +141,18 @@ def cmd_init(args: argparse.Namespace) -> int:
     """
     root = Path(args.directory).resolve()
     if (root / MANIFEST_FILE).is_file():
-        print(
-            f"{root} already contains a suite — {MANIFEST_FILE} is there, so nothing was written.\n"
+        return console.problem(
+            f"{root} already contains a suite — {MANIFEST_FILE} is there, so nothing was written.",
             "Edit it, or run `atf init` somewhere with no suite in it.",
-            file=sys.stderr,
         )
-        return 2
 
     root.mkdir(parents=True, exist_ok=True)
     written, kept = scaffold(root, root.name)
     print(f"Scaffolded an ATF suite in {root}:")
-    for path in written:
-        print(f"  {path.relative_to(root)}")
+    console.table([[str(path.relative_to(root))] for path in written])
     if kept:
         print("\nLeft alone, because they were already here:")
-        for path in kept:
-            print(f"  {path.relative_to(root)}")
+        console.table([[str(path.relative_to(root))] for path in kept])
     print("\nNext: `atf run` — it passes as it stands, against a stand-in backend. Then `atf serve`.")
     return 0
 
@@ -177,8 +173,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
         reason = unavailable()
         if reason:
-            print(f"atf: --mcp was asked for, and {reason}", file=sys.stderr)
-            return 2
+            return console.problem(f"atf: --mcp was asked for, and {reason}")
         answering = f"  Answering MCP at {url}{MOUNT}/ — it can run scenarios against those environments.\n"
 
     manifest = load_manifest(resolve_manifest())
@@ -197,11 +192,9 @@ def cmd_seed(args: argparse.Namespace) -> int:
     boot = bootstrap(args.env)
     if not boot.manifest.is_mutable(boot.env):
         allowed = ", ".join(sorted(boot.manifest.mutable_envs)) or "none"
-        print(
-            f"atf: refusing to seed {boot.env!r} — it is not in `mutable_envs` (allowed: {allowed})",
-            file=sys.stderr,
+        return console.problem(
+            f"atf: refusing to seed {boot.env!r} — it is not in `mutable_envs` (allowed: {allowed})"
         )
-        return 2
 
     engine = boot.materializer
     subset = _subset(engine, args.resource_type, args.name)
@@ -210,12 +203,13 @@ def cmd_seed(args: argparse.Namespace) -> int:
 
     outcome = engine.materialize(subset, keep_going=args.keep_going)
 
-    for result in outcome.results:
-        mark = "ok" if result.ok else ("skip" if result.action == BLOCKED else "FAIL")
-        detail = f" — {result.detail}" if result.detail else ""
-        print(f"  [{mark:>4}] {result.node_id:<40} {result.action}{detail}")
-
-    print("\n" + _tally(outcome.results) + f" in {boot.env}.")
+    console.table(
+        [
+            [f"[{_mark(result):>4}]", result.node_id, result.action + (f" — {result.detail}" if result.detail else "")]
+            for result in outcome.results
+        ]
+    )
+    print("\n" + console.tally(outcome.results) + f" in {boot.env}.")
     if not args.keep_going and outcome.failures:
         remaining = len(subset) - len(outcome.results)
         if remaining > 0:
@@ -225,21 +219,11 @@ def cmd_seed(args: argparse.Namespace) -> int:
 
 
 
-def _tally(results: list[ProvisionResult]) -> str:
-    """A failure counts as failed whatever it was attempting."""
-    counts = {"created": 0, "already present": 0, "found": 0, "failed": 0, "blocked": 0}
-    for result in results:
-        if not result.ok:
-            counts["blocked" if result.action == BLOCKED else "failed"] += 1
-        elif result.action == CREATED:
-            counts["created"] += 1
-        elif result.action == REFERENCE:
-            counts["found"] += 1
-        else:
-            counts["already present"] += 1
-
-    parts = [f"{count} {label}" for label, count in counts.items() if count]
-    return ", ".join(parts) or "nothing to do"
+def _mark(result: ProvisionResult) -> str:
+    """The four characters at the head of a seed row: what became of this one."""
+    if result.ok:
+        return "ok"
+    return "skip" if result.action == BLOCKED else "FAIL"
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -249,10 +233,9 @@ def cmd_status(args: argparse.Namespace) -> int:
         print("The catalog is empty.")
         return 0
 
-    width = max(len(nid) for nid in status)
-    for nid, entry in status.items():
-        detail = f" — {entry.detail}" if entry.detail else ""
-        print(f"  {nid:<{width}}  {entry.state:<12}{detail}")
+    console.table(
+        [[nid, entry.state, f"— {entry.detail}" if entry.detail else ""] for nid, entry in status.items()]
+    )
 
     present = status.count(PRESENT)
     ephemeral = status.count(EPHEMERAL)
@@ -268,16 +251,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     targets = list(args.paths)
     if args.failed:
         if targets:
-            print("--failed already says which tests to run, so it takes no paths.", file=sys.stderr)
-            return 2
+            return console.problem("--failed already says which tests to run, so it takes no paths.")
         previous = store.latest(boot.env)
         if previous is None:
-            print(
+            return console.problem(
                 f"nothing has run in {boot.env} yet, so there is nothing to run again. "
-                "Run `atf run` once first.",
-                file=sys.stderr,
+                "Run `atf run` once first."
             )
-            return 2
         targets = failed_ids(previous)
         if not targets:
             # Not a refusal and not an empty run: everything passed last time, which is the answer
@@ -318,10 +298,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         return 2
     if not summary.results and summary.returncode != 0:
         narrowed = _narrowing(args)
-        if narrowed:
-            print(f"Nothing matched {narrowed}.", file=sys.stderr)
-        else:
-            print(summary.output, file=sys.stderr)
+        console.problem(f"Nothing matched {narrowed}." if narrowed else summary.output)
     return 0 if summary.returncode == 0 else 1
 
 
@@ -341,7 +318,7 @@ def _write_ctrf(path: Path, record: RunRecord) -> bool:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(as_ctrf(record), indent=2), encoding="utf-8")
     except OSError as exc:
-        print(f"could not write the report to {path}: {exc}", file=sys.stderr)
+        console.problem(f"could not write the report to {path}: {exc}")
         return False
     print(f"Wrote a CTRF report to {path}")
     return True
@@ -382,12 +359,10 @@ def cmd_docs(args: argparse.Namespace) -> int:
     try:
         written = living.write(living.render(specs, results, env, manifest.specs_dir, questions), out)
     except OSError as exc:
-        print(f"atf: nothing written — {exc}", file=sys.stderr)
-        return 2
+        return console.problem(f"atf: nothing written — {exc}")
 
     print(f"Wrote {plural(len(written), 'page')} under {out}:")
-    for path in written:
-        print(f"  {path.relative_to(out)}")
+    console.table([[str(path.relative_to(out))] for path in written])
     print("\n" + living.tally(specs, results, env))
     return 0
 
@@ -428,11 +403,12 @@ def cmd_import_openapi(args: argparse.Namespace) -> int:
         return 0
 
     print(f"\n{len(proposal.added)} resource type(s) read from {source}:\n")
-    names = max(len(one.name) for one in proposal.added)
-    paths = max(len(one.path) for one in proposal.added)
-    for one in proposal.added:
-        key = f"natural_key: {openapi.key_said(one.guess.key)}" if one.guess else "no natural_key yet"
-        print(f"  {one.name:<{names}}  {one.path:<{paths}}  {key}")
+    console.table(
+        [
+            [one.name, one.path, f"natural_key: {openapi.key_said(one.guess.key)}" if one.guess else "no key yet"]
+            for one in proposal.added
+        ]
+    )
 
     print("\n" + proposal.as_diff(label).rstrip("\n"))
 
@@ -444,8 +420,7 @@ def cmd_import_openapi(args: argparse.Namespace) -> int:
         proposal.path.parent.mkdir(parents=True, exist_ok=True)
         proposal.path.write_text(proposal.after, encoding="utf-8")
     except OSError as exc:
-        print(f"atf: nothing written — {exc}", file=sys.stderr)
-        return 2
+        return console.problem(f"atf: nothing written — {exc}")
 
     print(f"\nWrote {len(proposal.added)} resource type(s) to {label}.\n")
     print(NOT_INFERRED)
@@ -509,8 +484,7 @@ def cmd_import_run(args: argparse.Namespace) -> int:
     try:
         record = store.import_report(args.report, args.env)
     except ReportError as exc:
-        print(f"atf: {exc}", file=sys.stderr)
-        return 2
+        return console.problem(f"atf: {exc}")
 
     counts = record.counts
     print(
@@ -537,11 +511,11 @@ def _subset(engine, resource_type: str | None, name: str | None) -> list[str] | 
         ]
 
     if resource_type is None:
-        print("atf: --name needs --type", file=sys.stderr)
+        console.problem("atf: --name needs --type")
         return None
     if resource_type not in engine.types:
         known = ", ".join(engine.resource_types()) or "none"
-        print(f"atf: unknown resource type {resource_type!r} (known: {known})", file=sys.stderr)
+        console.problem(f"atf: unknown resource type {resource_type!r} (known: {known})")
         return None
 
     matching = [
@@ -550,7 +524,7 @@ def _subset(engine, resource_type: str | None, name: str | None) -> list[str] | 
         if node.resource == resource_type and (name is None or node.name == name)
     ]
     if not matching:
-        print(f"atf: no {resource_type} named {name!r} in the catalog", file=sys.stderr)
+        console.problem(f"atf: no {resource_type} named {name!r} in the catalog")
         return None
 
     closure: list[str] = []

@@ -131,12 +131,37 @@ class StepDef:
 
 @dataclass
 class Discovery:
+    """Everything a suite says about itself, with the joins between the six lists made once.
+
+    A page render asks these questions per scenario and per resource, so they are answered from an
+    index built when discovery finishes — a scan per question is O(specs x tests) a page.
+    """
+
     specs: list[Spec] = field(default_factory=list)
     questions: list[Question] = field(default_factory=list)
     tests: list[Test] = field(default_factory=list)
     fixtures: list[Fixture] = field(default_factory=list)
     steps: list[StepDef] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.index()
+
+    def index(self) -> None:
+        """Build the lookups. Called again by `discover`, which fills the lists in as it goes."""
+        self._specs = {spec.id: spec for spec in self.specs}
+        self._tests = {test.id: test for test in self.tests}
+        self._fixtures = {fixture.name: fixture for fixture in self.fixtures}
+        self._tests_by_spec: dict[str, list[Test]] = {}
+        self._tests_by_resource: dict[str, list[Test]] = {}
+        self._specs_by_resource: dict[str, list[Spec]] = {}
+        for test in self.tests:
+            self._tests_by_spec.setdefault(test.covers, []).append(test)
+            for node_id in test.resources:
+                self._tests_by_resource.setdefault(node_id, []).append(test)
+        for spec in self.specs:
+            for node_id in spec.resources:
+                self._specs_by_resource.setdefault(node_id, []).append(spec)
 
     def steps_for(self, keyword: str) -> list[StepDef]:
         """The definitions a picker for one keyword should offer.
@@ -153,22 +178,32 @@ class Discovery:
         return [step for step in offered if step.pattern != PROVISION]
 
     def spec(self, spec_id: str) -> Spec | None:
-        return next((spec for spec in self.specs if spec.id == spec_id), None)
+        return self._specs.get(spec_id)
 
     def test(self, test_id: str) -> Test | None:
-        return next((test for test in self.tests if test.id == test_id), None)
+        return self._tests.get(test_id)
 
     def fixture(self, name: str) -> Fixture | None:
-        return next((fixture for fixture in self.fixtures if fixture.name == name), None)
+        return self._fixtures.get(name)
 
     def tests_for_spec(self, spec_id: str) -> list[Test]:
-        return [test for test in self.tests if test.covers == spec_id]
+        return self._tests_by_spec.get(spec_id, [])
 
     def tests_for_resource(self, node_id: str) -> list[Test]:
-        return [test for test in self.tests if node_id in test.resources]
+        return self._tests_by_resource.get(node_id, [])
 
     def specs_for_resource(self, node_id: str) -> list[Spec]:
-        return [spec for spec in self.specs if node_id in spec.resources]
+        return self._specs_by_resource.get(node_id, [])
+
+    def scenario_names(self) -> dict[str, str]:
+        """`{nodeid: the scenario it runs, with its Examples row}` — a run's rows, named."""
+        named: dict[str, str] = {}
+        for test in self.tests:
+            spec = self.spec(test.covers) if test.covers else None
+            if spec is None or not spec.scenario:
+                continue
+            named[test.nodeid] = f"{spec.scenario} [{test.params}]" if test.params else spec.scenario
+        return named
 
 def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-") or "untitled"
@@ -190,6 +225,7 @@ def discover(
     result.fixtures = _fixtures(root, env, observed, set(catalog.types), errors, result.tests)
     result.steps = _step_defs(observed)
     _attach_context_use(result.steps)
+    result.index()
     return result
 
 

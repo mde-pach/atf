@@ -213,7 +213,10 @@ class JobGateway:
         self, nodeids: list[str], env: str | None = None, keyword: str = "", tags: Sequence[str] = ()
     ) -> Job:
         state = self._environments.state(env)
-        return state.jobs.start_run(nodeids, state.env, labels=_labels(state), keyword=keyword, tags=tags)
+        found = state.discovery
+        # Only if discovery has already run: a name is never worth a subprocess.
+        names = found.scenario_names() if found is not None else {}
+        return state.jobs.start_run(nodeids, state.env, labels=names, keyword=keyword, tags=tags)
 
     def start_provision(self, node_ids: list[str], env: str | None = None) -> Job:
         state = self._environments.state(env)
@@ -293,16 +296,3 @@ def _drop(state: EnvState) -> None:
     state.discovery = None
     state.discovery_at = 0.0
 
-
-def _labels(state: EnvState) -> dict[str, str]:
-    """Scenario names for a run's rows — only if discovery already ran; never worth a subprocess."""
-    found = state.discovery
-    if found is None:
-        return {}
-    labels: dict[str, str] = {}
-    for test in found.tests:
-        spec = found.spec(test.covers) if test.covers else None
-        if spec is None or not spec.scenario:
-            continue
-        labels[test.nodeid] = f"{spec.scenario} [{test.params}]" if test.params else spec.scenario
-    return labels

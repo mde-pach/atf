@@ -88,12 +88,7 @@ def _items(env: str, job: Job | None) -> list[Row]:
     if job.kind != RUN:
         return ordered
 
-    found = app().discovery.of(env)
-    by_spec = {spec.id: spec.scenario for spec in found.specs}
-    named = {
-        test.nodeid: f"{by_spec.get(test.covers, test.name)}{f' [{test.params}]' if test.params else ''}"
-        for test in found.tests
-    }
+    named = app().discovery.of(env).scenario_names()
     for item in ordered:
         if isinstance(item, TestResult):
             item.label = named.get(item.nodeid) or item.label or item.nodeid.rsplit("::", 1)[-1]

@@ -159,9 +159,10 @@ only be broken by somebody editing the repository cannot regress on its own.
   `PGH`), named in `pyproject.toml`.
 - **No literal `http://` or `https://` under `src/atf/` except `suite/scaffold.py`.** A host belongs in a
   manifest, behind a `*_env` pointer. Review's job.
-- **No Node, no build step, one semantic CSS file.** The cockpit is server-rendered with htmx
-  vendored into `src/atf/cockpit/static/` — which *is* tested, because a vendored third-party file
-  shipped to users can be swapped and no linter reads it.
+- **No Node, no build step, one semantic CSS file and one script.** The cockpit is server-rendered
+  with htmx vendored into `src/atf/cockpit/static/` — which *is* tested, because a vendored
+  third-party file shipped to users can be swapped and no linter reads it. Its own behaviour is
+  `static/app.js`, beside the CSS: a file, not a string inside a template.
 - **The scaffold must run green.** CI scaffolds a suite with `atf init` and runs it with nothing
   else set up, because that is what a newcomer is handed.
 - **A comment says what a scope is or what a function does.** Not why it is that way, not what it

@@ -56,6 +56,7 @@ from .materializer import Materializer, ProvisioningError, ScopeRequired
 from .patterns import PROVISION, PROVISION_FRESH, PROVISION_FRESH_VARIED, PROVISION_VARIED
 from .placeholders import Unresolved
 from .records import as_records
+from .text import plural
 
 # ---- the vocabulary --------------------------------------------------------
 
@@ -627,10 +628,7 @@ def _(request: pytest.FixtureRequest, count: int, resource_type: str) -> None:
     engine: Materializer = request.getfixturevalue("materializer")
     records = _listing(engine, resource_type)
     if len(records) != count:
-        plural = "" if len(records) == 1 else "s"
-        pytest.fail(
-            f"{engine.env} holds {len(records)} {resource_type} record{plural}, not {count}."
-        )
+        pytest.fail(f"{engine.env} holds {plural(len(records), f'{resource_type} record')}, not {count}.")
 
 
 def _listing(engine: Materializer, resource_type: str, doing: str = "count") -> list[Record]:

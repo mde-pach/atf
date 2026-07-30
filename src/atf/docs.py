@@ -52,7 +52,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .discovery import Question, Spec, Step, parse_questions, parse_specs
-from .runner import ERROR, FAILED, PASSED, SKIPPED, TestResult
+from .run import verdict
+from .run.events import ERROR, FAILED
+from .runner import TestResult
+from .text import plural
 
 # Where the pages land when nobody says otherwise: inside the docs tree, in a directory of their
 # own, so a generated page is never mixed in with a hand-written one.
@@ -60,15 +63,6 @@ DEFAULT_OUT = "docs/specs"
 
 INDEX = "index.md"
 
-# The state words. The cockpit computes the same four in `cockpit/view.py`, and they are not shared
-# because that module reaches for fastapi at import time — a CLI command that writes markdown has no
-# business pulling a web framework in behind it.
-PASSING = "passing"
-FAILING = "failing"
-NEVER_RUN = "never run"
-SKIPPED_STATE = "skipped"
-
-_ORDER = (PASSING, FAILING, SKIPPED_STATE, NEVER_RUN)
 
 
 @dataclass(frozen=True)
@@ -128,17 +122,8 @@ def results_for(spec: Spec, results: dict[str, TestResult]) -> list[TestResult]:
 
 
 def state_of(spec: Spec, found: list[TestResult]) -> str:
-    """One word for how a scenario stands. A row that failed makes the whole scenario failing."""
-    if spec.skipped:
-        return SKIPPED_STATE
-    outcomes = [result.outcome for result in found]
-    if not outcomes:
-        return NEVER_RUN
-    if any(outcome in {FAILED, ERROR} for outcome in outcomes):
-        return FAILING
-    if all(outcome == SKIPPED for outcome in outcomes):
-        return SKIPPED_STATE
-    return PASSING if all(outcome in {PASSED, SKIPPED} for outcome in outcomes) else FAILING
+    """One word for how a scenario stands, from the runs recorded for its rows."""
+    return verdict.state_of(spec.skipped, (result.outcome for result in found))
 
 
 def _counts(specs: list[Spec], results: dict[str, TestResult]) -> dict[str, int]:
@@ -151,7 +136,7 @@ def _counts(specs: list[Spec], results: dict[str, TestResult]) -> dict[str, int]
 
 def _states_sentence(specs: list[Spec], results: dict[str, TestResult]) -> str:
     tally = _counts(specs, results)
-    return ", ".join(f"{tally[state]} {state}" for state in _ORDER if tally.get(state))
+    return ", ".join(f"{tally[state]} {state}" for state in verdict.ORDER if tally.get(state))
 
 
 def _summary(specs: list[Spec], results: dict[str, TestResult], env: str) -> str:
@@ -161,7 +146,7 @@ def _summary(specs: list[Spec], results: dict[str, TestResult], env: str) -> str
     environment on it is a rumour: the same scenario passes against dev and fails against staging,
     and that is the normal case rather than the odd one.
     """
-    size = _plural(len(specs), "scenario")
+    size = plural(len(specs), "scenario")
     if not results:
         return f"{size}. Nothing has run against {env} yet."
     return f"{size} — {_states_sentence(specs, results)}, as of the runs recorded against {env}."
@@ -169,12 +154,8 @@ def _summary(specs: list[Spec], results: dict[str, TestResult], env: str) -> str
 
 def tally(specs: list[Spec], results: dict[str, TestResult], env: str) -> str:
     """The one line `atf docs` prints when it is done, and the index page repeats."""
-    features = _plural(len({spec.file for spec in specs}), "feature")
+    features = plural(len({spec.file for spec in specs}), "feature")
     return f"{features}, {_summary(specs, results, env)}"
-
-
-def _plural(count: int, noun: str) -> str:
-    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def _last_run_at(results: dict[str, TestResult]) -> float:
@@ -353,7 +334,7 @@ def _index_page(
     if when:
         lines += [f"Newest run: {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(when))}.", ""]
     if questions:
-        lines += [f"{_plural(len(questions), 'question')} nobody has answered yet.", ""]
+        lines += [f"{plural(len(questions), 'question')} nobody has answered yet.", ""]
 
     lines += ["| Feature | Scenarios | State |", "|---|---|---|"]
     for page, members in zip(pages, [grouped[path] for path in sorted(grouped)], strict=True):

@@ -21,6 +21,7 @@ from .runner import ERROR, FAILED, RunRecord, failed_ids
 from .runner import run as run_tests
 from .scaffold import MANIFEST_FILE, scaffold
 from .store import ReportError, RunStore
+from .text import plural
 from .typespec import DATA, EPHEMERAL, REFERENCE
 
 # `atf docs` is the only command that needs [discovery](discovery.py), and discovery is the most
@@ -435,7 +436,7 @@ def cmd_docs(args: argparse.Namespace) -> int:
         print(f"atf: nothing written — {exc}", file=sys.stderr)
         return 2
 
-    print(f"Wrote {len(written)} page{'' if len(written) == 1 else 's'} under {out}:")
+    print(f"Wrote {plural(len(written), 'page')} under {out}:")
     for path in written:
         print(f"  {path.relative_to(out)}")
     print("\n" + living.tally(specs, results, env))

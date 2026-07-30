@@ -15,7 +15,8 @@ over a scenario one of whose rows did not.
 import pytest
 
 from atf.discovery import Spec
-from atf.docs import FAILING, NEVER_RUN, PASSING, SKIPPED_STATE, state_of
+from atf.docs import state_of
+from atf.run.verdict import FAILING, NEVER_RUN, PASSING, SKIPPED_STATE
 from atf.runner import ERROR, FAILED, PASSED, SKIPPED
 from atf.runner import TestResult as Result  # `Test*` at module level is something pytest collects
 

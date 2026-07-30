@@ -37,11 +37,11 @@ def start_run(request: Request, nodeid: list[str] = NODEIDS, confirm: str = CONF
     cockpit = app()
     # Form values become pytest argv, so only ids the cockpit itself discovered may pass: otherwise
     # `-p evil_module` or an arbitrary path would be honoured.
-    known = {test.nodeid for test in cockpit.discovery(env).tests}
+    known = {test.nodeid for test in cockpit.discovery.of(env).tests}
     selected = [item for item in nodeid if item in known]
     if nodeid and not selected:
         raise HTTPException(status_code=409, detail="none of those tests belong to this suite")
-    cockpit.start_run(selected or sorted(known), env)
+    cockpit.jobs.start_run(selected or sorted(known), env)
     return partial(request, "partials/activity.html", **_context(env))
 
 
@@ -57,10 +57,10 @@ def start_provision(request: Request, node: list[str] = NODES, confirm: str = CO
     if node and not selected:
         raise HTTPException(status_code=409, detail="none of those resources are in this catalog")
 
-    targets = selected or cockpit.provision_targets(env)
+    targets = selected or cockpit.jobs.provision_targets(env)
     if not targets:
         raise HTTPException(status_code=409, detail=f"nothing to provision — {env} already has every resource")
-    cockpit.start_provision(targets, env)
+    cockpit.jobs.start_provision(targets, env)
     return partial(request, "partials/activity.html", **_context(env))
 
 
@@ -71,11 +71,11 @@ def activity(request: Request):
 
 def _context(env: str) -> dict[str, Any]:
     cockpit = app()
-    job = cockpit.active_job(env) or next(iter(cockpit.recent_jobs(env, limit=1)), None)
+    job = cockpit.jobs.active(env) or next(iter(cockpit.jobs.recent(env, limit=1)), None)
 
     if job is not None and job.done and job.kind == "provision" and job.id not in _settled:
         _settled.add(job.id)
-        cockpit.status(env, refresh=True)
+        cockpit.status.of(env, refresh=True)
 
     return {"env": env, "job": job, "items": _items(env, job), "poll_ms": POLL_MS}
 
@@ -92,7 +92,7 @@ def _items(env: str, job: Job | None) -> list[Row]:
     if job.kind != RUN:
         return ordered
 
-    found = app().discovery(env)
+    found = app().discovery.of(env)
     by_spec = {spec.id: spec.scenario for spec in found.specs}
     named = {
         test.nodeid: f"{by_spec.get(test.covers, test.name)}{f' [{test.params}]' if test.params else ''}"

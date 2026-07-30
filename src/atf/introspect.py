@@ -60,6 +60,7 @@ from .steps import (
     comparisons_for,
     generic,
 )
+from .text import plural
 from .typespec import DATA, REFERENCE
 
 KEYWORDS = (GIVEN, WHEN, THEN)
@@ -567,17 +568,13 @@ def row_problems(rows: list[Row]) -> list[str]:
     unresolved = [row for row in rows if row.problem]
     if unresolved:
         problems.append(
-            f"{_plural(len(unresolved), 'step')} {'does' if len(unresolved) == 1 else 'do'} not resolve yet — "
+            f"{plural(len(unresolved), 'step')} {'does' if len(unresolved) == 1 else 'do'} not resolve yet — "
             + "; ".join(row.problem for row in unresolved)
             + "."
         )
     if not any(row.keyword == THEN for row in rows):
         problems.append("Nothing is asserted — a scenario needs at least one Then.")
     return problems
-
-
-def _plural(count: int, noun: str) -> str:
-    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def gherkin(title: str, rows: list[Row]) -> str:
@@ -626,7 +623,7 @@ def feature_options(found: Discovery) -> list[dict[str, str]]:
         {
             "value": name,
             "label": name,
-            "meta": f"{counts.get(name, 0)} scenario" + ("" if counts.get(name) == 1 else "s"),
+            "meta": plural(counts.get(name, 0), "scenario"),
             "desc": "",
         }
         for name in sorted(counts)

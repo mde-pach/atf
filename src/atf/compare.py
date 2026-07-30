@@ -16,6 +16,8 @@ import re
 from datetime import datetime
 from typing import Any
 
+from .text import plural
+
 # What a person writes in Gherkin for a value that is not there. `""` is the common one; the other
 # two are what someone types when the empty string looks like a mistake.
 BLANK = frozenset({"", "null", "none"})
@@ -281,7 +283,7 @@ def describe(value: Any) -> str:
     if isinstance(value, str):
         return f'"{value}"'
     if isinstance(value, list):
-        return f"a list of {len(value)} item" + ("" if len(value) == 1 else "s")
+        return f"a list of {plural(len(value), 'item')}"
     if isinstance(value, dict):
         return "a record with " + (", ".join(sorted(map(str, value))) or "no fields")
     return f"{value!r}"

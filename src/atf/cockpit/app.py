@@ -7,13 +7,14 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import __version__
-from .deps import Cockpit, get_cockpit, set_cockpit
+from ..engine.session import Session
+from .deps import get_session, set_session
 from .routers import activity, authoring, catalog, compose, overview, scenarios, search
 from .view import STATIC_DIR, templates
 
 
 def create_app(
-    env: str | None = None, cockpit: Cockpit | None = None, mcp_host: str | None = None
+    env: str | None = None, session: Session | None = None, mcp_host: str | None = None
 ) -> FastAPI:
     """The cockpit, and — when a host is given for it — the MCP endpoint beside it.
 
@@ -23,12 +24,12 @@ def create_app(
     imported.
     """
     app = FastAPI(title="ATF Cockpit", version=__version__, docs_url=None, redoc_url=None)
-    set_cockpit(cockpit or Cockpit(env))
+    set_session(session or Session(env))
 
     if mcp_host is not None:
         from ..mcp import MOUNT, endpoint
 
-        served, lifespan = endpoint(get_cockpit(), mcp_host)
+        served, lifespan = endpoint(get_session(), mcp_host)
         # Assigned rather than passed to `FastAPI(...)`: the endpoint needs the cockpit, which is
         # only settled above, and Starlette reads this when the server starts rather than here.
         app.router.lifespan_context = lifespan

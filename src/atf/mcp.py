@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from . import __version__
-from .cockpit.deps import Cockpit
+from .engine.session import Session
 from .introspect import Composition, Surface, compose, describe, try_scenario
 
 # The module the server class lives in. Named here, once, so that an SDK which moves it fails
@@ -70,16 +70,16 @@ def unavailable() -> str:
 
 
 @dataclass
-class Session:
-    """The tools, over one cockpit.
+class Tools:
+    """The three tools, over one session.
 
     A dataclass rather than three module functions because every answer is about an environment, and
-    the cockpit is what holds one — its catalog, its discovery and its status, cached and shared with
-    the pages. An agent and a person looking at the same suite see the same thing, including how
-    stale it is.
+    a session is what holds one — its catalog, its discovery and its status, cached and shared with
+    the cockpit's pages. An agent and a person looking at the same suite see the same thing,
+    including how stale it is.
     """
 
-    cockpit: Cockpit
+    session: Session
 
     # ---- what can be said here ------------------------------------------------
 
@@ -95,8 +95,8 @@ class Session:
         """
         env = self._env(environment)
         return {
-            "environments": self.cockpit.environments,
-            "mutable": self.cockpit.is_mutable(env),
+            "environments": self.session.environments.names,
+            "mutable": self.session.is_mutable(env),
             **describe(self._surface(env), feature),
         }
 
@@ -150,7 +150,7 @@ class Session:
         Running provisions, so this is refused where the environment is not in `mutable_envs`.
         """
         env = self._env(environment)
-        if not self.cockpit.is_mutable(env):
+        if not self.session.is_mutable(env):
             return {
                 "ran": False,
                 "problems": [
@@ -175,7 +175,7 @@ class Session:
         }
 
     def _run_saved(self, scenario: str, env: str) -> dict[str, Any]:
-        found = self.cockpit.discovery(env)
+        found = self.session.discovery.of(env)
         spec = found.spec(scenario) or next(
             (one for one in found.specs if one.scenario == scenario), None
         )
@@ -192,7 +192,7 @@ class Session:
                     f'Bind its feature with scenarios("…") in a steps/test_*.py module.'
                 ],
             }
-        summary = self.cockpit.run_now([test.nodeid for test in tests], env)
+        summary = self.session.jobs.run_now([test.nodeid for test in tests], env)
         return {
             "ran": True,
             "scenario": spec.id,
@@ -222,20 +222,20 @@ class Session:
         staging is how an agent ends up acting on the wrong place.
         """
         if not environment:
-            return self.cockpit.default_env
-        if environment not in self.cockpit.manifest.environments:
-            known = ", ".join(self.cockpit.environments)
+            return self.session.default_env
+        if environment not in self.session.manifest.environments:
+            known = ", ".join(self.session.environments.names)
             raise ValueError(f"unknown environment {environment!r} — this suite has {known}")
         return environment
 
     def _surface(self, env: str) -> Surface:
         return Surface(
             env=env,
-            root=self.cockpit.manifest.root,
-            specs_dir=self.cockpit.manifest.specs_dir,
-            engine=self.cockpit.state(env).materializer,
-            found=self.cockpit.discovery(env),
-            status=self.cockpit.status(env),
+            root=self.session.manifest.root,
+            specs_dir=self.session.manifest.specs_dir,
+            engine=self.session.state(env).materializer,
+            found=self.session.discovery.of(env),
+            status=self.session.status.of(env),
         )
 
 
@@ -255,7 +255,7 @@ def _as_answer(drafted: Composition) -> dict[str, Any]:
 # ---- the server ---------------------------------------------------------------
 
 
-def server(cockpit: Cockpit) -> Any:
+def server(session: Session) -> Any:
     """An MCP server offering the three tools over this suite.
 
     The tools are registered from the bound methods above, so their descriptions are the docstrings
@@ -277,13 +277,13 @@ def server(cockpit: Cockpit) -> Any:
             "Gherkin without writing it; `run` runs a scenario or a draft."
         ),
     )
-    session = Session(cockpit)
-    for tool in (session.describe, session.compose, session.run):
+    tools = Tools(session)
+    for tool in (tools.describe, tools.compose, tools.run):
         built.add_tool(tool, name=tool.__name__)
     return built
 
 
-def endpoint(cockpit: Cockpit, host: str = "127.0.0.1") -> tuple[Any, Any]:
+def endpoint(session: Session, host: str = "127.0.0.1") -> tuple[Any, Any]:
     """The application to mount at `MOUNT`, and the lifespan it needs, for one suite.
 
     Two things rather than one because a mounted sub-application's lifespan is *not* run by its
@@ -294,7 +294,7 @@ def endpoint(cockpit: Cockpit, host: str = "127.0.0.1") -> tuple[Any, Any]:
     That check is the reason a page in a browser cannot reach an agent's endpoint by guessing its
     address, and it is worth keeping for a server that performs actions against real environments.
     """
-    built = server(cockpit)
+    built = server(session)
     # Stateless, because the cockpit is single-user and localhost by default: a session to resume
     # would be state to expire, and nothing here outlives a call.
     served = built.streamable_http_app(

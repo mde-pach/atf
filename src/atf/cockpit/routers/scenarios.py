@@ -58,8 +58,8 @@ def _context(env: str, spec_id: str, prefer: str = "") -> dict[str, Any]:
         "views": views,
         "view": view,
         "focus": view.id if view else "",
-        "status": app().status(env),
-        "results": app().results(env),
+        "status": app().status.of(env),
+        "results": app().results.of(env),
         # Named by the name the scenario used, so a step reads `visitor` rather than `guests.visitor`.
         "nodes": app().state(env).materializer.nodes,
         # What a run currently has in flight, so a verdict on screen moves with it.
@@ -75,14 +75,14 @@ def _context(env: str, spec_id: str, prefer: str = "") -> dict[str, Any]:
 
 def _questions(env: str) -> dict[tuple[str, str], list[Any]]:
     asked: dict[tuple[str, str], list[Any]] = {}
-    for question in app().discovery(env).questions:
+    for question in app().discovery.of(env).questions:
         asked.setdefault((question.feature, question.rule), []).append(question)
     return asked
 
 
 def _busy(env: str) -> set[str]:
     """The tests a run has started and not finished. Empty whenever nothing is running."""
-    job = app().active_job(env)
+    job = app().jobs.active(env)
     if job is None or job.kind != RUN:
         return set()
     return {item.id for item in job.items.values() if not item.done}

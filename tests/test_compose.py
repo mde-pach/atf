@@ -22,8 +22,9 @@ from fastapi.testclient import TestClient
 from markupsafe import escape
 
 from atf.cockpit.app import create_app
-from atf.cockpit.deps import Cockpit, set_cockpit
+from atf.cockpit.deps import set_session
 from atf.discovery import parse_feature
+from atf.engine.session import Session
 from atf.patterns import PROVISION
 from atf.steps import COUNT, FIELD_IS, FIELD_IS_NOT, SHAPE_IS
 from tests.sample_project import write_sample_project
@@ -49,16 +50,16 @@ def client(project):
     import sys
 
     sys.modules.pop("suite_adapters", None)
-    cockpit = Cockpit("dev")
-    app = create_app(cockpit=cockpit)
+    session = Session("dev")
+    app = create_app(session=session)
     with TestClient(app) as test_client:
-        test_client.cockpit = cockpit  # type: ignore[attr-defined]
+        test_client.session = session  # type: ignore[attr-defined]
         yield test_client
-    set_cockpit(None)
+    set_session(None)
 
 
 def confirm(client) -> str:
-    return client.cockpit.confirm_token
+    return client.session.confirm_token
 
 
 def draft(**overrides) -> dict[str, str]:
@@ -178,7 +179,7 @@ def test_a_step_in_a_conftest_is_reachable_from_anywhere(client, project):
         "    context.result = []\n",
         encoding="utf-8",
     )
-    client.cockpit.invalidate("dev")
+    client.session.invalidate("dev")
 
     fresh = client.post("/compose/preview", data=draft(feature="", feature_title="Billing")).text
     assert "I do something shared" in fresh
@@ -186,11 +187,11 @@ def test_a_step_in_a_conftest_is_reachable_from_anywhere(client, project):
 
 def test_the_generic_provisioning_step_is_never_offered_as_a_when_or_then(client):
     """It is the resource picker. Offering the same step twice teaches the wrong model."""
-    steps = client.cockpit.discovery("dev").steps
+    steps = client.session.discovery.of("dev").steps
     assert PROVISION in [step.pattern for step in steps if step.keyword == "given"]
     for keyword in ("when", "then"):
         assert PROVISION not in [
-            step.pattern for step in client.cockpit.discovery("dev").steps_for(keyword)
+            step.pattern for step in client.session.discovery.of("dev").steps_for(keyword)
         ]
     # Checked as a whole option value, not as a substring: `the result contains the {resource_type}
     # "{name}"` legitimately ends with the provisioning wording and is a different step.
@@ -227,7 +228,7 @@ def test_a_suite_with_no_when_or_then_steps_is_told_how_to_write_one(client, mon
     victims changed run to run, which is worse than a break: a test that poisons its neighbours
     intermittently is a flake nobody can reproduce.
     """
-    found = client.cockpit.discovery("dev")
+    found = client.session.discovery.of("dev")
     monkeypatch.setattr(found, "steps", [step for step in found.steps if step.keyword == "given"])
 
     body = client.get("/compose").text
@@ -736,15 +737,15 @@ def test_a_brand_new_feature_needs_no_python_file_at_all(client, project):
 
     assert not (project / "specs" / "steps" / "test_billing.py").exists()
 
-    found = client.cockpit.discovery("dev", refresh=True)
+    found = client.session.discovery.of("dev", refresh=True)
     spec = next(item for item in found.specs if item.feature == "Billing")
     assert found.tests_for_spec(spec.id), "pytest collects it, with nothing else written"
 
 
 def test_writing_invalidates_the_cached_discovery(client):
-    before = len(client.cockpit.discovery("dev").specs)
+    before = len(client.session.discovery.of("dev").specs)
     client.post("/compose/apply", data={**draft(), "confirm": confirm(client)})
-    assert len(client.cockpit.discovery("dev").specs) == before + 1
+    assert len(client.session.discovery.of("dev").specs) == before + 1
 
 
 # ---- entry points -----------------------------------------------------------

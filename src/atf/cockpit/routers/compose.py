@@ -130,8 +130,8 @@ def surface(env: str) -> Surface:
         root=cockpit.manifest.root,
         specs_dir=cockpit.manifest.specs_dir,
         engine=cockpit.state(env).materializer,
-        found=cockpit.discovery(env),
-        status=cockpit.status(env),
+        found=cockpit.discovery.of(env),
+        status=cockpit.status.of(env),
     )
 
 
@@ -534,7 +534,7 @@ def _after_writing(env: str, draft: Draft) -> None:
     wording the suite has never seen. Saying "done" while either is missing would teach the model
     wrongly at precisely the moment it is being learnt.
     """
-    found = app().discovery(env)
+    found = app().discovery.of(env)
     spec = found.spec(draft.spec_id) if draft.spec_id else None
     if spec is None:
         draft.next_steps.append(
@@ -669,7 +669,7 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         # What a cell may say instead of a value, offered rather than remembered.
         "markers": MARKERS,
         "aspect_options": lambda row: aspect_options(where, row.subject.removeprefix(NODE_SUBJECT)),
-        "held_fields": lambda: held_fields(cockpit.results(env)),
+        "held_fields": lambda: held_fields(cockpit.results.of(env)),
         "comparison_options": comparison_options,
         "resource_options": resource_options(where),
         "claim": comparison,

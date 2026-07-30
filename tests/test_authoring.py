@@ -25,8 +25,9 @@ from fastapi.testclient import TestClient
 from atf.accessible import Page
 from atf.catalog import load_catalog
 from atf.cockpit.app import create_app
-from atf.cockpit.deps import Cockpit, set_cockpit
+from atf.cockpit.deps import set_session
 from atf.cockpit.routers.authoring import Proposal, apply, literal
+from atf.engine.session import Session
 from tests.sample_project import write_sample_project
 from tests.test_cockpit import catalog, provisioning_engine  # noqa: F401 - shared, and documented there
 
@@ -64,14 +65,14 @@ def client(project):
     import sys
 
     sys.modules.pop("suite_adapters", None)
-    cockpit = Cockpit("dev")
-    app = create_app(cockpit=cockpit)
+    session = Session("dev")
+    app = create_app(session=session)
     try:
         with TestClient(app) as test_client:
-            test_client.cockpit = cockpit  # type: ignore[attr-defined]
+            test_client.session = session  # type: ignore[attr-defined]
             yield test_client
     finally:
-        set_cockpit(None)
+        set_session(None)
         sys.modules.pop("suite_adapters", None)
 
 
@@ -103,7 +104,7 @@ def browsable(client, project):
 
 
 def confirm(client) -> str:
-    return client.cockpit.confirm_token
+    return client.session.confirm_token
 
 
 def seed(project: Path, collection: str, record: dict[str, Any]) -> dict[str, Any]:
@@ -124,7 +125,7 @@ def provision(client, node_id: str) -> None:
 
     client.post("/provision", data={"confirm": confirm(client), "node": node_id})
     deadline = time.time() + 60
-    while client.cockpit.active_job("dev") is not None and time.time() < deadline:
+    while client.session.jobs.active("dev") is not None and time.time() < deadline:
         time.sleep(0.05)
 
 
@@ -170,7 +171,7 @@ def test_a_scoped_listing_asks_which_parent_to_look_inside(client, project, brow
         (project / "catalog" / "resources.yaml").read_text() + SCOPED_TYPE, encoding="utf-8"
     )
     # The swapped-in adapter survives `invalidate`: only the catalog is re-read from disk.
-    client.cockpit.invalidate("dev")
+    client.session.invalidate("dev")
     assert provisioning_engine(client).adapters["store"] is browsable
 
     body = client.get("/catalog/type/note").text
@@ -185,9 +186,9 @@ def test_browsing_inside_a_chosen_parent_lists_what_is_in_it(client, project, br
     (project / "catalog" / "resources.yaml").write_text(
         (project / "catalog" / "resources.yaml").read_text() + SCOPED_TYPE, encoding="utf-8"
     )
-    client.cockpit.invalidate("dev")
+    client.session.invalidate("dev")
     provision(client, "accounts.primary")
-    identity = client.cockpit.status("dev").identity("accounts.primary")
+    identity = client.session.status.of("dev").identity("accounts.primary")
     seed(project, "notes", {"id": "note-1", "account_id": identity, "slug": "kept"})
 
     body = client.get("/catalog/type/note?scope=accounts.primary").text
@@ -226,13 +227,13 @@ def test_a_record_out_there_becomes_a_node_that_finds_it_again(client, project, 
 
     nodes = catalog(client)
     assert "accounts.third" in nodes
-    assert client.cockpit.status("dev", refresh=True).state("accounts.third") == "present"
+    assert client.session.status.of("dev", refresh=True).state("accounts.third") == "present"
 
 
 def test_a_derived_node_points_at_the_catalog_rather_than_at_this_environment(client, project, browsable):
     """A foreign key becomes a `${...}` placeholder, which is what makes the node re-creatable."""
     provision(client, "accounts.primary")
-    identity = client.cockpit.status("dev").identity("accounts.primary")
+    identity = client.session.status.of("dev").identity("accounts.primary")
     seed(project, "projects", {"id": "project-9", "slug": "imported", "account_id": identity})
 
     sheet = client.get("/authoring/new?type=project&identity=project-9").text
@@ -304,7 +305,7 @@ def test_the_default_file_is_the_one_this_type_already_lives_in(client):
 
 def test_a_type_with_no_instance_yet_defaults_to_a_file_named_for_it(client, project):
     (project / "catalog" / "widgets.yaml").write_text("", encoding="utf-8")
-    client.cockpit.invalidate("dev")
+    client.session.invalidate("dev")
 
     sheet = client.get("/authoring/new?type=external_widget").text
     assert 'name="file" value="external_widgets.yaml"' in sheet
@@ -320,7 +321,7 @@ def test_copying_suggests_a_new_name_and_keeps_everything_else(client):
 def test_an_edit_changes_one_entry_and_leaves_the_rest_of_the_file_alone(client, project):
     path = project / "catalog" / "accounts.yaml"
     path.write_text("# accounts, oldest first — do not reorder\n" + path.read_text(), encoding="utf-8")
-    client.cockpit.invalidate("dev")
+    client.session.invalidate("dev")
 
     response = client.post(
         "/authoring/write",

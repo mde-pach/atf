@@ -32,8 +32,9 @@ from fastapi.testclient import TestClient
 
 from atf.accessible import Page
 from atf.cockpit.app import create_app
-from atf.cockpit.deps import Cockpit, set_cockpit
+from atf.cockpit.deps import set_session
 from atf.cockpit.view import build_graph, closure_of, lineage_sentence, neighbourhood, readiness, scenario_views
+from atf.engine.session import Session
 from atf.engine.status import ABSENT, UNSUPPORTED, ResourceStatus, Statuses
 from tests.sample_project import write_sample_project
 
@@ -57,25 +58,25 @@ def client(project):
     # The sample project's adapter module shares a name with one in tests/test_bootstrap.py, so a
     # leaked import here fails an unrelated file depending on collection order.
     sys.modules.pop("suite_adapters", None)
-    cockpit = Cockpit("dev")
-    app = create_app(cockpit=cockpit)
+    session = Session("dev")
+    app = create_app(session=session)
     try:
         with TestClient(app) as test_client:
-            test_client.cockpit = cockpit  # type: ignore[attr-defined]
+            test_client.session = session  # type: ignore[attr-defined]
             yield test_client
     finally:
-        set_cockpit(None)
+        set_session(None)
         sys.modules.pop("suite_adapters", None)
 
 
 def confirm(client) -> str:
-    return client.cockpit.confirm_token
+    return client.session.confirm_token
 
 
 def wait_for_job(client, env: str = "dev", timeout: float = 180.0) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if client.cockpit.active_job(env) is None:
+        if client.session.jobs.active(env) is None:
             return
         time.sleep(0.05)
     raise AssertionError("the job did not finish")
@@ -101,7 +102,7 @@ def test_an_absent_resource_is_not_a_blocker(client):
     resource — actually stand between a scenario and its first `When`.
     """
     nodes = catalog(client)
-    status = client.cockpit.status("dev")
+    status = client.session.status.of("dev")
     assert status.state("accounts.primary") == "absent"
 
     ready = readiness(["projects.alpha"], nodes, status)
@@ -112,7 +113,7 @@ def test_an_absent_resource_is_not_a_blocker(client):
 def test_a_missing_reference_resource_does_block(client):
     nodes = catalog(client)
     # The sample project's conftest seeds the widget, so state it absent to reach the other case.
-    status = Statuses({**client.cockpit.status("dev"), "widgets.imported": ResourceStatus(ABSENT)})
+    status = Statuses({**client.session.status.of("dev"), "widgets.imported": ResourceStatus(ABSENT)})
 
     ready = readiness(["widgets.imported"], nodes, status)
     assert ready.blocked is True
@@ -123,7 +124,7 @@ def test_a_missing_reference_resource_does_block(client):
 
 def test_an_unreachable_system_blocks(client):
     nodes = catalog(client)
-    status = Statuses({**client.cockpit.status("dev"), "accounts.primary": ResourceStatus(UNSUPPORTED)})
+    status = Statuses({**client.session.status.of("dev"), "accounts.primary": ResourceStatus(UNSUPPORTED)})
 
     ready = readiness(["projects.alpha"], nodes, status)
     assert [node_id for node_id, _ in ready.blockers] == ["accounts.primary"]
@@ -194,7 +195,7 @@ def test_the_scenario_page_renders_the_error_at_the_failing_step(client, project
 
 def test_a_test_records_the_resources_it_provisioned(client):
     run_everything(client)
-    provisioned = {node for result in client.cockpit.results("dev").values() for node in result.provisioned}
+    provisioned = {node for result in client.session.results.of("dev").values() for node in result.provisioned}
     assert "accounts.primary" in provisioned
 
 
@@ -203,15 +204,15 @@ def test_a_test_records_the_resources_it_provisioned(client):
 
 def test_results_outlive_the_cockpit_that_produced_them(client, project):
     run_everything(client)
-    assert client.cockpit.last_run("dev") is not None
+    assert client.session.results.last_run("dev") is not None
 
-    fresh = Cockpit("dev")
+    fresh = Session("dev")
     try:
-        last = fresh.last_run("dev")
+        last = fresh.results.last_run("dev")
         assert last is not None and last.counts["passed"] >= 6
-        assert fresh.results("dev"), "a new cockpit must read the run history from disk"
+        assert fresh.results.of("dev"), "a new session must read the run history from disk"
     finally:
-        set_cockpit(None)
+        set_session(None)
 
 
 def test_run_history_is_written_under_dot_atf(client, project):
@@ -246,17 +247,17 @@ def test_the_summary_fragment_carries_the_verdict_for_out_of_band_refresh(client
 def test_provisioning_runs_as_a_job_with_per_node_progress(client):
     assert client.post("/provision", data={"confirm": confirm(client)}).status_code == 200
 
-    job = client.cockpit.active_job("dev") or client.cockpit.recent_jobs("dev", limit=1)[0]
+    job = client.session.jobs.active("dev") or client.session.jobs.recent("dev", limit=1)[0]
     assert job.kind == "provision"
     assert "accounts.primary" in job.items
 
     wait_for_job(client)
-    assert client.cockpit.status("dev").state("accounts.primary") == "present"
+    assert client.session.status.of("dev").state("accounts.primary") == "present"
 
 
 def test_a_run_is_the_same_shape_of_job(client):
     client.post("/run", data={"confirm": confirm(client)})
-    job = client.cockpit.active_job("dev") or client.cockpit.recent_jobs("dev", limit=1)[0]
+    job = client.session.jobs.active("dev") or client.session.jobs.recent("dev", limit=1)[0]
     assert job.kind == "run"
 
     wait_for_job(client)
@@ -274,7 +275,7 @@ def test_the_activity_dock_reports_progress_then_settles(client):
 
 
 def test_provisioning_only_targets_what_atf_can_actually_create(client):
-    targets = client.cockpit.provision_targets("dev")
+    targets = client.session.jobs.provision_targets("dev")
     # `visitors.walkin` is ephemeral and `widgets.imported` is a reference: neither is creatable.
     assert "visitors.walkin" not in targets and "widgets.imported" not in targets
     assert "accounts.primary" in targets
@@ -282,26 +283,26 @@ def test_provisioning_only_targets_what_atf_can_actually_create(client):
 
 def test_the_provision_label_names_the_set_the_action_provisions(client):
     body = client.get("/catalog").text
-    assert f"Provision {len(client.cockpit.provision_targets('dev'))} resources" in body
+    assert f"Provision {len(client.session.jobs.provision_targets('dev'))} resources" in body
 
 
 def test_provisioning_one_node_pulls_in_its_dependencies(client):
     client.post("/provision", data={"confirm": confirm(client), "node": "projects.alpha"})
     wait_for_job(client)
 
-    status = client.cockpit.status("dev")
+    status = client.session.status.of("dev")
     assert status.state("projects.alpha") == "present"
     assert status.state("accounts.primary") == "present"
 
 
 def test_an_environment_never_has_two_jobs_at_once(client):
     client.post("/run", data={"confirm": confirm(client)})
-    first = client.cockpit.active_job("dev")
+    first = client.session.jobs.active("dev")
     client.post("/run", data={"confirm": confirm(client)})
-    second = client.cockpit.active_job("dev")
+    second = client.session.jobs.active("dev")
     assert first is None or second is None or first.id == second.id
     wait_for_job(client)
-    assert len(client.cockpit.recent_jobs("dev", limit=5)) == 1
+    assert len(client.session.jobs.recent("dev", limit=5)) == 1
 
 
 # ---- mutations are gated ----------------------------------------------------
@@ -333,12 +334,12 @@ def test_a_run_only_accepts_tests_this_suite_discovered(client):
 
 
 def test_running_a_selection_runs_only_that_selection(client):
-    target = next(test for test in client.cockpit.discovery("dev").tests if "standard_account" in test.nodeid)
+    target = next(test for test in client.session.discovery.of("dev").tests if "standard_account" in test.nodeid)
 
     client.post("/run", data={"confirm": confirm(client), "nodeid": target.nodeid})
     wait_for_job(client)
 
-    assert list(client.cockpit.results("dev")) == [target.nodeid]
+    assert list(client.session.results.of("dev")) == [target.nodeid]
 
 
 # ---- environments -----------------------------------------------------------
@@ -413,7 +414,7 @@ def catalog(client) -> dict:
 
 def provisioning_engine(client):
     """The materializer the cockpit is driving, for the handful of tests that need the engine."""
-    return client.cockpit.state("dev").materializer
+    return client.session.state("dev").materializer
 
 
 def reading_order(page: Page) -> list[str]:
@@ -552,7 +553,7 @@ def test_neighbourhood_walks_both_directions(client):
 
 def test_the_graph_places_columns_by_depth_with_bezier_edges(client):
     nodes = catalog(client)
-    graph = build_graph(nodes, "projects.alpha", client.cockpit.status("dev"))
+    graph = build_graph(nodes, "projects.alpha", client.session.status.of("dev"))
 
     boxes = {box.id: box for box in graph.boxes}
     assert boxes["accounts.primary"].x < boxes["projects.alpha"].x

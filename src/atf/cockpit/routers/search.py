@@ -36,7 +36,7 @@ def _hits(env: str, query: str) -> list[Hit]:
 
     cockpit = app()
     engine = cockpit.state(env).materializer
-    status = cockpit.status(env)
+    status = cockpit.status.of(env)
     hits: list[Hit] = []
 
     for name in engine.types:
@@ -56,7 +56,7 @@ def _hits(env: str, query: str) -> list[Hit]:
                     f"/catalog/node/{node_id}?env={env}", score)
             )
 
-    for spec in cockpit.discovery(env).specs:
+    for spec in cockpit.discovery.of(env).specs:
         score = _score(query, spec.scenario, spec.feature, " ".join(spec.tags), spec.narrative)
         if score:
             hits.append(

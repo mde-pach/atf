@@ -12,6 +12,7 @@ from fastapi import APIRouter, Request
 
 from ...discovery import Discovery
 from ...engine.status import PRESENT
+from ...text import plural
 from ..view import (
     BLOCKED,
     FAILING,
@@ -22,7 +23,6 @@ from ..view import (
     current_env,
     page,
     partial,
-    plural,
     readiness,
     scenario_views,
     type_views,
@@ -58,14 +58,14 @@ def summary(request: Request) -> Any:
 def _context(env: str) -> dict[str, Any]:
     cockpit = app()
     nodes = cockpit.state(env).materializer.nodes
-    status = cockpit.status(env)
-    found = cockpit.discovery(env)
+    status = cockpit.status.of(env)
+    found = cockpit.discovery.of(env)
     scenarios = scenario_views(env)
 
     buckets = {state: [view for view in scenarios if view.state == state] for state in STATES}
     ready = readiness(sorted(nodes), nodes, status)
-    targets = cockpit.provision_targets(env)
-    first_run = cockpit.last_run(env) is None
+    targets = cockpit.jobs.provision_targets(env)
+    first_run = cockpit.results.last_run(env) is None
 
     return {
         "env": env,
@@ -83,7 +83,7 @@ def _context(env: str) -> dict[str, Any]:
         "resources": len(nodes),
         "absent": ready.will_create,
         "broken": ready.blockers,
-        "runs": cockpit.recent_runs(env, RUNS),
+        "runs": cockpit.results.recent_runs(env, RUNS),
         "flaky": _flaky(env, found),
         "unexercised": [name for name, view in type_views(env).items() if not view.specs],
         # The red cards of an Example Mapping session. A gap in the *description* rather than in the
@@ -115,4 +115,4 @@ def _flaky(env: str, found: Discovery) -> list[tuple[str, int]]:
     """Flaky tests under the scenario title they belong to — nobody recognises a pytest nodeid."""
     titles = {spec.id: spec.scenario for spec in found.specs}
     labels = {test.nodeid: titles.get(test.covers) or test.name for test in found.tests}
-    return [(labels.get(nodeid, nodeid), flips) for nodeid, flips in app().flaky(env).items()]
+    return [(labels.get(nodeid, nodeid), flips) for nodeid, flips in app().results.flaky(env).items()]

@@ -25,6 +25,7 @@ from ...catalog import TYPES_FILE, Catalog, Node
 from ...engine.status import Statuses
 from ...materializer import Materializer, ScopeRequired
 from ...placeholders import Unresolved, references
+from ...text import plural
 from ..view import (
     TypeView,
     build_graph,
@@ -33,7 +34,6 @@ from ..view import (
     lineage_sentence,
     page,
     partial,
-    plural,
     type_views,
 )
 from ..view import cockpit as app
@@ -103,7 +103,7 @@ def rescan(request: Request) -> Any:
     env = current_env(request)
     cockpit = app()
     cockpit.invalidate(env)
-    cockpit.status(env, refresh=True)
+    cockpit.status.of(env, refresh=True)
     banner = f"Re-read the catalog and asked {env} what exists."
     return page(request, "catalog.html", **_context(request, env, banner=banner))
 
@@ -127,7 +127,7 @@ def _context(
     cockpit = app()
     engine = cockpit.state(env).materializer
     nodes = engine.nodes
-    status = cockpit.status(env)
+    status = cockpit.status.of(env)
     types = type_views(env)
 
     focus = _param(request, "focus", focus)
@@ -140,8 +140,8 @@ def _context(
     focus = node.id if node else ""
     selected = node.resource if node else (wanted if wanted in types else next(iter(types), ""))
 
-    targets = cockpit.provision_targets(env)
-    age = cockpit.status_age(env)
+    targets = cockpit.jobs.provision_targets(env)
+    age = cockpit.status.age(env)
 
     context: dict[str, Any] = {
         "env": env,
@@ -177,7 +177,7 @@ def _context(
 
 def _node_context(env: str, node: Node, nodes: dict[str, Node], status: Statuses) -> dict[str, Any]:
     cockpit = app()
-    found = cockpit.discovery(env)
+    found = cockpit.discovery.of(env)
     node_id = node.id
     entry = status.of(node_id)
     creatable, why = cockpit.state(env).materializer.provisionable(node_id)
@@ -409,7 +409,7 @@ def instance_files() -> list[str]:
 
 def _identities(env: str) -> dict[str, Any]:
     """Every node's identity out there, taken from the status the page has already read."""
-    return app().status(env).identities()
+    return app().status.of(env).identities()
 
 
 def _declared(

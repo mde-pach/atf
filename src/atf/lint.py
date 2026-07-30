@@ -30,6 +30,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .text import plural
+
 # The keywords, and what each one starts. Read as text rather than through a Gherkin library
 # because `atf lint` has to work in a checkout with nothing configured — the same seam
 # `atf docs` holds.
@@ -284,7 +286,7 @@ def report(findings: list[Finding], specs_dir: Path) -> str:
     count = len(findings)
     files = len({finding.path for finding in findings})
     lines.append(
-        f"\n{count} problem{'' if count == 1 else 's'} in "
+        f"\n{plural(count, 'problem')} in "
         f"{files} file{'' if files == 1 else 's'}. Each is a fact about the file rather than a "
         "matter of taste, so there is nothing to waive — fix it, or the run does something other "
         "than what the file says."

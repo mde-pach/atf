@@ -622,7 +622,7 @@ def _from_record(env: str, resource_type: str, identity: str, scope_id: str) -> 
             detail=f"{env} has no {resource_type} with {spec.id_field} {identity!r} any more — rescan and try again",
         )
 
-    identities = app().status(env).identities()
+    identities = app().status.of(env).identities()
     return derive(record, spec, engine.nodes, identities)
 
 
@@ -630,5 +630,5 @@ def _scope_of(env: str, engine: Materializer, resource_type: str, scope: Node | 
     fields = engine.spec(resource_type).browse_fields
     if not fields or scope is None:
         return None
-    identity = app().status(env).identity(scope.id)
+    identity = app().status.of(env).identity(scope.id)
     return None if identity in (None, "") else {fields[0]: identity}

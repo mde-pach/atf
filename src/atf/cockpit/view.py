@@ -20,11 +20,14 @@ from fastapi.templating import Jinja2Templates
 
 from ..catalog import Node
 from ..discovery import Spec, Step, Test
+from ..engine.session import Session
 from ..engine.status import ABSENT, ERROR, PRESENT, UNSUPPORTED, Statuses
 from ..engine.status import TONES as STATUS_TONES
+from ..run.verdict import FAILING, NEVER_RUN, PASSING, SKIPPED_STATE, fold, state_of
 from ..runner import FAILED, PASSED, SKIPPED, StepResult, TestResult
+from ..text import plural
 from ..typespec import DATA, REFERENCE, TypeSpec
-from .deps import Cockpit, get_cockpit
+from .deps import get_session
 from .glossary import TERMS, Term, docs_url
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -45,8 +48,9 @@ _rendering_env: ContextVar[str] = ContextVar("atf_rendering_env", default="")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
-def cockpit() -> Cockpit:
-    return get_cockpit()
+def cockpit() -> Session:
+    """The session this request is being served from."""
+    return get_session()
 
 
 # ---- environment -----------------------------------------------------------
@@ -95,14 +99,14 @@ def page(request: Request, template: str, **context: Any) -> Any:
     base = {
         "request": request,
         "env": env,
-        "environments": app.environments,
+        "environments": app.environments.names,
         "mutable": app.is_mutable(env),
         "confirm_token": app.confirm_token,
         "counts": nav_counts(env),
         "manifest": app.manifest,
         "display": app.manifest.display,
-        "activity": app.active_job(env),
-        "checked_at": _checked_at(app.status_age(env)),
+        "activity": app.jobs.active(env),
+        "checked_at": _checked_at(app.status.age(env)),
         "partial": request.headers.get("HX-Request") == "true",
     }
     _rendering_env.set(env)
@@ -134,17 +138,14 @@ def nav_counts(env: str) -> dict[str, int]:
     app = cockpit()
     return {
         "catalog": len(app.state(env).materializer.nodes),
-        "scenarios": len(app.discovery(env).specs),
+        "scenarios": len(app.discovery.of(env).specs),
     }
 
 
 # ---- readiness: what would happen if you ran this now -----------------------
 
-PASSING = "passing"
-FAILING = "failing"
+# A scenario the cockpit can see something the CLI cannot: that running it will not help.
 BLOCKED = "blocked"
-NEVER_RUN = "never run"
-SKIPPED_STATE = "skipped"
 
 # An absent resource blocks nothing: naming it in a scenario is precisely what makes ATF create it.
 # These are the states that running cannot fix on its own.
@@ -240,11 +241,11 @@ _NO_RESULT = TestResult(nodeid="", outcome="not run")
 
 def scenario_views(env: str) -> list[ScenarioView]:
     app = cockpit()
-    found = app.discovery(env)
+    found = app.discovery.of(env)
     nodes = app.state(env).materializer.nodes
-    status = app.status(env)
-    results = app.results(env)
-    flaky = app.flaky(env)
+    status = app.status.of(env)
+    results = app.results.of(env)
+    flaky = app.results.flaky(env)
 
     views: list[ScenarioView] = []
     for spec in found.specs:
@@ -260,7 +261,7 @@ def scenario_views(env: str) -> list[ScenarioView]:
                 tests=tests,
                 state=_scenario_state(spec, outcomes, ready),
                 ready=ready,
-                outcome=_fold_outcomes(outcomes),
+                outcome=fold(outcomes),
                 last_run_at=max((result.finished_at for result in mine), default=None),
                 duration=sum(result.duration for result in mine),
                 flaky=any(flaky.get(test.nodeid) for test in tests),
@@ -272,25 +273,12 @@ def scenario_views(env: str) -> list[ScenarioView]:
     return views
 
 
-def _fold_outcomes(outcomes: list[str]) -> str:
-    if not outcomes:
-        return "not run"
-    unique = set(outcomes)
-    if len(unique) == 1:
-        return outcomes[0]
-    return FAILED if unique & {FAILED, ERROR} else "mixed"
-
-
 def _scenario_state(spec: Spec, outcomes: list[str], ready: Readiness) -> str:
-    if spec.skipped:
-        return SKIPPED_STATE
-    if any(outcome in {FAILED, ERROR} for outcome in outcomes):
-        return FAILING
-    if ready.blocked:
-        return BLOCKED
-    if outcomes and all(outcome == PASSED for outcome in outcomes):
-        return PASSING
-    return NEVER_RUN
+    """How it stands, plus the one thing only the cockpit knows: whether running it would help."""
+    state = state_of(spec.skipped, outcomes)
+    if state in {FAILING, SKIPPED_STATE}:
+        return state
+    return BLOCKED if ready.blocked else state
 
 
 # ---- resource types: the axis the catalog is navigated by -------------------
@@ -355,8 +343,8 @@ class TypeView:
 def type_views(env: str) -> dict[str, TypeView]:
     app = cockpit()
     engine = app.state(env).materializer
-    status = app.status(env)
-    found = app.discovery(env)
+    status = app.status.of(env)
+    found = app.discovery.of(env)
 
     views = {name: TypeView(spec=spec) for name, spec in sorted(engine.types.items())}
 
@@ -391,7 +379,7 @@ class Verdict:
 
 def verdict(env: str, scenarios: list[ScenarioView]) -> Verdict:
     """The answer to the question this app exists to ask, in one sentence."""
-    last = cockpit().last_run(env)
+    last = cockpit().results.last_run(env)
     failing = [view for view in scenarios if view.state == FAILING]
     blocked = [view for view in scenarios if view.state == BLOCKED]
     passing = [view for view in scenarios if view.state == PASSING]
@@ -411,10 +399,6 @@ def verdict(env: str, scenarios: list[ScenarioView]) -> Verdict:
         detail += f", {len(blocked)} blocked." if blocked else "."
         return Verdict("warn", "Not fully", detail, last.finished_at)
     return Verdict("ok", "Yes", f"All {plural(len(passing), 'scenario')} passing.", last.finished_at)
-
-
-def plural(count: int, noun: str) -> str:
-    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 # ---- lineage graph ----------------------------------------------------------

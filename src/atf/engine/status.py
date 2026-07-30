@@ -1,9 +1,4 @@
-"""What the engine says back: where a resource stands, and what provisioning it did.
-
-The vocabulary of both answers lives here — the state words, the provisioning actions, and the tone
-each carries — so that every layer above reads the same word from the same place. Import-safe:
-no I/O, no pytest, no web.
-"""
+"""What the engine says back: where a resource stands, and what provisioning it did."""
 
 from __future__ import annotations
 
@@ -36,8 +31,8 @@ BLOCKING = frozenset({UNSUPPORTED, ERROR})
 ATTEMPTED = frozenset({ABSENT, ERROR})
 
 # What each word means for a person, in the five names the interface has for that. Every other
-# vocabulary the cockpit tones — run outcomes, scenario states — extends this rather than repeating
-# the words here.
+# vocabulary the cockpit tones — run outcomes, scenario states — extends this one, and repeats
+# none of it.
 TONES = {
     PRESENT: "ok",
     CREATED: "ok",
@@ -62,9 +57,9 @@ class ResourceStatus:
     """Where one catalog node stands in one environment.
 
     `identity` and `record` are there only for a resource that is present. The record travels with
-    the state because a caller offering an assertion on one of its fields needs to know which fields
-    there are and what each holds right now, and reading it again would ask the backend the same
-    question twice per page.
+    the state: a caller offering an assertion on one of its fields needs to know which fields there
+    are and what each holds right now, and reading it again asks the backend the same question twice
+    per page.
     """
 
     state: str = UNKNOWN
@@ -102,8 +97,8 @@ UNKNOWN_STATUS = ResourceStatus()
 class Statuses(Mapping[str, ResourceStatus]):
     """Where every catalog node stands in one environment.
 
-    A node nobody asked about reads as `unknown` rather than raising, because a page renders from
-    whatever the last status pass covered and a catalog can grow between the two.
+    A node nobody asked about reads as `unknown` and never raises: a page renders from whatever the
+    last status pass covered, and a catalog can grow between the two.
     """
 
     def __init__(self, entries: Mapping[str, ResourceStatus] | None = None) -> None:

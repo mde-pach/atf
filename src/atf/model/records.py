@@ -1,30 +1,4 @@
-"""What counts as a record, so that a step's return value is assertable whatever shape it is in.
-
-ATF's bargain with a project is that Python does the *acting* and the readable layer does the
-*asserting*: a step performs something the framework has no generic way to perform, and hands back
-what it got. That bargain only holds if "what it got" can be almost anything. It could not: the
-assertions accepted a `dict` and nothing else, so a step returning a dataclass — the obvious way to
-write one in modern Python — had no generic assertion available to it, and the suite was forced to
-hand-write the `@then`s instead. Every broken seam converts into hand-written assertions, and
-assertions in Python are exactly the half a non-developer is supposed to read.
-
-So this module answers one question — *is this a record, and what are its fields?* — for the two
-callers that need it: the assertions in `steps.py`, and the slot descriptions in `context.py`. One
-answer for both, or the cockpit would describe a value the assertions cannot read.
-
-**The list of shapes is closed on purpose.** A mapping, a dataclass, a named tuple, and an object
-that offers itself as a dict. Anything else is not a record, and saying so is the useful answer: a
-step that returned a string meant to return a string, and the failure should say that rather than
-inventing fields for it.
-
-**A dataclass's properties are part of its record.** `Outcome` has `stdout` and `stderr` as fields
-and `output` as a property joining them — and "the output" is exactly what a scenario wants to talk
-about. A property is something the author of the step chose to publish, so it is read; one that
-raises is simply left out, because a description must never be the reason a scenario fails.
-
-Reading is **shallow**. A nested dict stays a nested dict rather than being flattened: it is a value
-this record holds, not fields of this record, and `compare.py` already knows how to match one.
-"""
+"""What counts as a record, so that a step's return value is assertable whatever shape it is in."""
 
 from __future__ import annotations
 
@@ -51,9 +25,8 @@ def as_record(value: Any) -> Record | None:
 def as_records(value: Any) -> list[Record] | None:
     """This value as the records it holds, or `None` when it holds none.
 
-    One record counts as one record; a list counts only when every item in it is one, because a
-    list with a record and a string in it is not a listing of anything and an assertion over it
-    would be guessing.
+    One record counts as one record; a list counts only when every item in it is one. A list holding a
+    record and a string is not a listing of anything, and an assertion over it is a guess.
     """
     single = as_record(value)
     if single is not None:

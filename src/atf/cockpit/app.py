@@ -18,8 +18,8 @@ def create_app(
 ) -> FastAPI:
     """The cockpit, and — when a host is given for it — the MCP endpoint beside it.
 
-    One server for both, because the two are views of one suite: the pages a person reads and the
-    same vocabulary offered to an agent. `mcp_host` rather than a flag because the endpoint has to
+    One server for both views of one suite: the pages a person reads, and the same vocabulary
+    offered to an agent. `mcp_host` is the host and not a flag, the endpoint having to
     know which host it is reachable at; `None` means nobody asked, and nothing about MCP is even
     imported.
     """
@@ -30,8 +30,8 @@ def create_app(
         from ..agent.mcp import MOUNT, endpoint
 
         served, lifespan = endpoint(get_session(), mcp_host)
-        # Assigned rather than passed to `FastAPI(...)`: the endpoint needs the cockpit, which is
-        # only settled above, and Starlette reads this when the server starts rather than here.
+        # Assigned, not passed to `FastAPI(...)`: the endpoint needs the session, which is only
+        # settled above, and Starlette reads this when the server starts.
         app.router.lifespan_context = lifespan
         app.mount(MOUNT, served)
 

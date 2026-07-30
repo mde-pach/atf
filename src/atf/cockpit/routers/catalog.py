@@ -1,12 +1,4 @@
-"""Catalog — resource types, their instances, the lineage graph and the inspector.
-
-The organising axis is the resource type, not the file a node happens to be declared in: the type
-is what binds to an adapter, what becomes a pytest fixture, and the word a scenario says. Two verbs
-here — provision, and author — scoped by what is selected; rescanning only re-reads.
-
-A type page also answers the question a catalog author starts from: what does this environment
-already have? That is `browse`, and every honest reason it can come back empty travels with it.
-"""
+"""Catalog — resource types, their instances, the lineage graph and the inspector."""
 
 from __future__ import annotations
 
@@ -47,14 +39,13 @@ PURPOSE = (
 
 PLACEHOLDER = re.compile(r"\$\{[^}]*\}")
 
-# Browsing is a convenience, not a run: one page of records is enough to write a catalog from, and
-# a wide record is worth showing narrow rather than not at all.
+# Browsing is a convenience, not a run: one page of records, each shown narrow.
 BROWSE_LIMIT = 100
 MAX_COLUMNS = 8
 CELL_CHARS = 48
 
-# A record the environment has that no node declares. It is a state of a row in the one instances
-# table, not a state of a resource, so it is spelled here rather than in the materializer.
+# A record the environment has that no node declares: a state of a row in the instances table, and
+# not a state of a resource — the engine has no word for it.
 UNDECLARED = "not declared"
 
 # A resource that depends on nothing has no lineage to draw, and the sentence says so in a line.
@@ -278,9 +269,8 @@ class EnvRecords:
 def environment_records(env: str, view: TypeView | None, scope_id: str = "") -> EnvRecords:
     """Every record of `view`'s type that `env` already holds, marked with what the catalog declares.
 
-    This is how a catalog comes to be written against a system that predates it. Browsing is
-    optional for an adapter and sometimes needs a parent named first, so both limitations are
-    carried back as facts to state rather than as an empty table.
+    Browsing is optional for an adapter and sometimes needs a parent named first. Both come back as
+    facts on the result — `browsable`, `needs` — for the page to state.
     """
     engine = app().state(env).materializer
     if view is None:

@@ -1,9 +1,4 @@
-"""Reports a pytest run as it happens, one event per phase. Loaded with `-p` by both launchers.
-
-Every hook swallows its own errors, because observing a run must never fail one. The pytest-bdd
-hooks live on a plugin object of their own, registered only when pytest-bdd is importable: pytest
-rejects a plugin declaring hooks no installed plugin specifies.
-"""
+"""Reports a pytest run as it happens, one event per phase. Loaded with `-p` by both launchers."""
 
 from __future__ import annotations
 

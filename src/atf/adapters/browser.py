@@ -1,30 +1,4 @@
-"""A page in a real browser, and the controls on it named the way a person names them.
-
-A UI is the case where ATF's promise — *one engine, any system, the same reading surface* — is
-easiest to break. The usual way to break it is to put the interface's structure into the catalog: a
-node per control, each carrying a selector. That is a Page Object, which is the thing every modern
-UI-testing pattern exists to replace, and it puts the shape of a template into the file that is
-supposed to describe the domain.
-
-So this adapter declares **pages** and nothing else. A page is an observation — somewhere to go and
-look — and the controls on it are named inline, by **role and accessible name**:
-
-```gherkin
-Given the page "compose"
-When I type "A list belongs to its owner" into the textbox "Title"
-And I click the button "Save"
-Then the option "the todo_list \"groceries\"" is showing
-```
-
-Role and accessible name are the right choice twice over. They are what a screen reader announces,
-so a scenario written in them is a scenario about what a person can perceive — and they are what an
-accessibility tree exposes, so they are also the most stable thing to automate against. A selector
-describes today's markup; a role and a name describe the thing.
-
-**Playwright is optional.** It is not a dependency of `atf`, because a framework should not decide
-that every suite tests a browser. Without it this adapter reports itself
-[unavailable](__init__.py) and the scenarios tagged as needing it skip, saying what to install.
-"""
+"""A page in a real browser, and the controls on it named the way a person names them."""
 
 from __future__ import annotations
 
@@ -81,8 +55,8 @@ class BrowserAdapter(NoopDelete):
         """Go to this page and describe what arrived.
 
         A page is `mode: data`: something to look at, never something ATF makes. What comes back is
-        deliberately thin — where it is and what it is called — because everything else worth
-        claiming is a control, and a control is named in the scenario rather than in the catalog.
+        thin — where it is and what it is called. Everything else worth claiming is a control, and a
+        control is named in the scenario, not in the catalog.
         """
         where = node.body.get(AT)
         if where is None:

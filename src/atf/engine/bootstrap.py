@@ -1,8 +1,4 @@
-"""The single funnel from environment to a configured system.
-
-The CLI, the pytest plugin and the cockpit all start here, so manifest resolution, secret
-reading, adapter construction and catalog loading happen once, in one order, everywhere.
-"""
+"""The single funnel from environment to a configured system."""
 
 from __future__ import annotations
 

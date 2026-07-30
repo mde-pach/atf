@@ -370,7 +370,7 @@ def _check_generated_keys(nodes: dict[str, Node], problems: list[str]) -> None:
 
     `find` resolves the natural key and asks the backend for a match. A value that is new on every
     pass never matches, so every run creates another record and a shared environment fills up with
-    them — quietly, because nothing fails.
+    them, quietly: nothing fails.
 
     Which providers are fresh is theirs to say, not this function's to guess — `${now+1d 09:00}`
     in a key gives one record per day, which is exactly what someone writing it there is asking

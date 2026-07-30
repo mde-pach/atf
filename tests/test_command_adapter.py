@@ -102,7 +102,8 @@ def test_the_environment_is_the_settings_and_then_the_invocation(tmp_path):
 
 def test_an_environment_may_be_pinned_rather_than_inherited(tmp_path, monkeypatch):
     """A suite driving a tool usually wants PATH and HOME; one pinning an exact environment wants
-    neither, and nothing this process happens to be carrying reaches the command."""
+    neither, and nothing this process happens to be carrying reaches the command.
+    """
     monkeypatch.setenv("FROM_THIS_PROCESS", "leaked")
     adapter = CommandAdapter(cwd=str(tmp_path), inherit_env=False, env={"ONLY": "this"})
     script = "import os; print(os.environ['ONLY'], os.environ.get('FROM_THIS_PROCESS'))"

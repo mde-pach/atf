@@ -1,10 +1,4 @@
-"""What a resource type declares, and the words a declaration may use.
-
-An entry in `resources.yaml` says which system holds resources of this kind, what ATF may do about
-one, and how to tell one from another. `TypeSpec.from_entry` is the one projection of that entry:
-the defaults are written here once, and every layer above reads the object rather than the mapping.
-Import-safe: no I/O, no pytest, no web.
-"""
+"""What a resource type declares, and the words a declaration may use."""
 
 from __future__ import annotations
 
@@ -96,7 +90,7 @@ class TypeSpec:
         return [self.remote_field(key) for key in self.natural_keys]
 
     def signature(self, record: Record) -> tuple[str, ...] | None:
-        """A record's natural key, positionally — what an adapter's `find` would have matched it on.
+        """A record's natural key, positionally: the values an adapter's `find` matches one on.
 
         `None` when the type names no natural key, or the record does not carry all of it.
         """

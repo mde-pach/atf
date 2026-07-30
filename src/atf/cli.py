@@ -110,8 +110,6 @@ def _parser() -> argparse.ArgumentParser:
     docs.add_argument("--env", help="whose run history the verdicts come from")
     docs.set_defaults(handler=cmd_docs)
 
-    # `import` groups the commands that write *source* from something outside the suite, so the
-    # next one — a schema of another kind — is a word here rather than a new top-level verb.
     importing = sub.add_parser("import", help="derive catalog source from a schema the service publishes")
     kinds = importing.add_subparsers(dest="kind", required=True)
     from_openapi = kinds.add_parser("openapi", help="derive resource types from an OpenAPI schema")
@@ -136,18 +134,9 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    """Write a new suite here, or refuse because there is one already.
+    """Scaffold a suite here. Refuses, changing nothing, when a manifest is already present.
 
-    A manifest is what every other command means by "there is a suite here", so its presence is what
-    this refuses on — and refusing is the whole of the change. It used to write whatever was
-    missing, which is right for an empty directory and wrong for a suite somebody has since edited:
-    run again over a catalog whose `resources.yaml` no longer declares an account, it put the
-    template's `accounts.yaml` back beside it and left a suite that would not load. A command that
-    scaffolds must not be able to break the thing it is pointed at.
-
-    Anything else already in the directory is left alone and reported. `git init` then `atf init` is
-    how a project ordinarily starts, so a `README.md` or a `.gitignore` being there is the normal
-    case, not a problem — and taking one over would destroy work to save a template.
+    Anything else already in the directory is left alone and reported.
     """
     root = Path(args.directory).resolve()
     if (root / MANIFEST_FILE).is_file():
@@ -164,8 +153,6 @@ def cmd_init(args: argparse.Namespace) -> int:
     for path in written:
         print(f"  {path.relative_to(root)}")
     if kept:
-        # Said rather than silently skipped: a file that was already there is a file the scaffold
-        # did not get to write, and somebody reading a green run has to know which.
         print("\nLeft alone, because they were already here:")
         for path in kept:
             print(f"  {path.relative_to(root)}")
@@ -176,10 +163,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_serve(args: argparse.Namespace) -> int:
     """Run the cockpit, and — asked for it — the MCP endpoint on the same server.
 
-    `--mcp` is checked before anything is started, and refused with what to install rather than
-    served without it. Starting a cockpit that quietly lacks the endpoint somebody asked for is the
-    worst of the three outcomes: they would find out from a client that could not connect, which
-    says nothing about why.
+    `--mcp` with no SDK installed exits 2 saying what to install, before anything is started.
     """
     import uvicorn
 
@@ -347,9 +331,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.json_path is not None and not _write_ctrf(args.json_path, record):
         return 2
     if not summary.results and summary.returncode != 0:
-        # A filter that matches nothing is the common case here, and pytest reports it as an exit
-        # code rather than as a sentence. Saying which filter found nothing is the difference
-        # between a usable dev loop and a person re-reading their own command line.
         narrowed = _narrowing(args)
         if narrowed:
             print(f"Nothing matched {narrowed}.", file=sys.stderr)
@@ -383,8 +364,7 @@ def _write_ctrf(path: Path, record: RunRecord) -> bool:
 def cmd_lint(args: argparse.Namespace) -> int:
     """A spec line may not name a field, a selector, a status code, a path or a CLI flag.
 
-    Reads the feature files and nothing else: no environment, no adapters, no collection. It is a
-    check on what a reader reads, so it must run in a checkout with no backend anywhere near it.
+    Reads the feature files and nothing else: no environment, no adapters, no collection.
     """
     manifest = load_manifest(resolve_manifest())
     findings = lint_specs(manifest.specs_dir)
@@ -395,25 +375,8 @@ def cmd_lint(args: argparse.Namespace) -> int:
 def cmd_docs(args: argparse.Namespace) -> int:
     """Write the suite's features out as markdown, with what the runs so far said about each.
 
-    Two flags, and a reason for each.
-
-    `--out` because a page has to land somewhere, and the only honest default is a directory inside
-    the docs tree the project already has. It is the one argument this command cannot do without:
-    everything else it needs it can find.
-
-    `--env` because a verdict is only ever a verdict *somewhere* — a scenario that passes against
-    dev and fails against staging is the normal case, and documentation that did not say which was
-    meant would be documentation nobody could act on. It defaults the way `run` and `serve` do,
-    rather than being required the way `seed` and `status` are: those change an environment or file
-    a result against one, and this only reads.
-
-    There is deliberately no `--check`. A staleness gate would be the obvious third flag, and it
-    would be wrong here: the verdicts come from a run history that lives on the machine that ran
-    the tests, so the pages a developer generates are ones CI cannot reproduce, and the gate would
-    fail for the one reason that is not the author's fault.
-
-    Read-only, and not gated by `mutable_envs`: it reads the feature files and the run store, runs
-    nothing, provisions nothing, and writes only under `--out`.
+    The verdicts are `--env`'s, and an unknown one raises `ConfigError` naming the known ones.
+    Read-only: it runs nothing, provisions nothing, and writes only under `--out`.
     """
     manifest = load_manifest(resolve_manifest())
     env = args.env or resolve_env(manifest)
@@ -456,16 +419,11 @@ What a schema does not say, and this did not guess:
 def cmd_import_openapi(args: argparse.Namespace) -> int:
     """Write the resource types an OpenAPI schema describes — once, and then only ever propose them.
 
-    The first import writes, because a registry nobody has written yet is the blank page this
-    command exists to remove and there is nothing there to lose. Every import after that stops at a
-    diff: by then the file holds corrections somebody made, and a generator that reverts those is a
-    generator nobody re-runs. So a re-import adds what is missing, leaves what is declared alone,
-    and reports what the schema no longer agrees with rather than fixing it.
+    The first import writes. Every import after it stops at a diff unless `--apply`: it adds what is
+    missing, leaves what is declared alone, and reports what the schema no longer agrees with.
 
-    Read-only against every environment, and not gated by `mutable_envs`: it changes the suite's
-    source, the same way authoring in the cockpit does, and touches no backend at all. It does not
-    even load the catalog — a registry too broken to load is exactly the state somebody might be
-    running this to get out of.
+    Touches no environment and does not load the catalog, so it runs against a registry too broken
+    to load.
     """
     manifest = load_manifest(resolve_manifest())
     source, headers = _schema_source(manifest, args.source, args.schema)
@@ -490,8 +448,6 @@ def cmd_import_openapi(args: argparse.Namespace) -> int:
         said = f"natural_key: {openapi.key_said(one.guess.key)}" if one.guess else "no natural_key yet"
         print(f"  {one.name:<{names}}  {one.path:<{paths}}  {said}")
 
-    # The diff, because why each key was chosen is written in the file itself — a summary a person
-    # has to trust is worth less than the lines they are about to keep.
     print("\n" + proposal.as_diff(label).rstrip("\n"))
 
     if not (proposal.first or args.apply):
@@ -511,10 +467,10 @@ def cmd_import_openapi(args: argparse.Namespace) -> int:
 
 
 def _schema_source(manifest: Any, given: str | None, named: str | None) -> tuple[str, dict[str, str]]:
-    """Where the schema is, and what to send to ask for it.
+    """Where the schema is, and what to send to ask for it. An argument wins over the manifest.
 
-    An argument wins, because somebody who named a file means that file. Otherwise the manifest is
-    the answer — which is the case that makes re-importing a command with nothing after it.
+    Raises `ConfigError` when the manifest names no schema, or names several and `--schema` did not
+    say which.
     """
     if given:
         return given, {}

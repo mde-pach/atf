@@ -1,8 +1,4 @@
-"""The one place the cockpit changes anything: start a run, start provisioning, watch either.
-
-Both are the same shape — a list of things attempted one at a time — so they share a job, a
-progress partial and a dock that stays on screen while you navigate elsewhere.
-"""
+"""The one place the cockpit changes anything: start a run, start provisioning, watch either."""
 
 from __future__ import annotations
 
@@ -24,7 +20,7 @@ CONFIRM = Form(default="")
 POLL_MS = 400
 
 # Provisioning changes the environment, so the cached status is wrong the moment a job ends.
-# Refresh once per job rather than on every poll.
+# Refresh once per job, and not on every poll.
 _settled: set[str] = set()
 
 

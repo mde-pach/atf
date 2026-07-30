@@ -1,9 +1,4 @@
-"""The pytest plugin: context, generated resource factories, the steps ATF defines, teardown.
-
-Enable it from a consuming project's `conftest.py`:
-
-    pytest_plugins = ["atf.spec.plugin"]
-"""
+"""The pytest plugin: context, generated resource factories, the steps ATF defines, teardown."""
 
 from __future__ import annotations
 
@@ -60,9 +55,8 @@ def context(materializer: Materializer) -> Context:
 def recogniser(engine: Materializer) -> Recogniser:
     """Which resource type a record the suite produced looks like — or nothing, when unsure.
 
-    A guess, and only ever used to describe what a scenario is holding. It answers only when
-    exactly one type fits, because a wrong label is worse than no label: two types matching means
-    the record does not say which it is.
+    A guess, used only to describe what a scenario is holding. It answers when exactly one type
+    fits: two types matching means the record does not say which it is.
     """
 
     def recognise(record: Record) -> str:
@@ -113,9 +107,7 @@ def _provision_varied(
 ) -> Record:
     """The same resource, with some of its body written differently for this scenario only.
 
-    The alternative is a second catalog node per variation, which is Object Mother: a global set of
-    named factories where every variation needs a new one and every scenario couples to a specific
-    one. One node, and the scenarios that need something different say so where they need it.
+    Fails when there is no table under the step: `but:` with nothing below it says nothing at all.
     """
     return _make(context, request, resource_type, name, _overrides(datatable, resource_type, name))
 
@@ -175,12 +167,12 @@ def _make(
         known = ", ".join(engine.resource_types()) or "none"
         pytest.fail(f"no resource type {resource_type!r} in the catalog (known types: {known})")
 
-    # The factory records every ephemeral resource in the closure, including ones reached
-    # through a dependency rather than named here.
+    # The factory records every ephemeral resource in the closure, including ones reached through a
+    # dependency and never named here.
     record = request.getfixturevalue(resource_type)(name, overrides)
     setattr(context, resource_type, record)
-    # The record itself does not say which catalog node it came from, and this is the one place
-    # that knows. Everything downstream reads it from the slot rather than guessing at it.
+    # The record itself does not say which catalog node it came from, and this is the one place that
+    # knows. Everything downstream reads it off the slot.
     if isinstance(context, Context):
         context.note(resource_type, resource_type=resource_type, node_id=engine.resolve_id(resource_type, name))
     _note_what_is_showing(context, engine, resource_type)
@@ -196,10 +188,8 @@ def _make_fresh(
 ) -> Record:
     """Provision an instance of a catalog node that belongs to this scenario and goes with it.
 
-    The two refusals are here rather than in the engine because a refusal is a sentence somebody
-    reads, and this is the only place that knows what they wrote. Both are answers, not obstacles:
-    there is no isolated instance of a resource ATF cannot create, and no telling two instances
-    apart where nothing distinguishes them.
+    Two refusals, each naming what to write instead: a resource ATF cannot create has no isolated
+    instance, and neither has one nothing tells apart from the shared one.
     """
     engine: Materializer = request.getfixturevalue("materializer")
     if resource_type not in engine.types:
@@ -227,8 +217,8 @@ def _make_fresh(
 
     record, provisioned = engine.ensure_fresh(resource_type, name, overrides)
     # Its dependencies were provisioned as usual, so an ephemeral one among them is tracked as
-    # usual; the instance itself is tracked whatever its catalog says, because being taken away with
-    # the scenario is the whole of what was asked for.
+    # usual. The instance itself is tracked whatever its catalog says: being taken away with the
+    # scenario is the whole of what was asked for.
     _track_ephemeral(context, engine, provisioned)
     _remember(context, [(node_id, record)])
     events.emit({"event": events.PROVISIONED, "nodeid": request.node.nodeid, "ids": [node_id]})
@@ -247,7 +237,7 @@ def _note_what_is_showing(context: Context, engine: Materializer, resource_type:
     say which, so the `Given` that opened a page settles it: the resource the scenario named already
     said which system it belongs to.
 
-    Underscored, so it is ATF's bookkeeping rather than a slot a scenario can make a claim about.
+    Underscored: it is ATF's bookkeeping, and not a slot a scenario can make a claim about.
     """
     spec = engine.catalog.spec(resource_type)
     adapter = None if spec is None else engine.adapters.get(spec.system)
@@ -261,9 +251,8 @@ def _note_what_is_showing(context: Context, engine: Materializer, resource_type:
 # pytest-bdd injects a step's fixture into the *calling module's* namespace, so registering from
 # inside a function would put it where pytest never looks.
 
-# `parsers.parse`, never the bare string pytest-bdd would otherwise assume: a bare string is an
-# exact match, and `it is refused because "{reason}"` would then only ever match a scenario that
-# wrote those braces out literally.
+# `parsers.parse`, never the bare string pytest-bdd would otherwise assume: a bare string is an exact
+# match, and a phrase with a `{capture}` in it would then match only a scenario writing those braces.
 PHRASEBOOK = phrasebook.path_for(_BOOT.manifest.specs_dir)
 
 for _phrase in phrasebook.load(PHRASEBOOK):
@@ -283,12 +272,9 @@ def pytest_collection_modifyitems(items) -> None:
     """Skip what needs a system this machine has not got, and say what is missing.
 
     `requires: {browser: browser}` in the manifest says a `@browser` scenario cannot run where the
-    `browser` system is unavailable. Every suite used to write this itself, as a raw
-    `pytest_collection_modifyitems` in a `conftest.py` that otherwise never mentions pytest — and
-    the alternative to writing it is worse: the scenarios fail, and a suite that is red on a
-    machine without a browser stops being read at all.
+    `browser` system is unavailable.
 
-    A skip, never a pass. The scenario did not run, and the report says so, with the reason.
+    A skip, never a pass: the scenario did not run, and the report says so, with what is missing.
     """
     requires = _BOOT.manifest.requires
     if not requires:
@@ -329,10 +315,9 @@ def pytest_sessionfinish(session, exitstatus) -> None:
 def pytest_bdd_before_step_call(request, feature, scenario, step, step_func, step_func_args) -> None:
     """Resolve `${...}` in every value a step was handed, whoever wrote the step.
 
-    Gherkin has no way to say "a fresh company name", so a value written between quotes is the
-    only place a generated one can come from. Doing it here rather than inside ATF's own steps is
-    what makes it true of *any* step: `When I rename it to "${fake:company}"` works in a step the
-    project wrote this morning, with nothing added to it.
+    Gherkin has no way to say "a fresh company name", so a value written between quotes is the only
+    place a generated one can come from. Here, so that it is true of *any* step: `When I rename it to
+    "${fake:company}"` works in a step the project wrote this morning, with nothing added to it.
 
     pytest-bdd passes this the same dict it is about to call the step with, so resolving in place
     is all there is to it. One evaluation per scenario means the `Then` that checks the rename

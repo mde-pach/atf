@@ -1,9 +1,4 @@
-"""Scenarios — the one vertical for seeking behaviour: find it, trust it, run it, read why it is red.
-
-The unit is the scenario, never the pytest identifier: a test is what a scenario becomes once
-pytest has collected it, so it belongs inside the scenario's page rather than beside it. Nothing
-here mutates anything — running is centralised in `activity`.
-"""
+"""Scenarios — the one vertical for seeking behaviour: find it, trust it, run it, read why it is red."""
 
 from __future__ import annotations
 
@@ -60,14 +55,14 @@ def _context(env: str, spec_id: str, prefer: str = "") -> dict[str, Any]:
         "focus": view.id if view else "",
         "status": app().status.of(env),
         "results": app().results.of(env),
-        # Named by the name the scenario used, so a step reads `visitor` rather than `guests.visitor`.
+        # Named by the name the scenario used: a step reads `visitor`, never `guests.visitor`.
         "nodes": app().state(env).materializer.nodes,
         # What a run currently has in flight, so a verdict on screen moves with it.
         "busy": _busy(env),
         "failed_index": _failed_index(view) if view else None,
         "tally": {state: sum(1 for item in views if item.state == state) for state in FILTERS},
         # The red cards of an Example Mapping session, kept where they were written. Handed over
-        # keyed by the rule they sit under, because that is where the list renders them.
+        # keyed by the rule they sit under, which is where the list renders them.
         "questions": _questions(env),
         "preset": "",
     }

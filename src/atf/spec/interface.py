@@ -1,36 +1,4 @@
-"""Acting on an interface, in the words a person would use about it.
-
-Every step here names a control by its **role** and its **accessible name** — `the button "Save"`,
-`the textbox "Title"` — and by nothing else. There is no selector anywhere in this module and none
-in any catalog that uses it, which is the whole point: a selector describes today's markup, and a
-role and a name describe the thing.
-
-That makes a UI scenario the same shape as an API one:
-
-```gherkin
-Given the page "compose"                      # a resource, like any other
-When I type "A list belongs to its owner" into the textbox "Title"
-And I click the button "Save"
-Then the feature "Lists" contains a scenario "A list belongs to its owner"
-```
-
-The `Then` there is not about the interface at all — it is a claim about a file, read through a
-different adapter. Which is what *one engine, any system, the same reading surface* has to mean if
-it means anything: the browser is how this scenario acts, not what it is about.
-
-**A claim does not care which system answers it.** `the heading "Catalog" is showing` is true of the
-HTML a server sent or of the page a browser ran, and ATF ships an adapter for each — `html` and
-`browser`. Both answer the same three questions ([`Showing`](adapters/__init__.py)), so which one a
-suite configures decides what a claim *costs*, never what it says. Most of what there is to claim
-about a server-rendered interface needs no browser at all.
-
-**Acting does.** Clicking and typing ask for a browser and say so where there is none, because
-reading a response can never do them and pretending otherwise would make a suite quietly weaker on
-the machines that have no browser installed.
-
-These steps are registered for every suite, because they cost nothing to a suite with no interface
-in it. Reaching one with no system to look at says so.
-"""
+"""Acting on an interface, in the words a person would use about it."""
 
 from __future__ import annotations
 
@@ -43,7 +11,7 @@ from ..adapters import Control, can_show
 from ..adapters.browser import BrowserAdapter
 from ..engine.materializer import Materializer
 
-# What a scenario may say about a control. Role first, because role is what the thing *is* and the
+# What a scenario may say about a control. Role first: the role is what the thing *is*, and the
 # name is which one — the same order a screen reader announces them in.
 CLICK = 'I click the {role:w} "{name}"'
 TYPE_INTO = 'I type "{text}" into the {role:w} "{name}"'
@@ -172,10 +140,10 @@ def _says(request: pytest.FixtureRequest, text: str, *, wait: float = 0.0) -> bo
 
 
 def _instead(request: pytest.FixtureRequest, role: str) -> str:
-    """What *is* on the page with that role, so a wrong name is one line to fix rather than a hunt."""
+    """What *is* on the page with that role, for a failure about a name nothing there has."""
     try:
         names = [one.name for one in _shown(request).controls(role, wait=GONE_MS)]
-    except Exception:  # noqa: BLE001 - a hint must never be the reason a scenario fails
+    except Exception:  # noqa: BLE001 - a hint must never fail a scenario
         return ""
     shown = ", ".join(sorted({" ".join(name.split()) for name in names if name.strip()})[:8])
     return f" The {role}s here are: {shown}." if shown else f" There are no {role}s on it at all."

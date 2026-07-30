@@ -190,6 +190,7 @@ def test_a_marker_decides_the_kind_of_thing_its_name_says(actual, marker, holds)
 
 def test_a_marker_is_told_from_a_value_by_its_hash():
     """So a field that genuinely holds `#present` as text can still be claimed — by quoting nothing
-    else: there is no escape, and this is the boundary that says one is needed if it ever comes up."""
+    else: there is no escape, and this is the boundary that says one is needed if it ever comes up.
+    """
     assert field_matches("#present", "#present") is True
     assert field_matches("hashtag", "hashtag") is True

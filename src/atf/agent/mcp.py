@@ -1,34 +1,4 @@
-"""ATF over MCP: the same closed vocabulary the composer runs on, offered to an agent.
-
-The failure mode of a test suite an LLM wrote is not that the tests are wrong. It is that they are
-*unconstrained* — arbitrary automation against a system nobody described, brittle in a hundred ways
-nobody chose. Handing an agent a file and a docstring is handing it a blank page.
-
-This is the other thing. An agent connected here can only compose from `available steps × catalog
-nodes × phrases`: it asks what can be said, it says one of those things, and anything else comes
-back as a sentence explaining which choice does not exist. That is not a guardrail bolted on top —
-it is the same constraint the [composer](cockpit/routers/compose.py) already imposes on a person,
-over a different transport, and it is why an agent working through here cannot write an invalid
-test.
-
-**Three tools, and they are structural rather than a list of the vocabulary.** `describe` says what
-can be said, `compose` turns choices into Gherkin or into the reason they are not a scenario, and
-`run` runs one. Add a generic step, a resource type, a phrase, a marker or an adapter and it appears
-through `describe` with nothing here to change — because nothing here describes the vocabulary.
-Everything comes from [`introspect.py`](introspect.py), which derives it from the tables that define
-it. A tool per step would have been the obvious shape and it is the wrong one: it would need editing
-every time ATF learnt a word.
-
-**The SDK is not a dependency of ATF.** A framework should not decide that every suite serves
-agents, so `atf serve` without `--mcp` is untouched and imports none of this. Asked for MCP without
-the SDK, the command says what to install and starts nothing — the same shape as the
-[browser adapter](adapters/browser.py) reporting itself unavailable with a reason, and for the same
-reason: an optional capability that is missing is an answer, not a crash.
-
-The import is done by name rather than written as an `import` statement because that is what keeps a
-type checker from demanding an optional package be installed to check a framework that does not
-depend on it.
-"""
+"""ATF over MCP: the same closed vocabulary the composer runs on, offered to an agent."""
 
 from __future__ import annotations
 
@@ -41,15 +11,13 @@ from .. import __version__
 from ..session import Session
 from .introspect import Composition, Surface, compose, describe, try_scenario
 
-# The module the server class lives in. Named here, once, so that an SDK which moves it fails
-# against this sentence rather than somewhere a reader would have to guess about.
+# The module the server class lives in. Named here, once, so an SDK that moves it fails here.
 SDK_MODULE = "mcp.server.mcpserver"
 SDK_CLASS = "MCPServer"
 
 INSTALL = "uv sync --group mcp"
 
-# Where the endpoint sits on the cockpit's own server. One process serves both, because the two are
-# views of one suite and asking someone to run two commands to get them would be the wrong answer.
+# Where the endpoint sits on the cockpit's own server: one process serves both views of one suite.
 MOUNT = "/mcp"
 
 
@@ -73,10 +41,9 @@ def unavailable() -> str:
 class Tools:
     """The three tools, over one session.
 
-    A dataclass rather than three module functions because every answer is about an environment, and
-    a session is what holds one — its catalog, its discovery and its status, cached and shared with
-    the cockpit's pages. An agent and a person looking at the same suite see the same thing,
-    including how stale it is.
+    Every answer is about an environment, and a session is what holds one — its catalog, its
+    discovery and its status, cached and shared with the cockpit's pages. So an agent and a person
+    looking at the same suite see the same thing, including how stale it is.
     """
 
     session: Session
@@ -286,17 +253,16 @@ def server(session: Session) -> Any:
 def endpoint(session: Session, host: str = "127.0.0.1") -> tuple[Any, Any]:
     """The application to mount at `MOUNT`, and the lifespan it needs, for one suite.
 
-    Two things rather than one because a mounted sub-application's lifespan is *not* run by its
-    parent: mounting alone leaves the session manager there and never started, which fails at the
-    first call instead of at startup. So the caller gets both and wires each where it belongs.
+    Two things, and the caller wires each where it belongs: a mounted sub-application's lifespan is
+    *not* run by its parent, so mounting alone leaves the session manager unstarted until the first
+    call fails.
 
-    `host` is passed on because the SDK refuses a request whose `Host` header names somewhere else.
-    That check is the reason a page in a browser cannot reach an agent's endpoint by guessing its
-    address, and it is worth keeping for a server that performs actions against real environments.
+    `host` reaches the SDK, which refuses a request whose `Host` header names somewhere else — the
+    check that keeps a page in a browser from reaching an agent's endpoint by guessing its address.
     """
     built = server(session)
-    # Stateless, because the cockpit is single-user and localhost by default: a session to resume
-    # would be state to expire, and nothing here outlives a call.
+    # Stateless: the cockpit is single-user and localhost by default, and nothing here outlives a
+    # call, so there is no session to resume and no state to expire.
     served = built.streamable_http_app(
         streamable_http_path="/", stateless_http=True, json_response=True, host=host
     )

@@ -67,11 +67,31 @@ line-length = 120
 # without a shell check and to `markupsafe.Markup` — which are, respectively, what ATF does for a
 # living and how its one template escapes. Enabling them would buy six suppressions, and a
 # suppression is the thing this convention exists to keep out.
-select = ["E", "F", "I", "UP", "B", "SIM", "S105", "S106", "S107", "PGH"]
+select = ["E", "F", "I", "UP", "B", "SIM", "S105", "S106", "S107", "PGH", "D"]
+# `D` is pydocstyle, and it is here for four rules: a docstring's summary is one line (`D200`), a
+# body is separated from it by a blank one (`D205`), and it ends in a period (`D400`, `D415`). An
+# essay can then no longer masquerade as a summary — it is visibly a body, in review.
+#
+# The missing-docstring rules are off. What a scope is worth saying is a judgement, and a linter that
+# demands one everywhere is answered with `"""Do the thing."""` — which is the convention this repo
+# holds to inverted.
+ignore = [
+    "D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107",  # a docstring is worth having, or it is not
+    "D203", "D213",                                                  # keep summary-on-first-line
+    # A docstring here names what a thing *is* — "The fields of one resource, best-known first." A
+    # mood rule would rewrite every one of those into a verb it does not have.
+    "D401", "D403",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
 
 [tool.ruff.lint.per-file-ignores]
 # A fixture that writes a password is writing a fixture. These rules are aimed at the framework.
-"tests/**" = ["S105", "S106", "S107"]
+#
+# `D205` too: a test's docstring is the claim the test makes, which is a body with no API summary in
+# front of it. The rule is worth keeping over `src/atf`, where a summary is what a caller reads first.
+"tests/**" = ["S105", "S106", "S107", "D205"]
 # The templates `atf init` writes are strings here and source code in somebody else's project.
 "src/atf/scaffold.py" = ["S105", "S106", "S107"]
 

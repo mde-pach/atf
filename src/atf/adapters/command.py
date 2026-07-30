@@ -1,44 +1,4 @@
-"""Running a command line: what it was asked, and what came back.
-
-```gherkin
-When I run "atf seed local"
-Then the command succeeded
-```
-
-Every suite that drives a command-line program was writing the same hundred lines — build an argv,
-put the right things in the environment, pick a working directory, run it, keep the exit code and
-both streams, and decide what "it failed" means. That is not domain knowledge. It is the shape of a
-class of system, the same way a status code and a body are the shape of a JSON API, and it belongs
-here for the same reason `rest` does.
-
-**A command line is one string**, because that is how a person writes one. `atf seed local` is what
-someone would type and what a reader recognises; a program plus a list of arguments to append to it
-is a thing they would have to be taught. It is split the way a shell splits it, so quoting works.
-
-**`ok` is the point.** "How do you know it failed?" is a question about *commands*, not about any
-one project, and answering it here is what stops every suite from having to know that `2` means
-refused. A scenario says it was refused; the adapter says what that means.
-
-The record is `command`, `exit_code`, `stdout`, `stderr`, `output` — both streams, because which one
-a message came out on is the tool's business and rarely the scenario's — and `ok`.
-
-**What a command resource is: one invocation.** `find` answers nothing, because a command is never
-*already* run, so a node of this system is `lifecycle: ephemeral` and its body says what to run:
-
-```yaml
-seed:
-  system: command
-  lifecycle: ephemeral
-  body:
-    command: atf seed local
-```
-
-Most suites need no such node. `When I run "…"` says the whole thing in the sentence, and that is
-the form to reach for; a node is for a command some *other* resource depends on having been run.
-
-Nothing here decides what a *domain* action is. `When the developer seeds "local"` is still a
-suite's own wording over its own step — this only takes away the subprocess.
-"""
+"""Running a command line: what it was asked, and what came back."""
 
 from __future__ import annotations
 
@@ -128,10 +88,10 @@ class CommandAdapter(NoopDelete):
             "exit_code": completed.returncode,
             "stdout": completed.stdout,
             "stderr": completed.stderr,
-            # Both streams, because which one a message came out on is the tool's business and
+            # Both streams: which one a message came out on is the tool's business and
             # rarely the scenario's.
             "output": completed.stdout + completed.stderr,
-            # What "it worked" means for a command, answered once here instead of in every suite's
+            # What "it worked" means for a command, answered once here for every suite's
             # phrasebook. A scenario says it was refused; this says what that is.
             "ok": completed.returncode == 0,
         }

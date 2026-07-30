@@ -237,7 +237,8 @@ def test_a_resource_type_carries_the_actions_declared_on_it(surface):
 )
 def test_a_step_is_offered_only_where_pytest_would_resolve_it(tmp_path, declared_in, binds, visible):
     """Step lookup is fixture lookup, and a step offered outside its module is a scenario that
-    composes cleanly and then reports the step missing when it runs."""
+    composes cleanly and then reports the step missing when it runs.
+    """
     step = StepDef(keyword="when", pattern="I do it", file=str(tmp_path / declared_in))
     module = tmp_path / binds if binds else None
     assert reachable(step, module, tmp_path / "specs") is visible
@@ -468,7 +469,8 @@ def test_a_table_is_written_under_its_step_with_its_columns_aligned(surface):
 )
 def test_a_claim_reads_back_as_the_choices_that_wrote_it(surface, compare, aspect, subject, target):
     """A scenario written by hand has to arrive at the same four choices, or the two surfaces
-    disagree about a file they both claim to describe."""
+    disagree about a file they both claim to describe.
+    """
     offered = offered_steps(surface, FEATURE)
     chosen = {"subject": subject, "aspect": aspect, "compare": compare, "target": target}
     forward = make_row(0, "then", chosen, offered, surface.catalog)
@@ -501,7 +503,8 @@ def test_a_claim_reads_back_as_the_choices_that_wrote_it(surface, compare, aspec
 )
 def test_a_field_is_offered_with_what_it_holds_and_where_that_came_from(engine, entry, field, current, source):
     """Choosing `done` while the interface says it is currently `false` is writing an assertion with
-    the answer in front of you; choosing from bare names is guessing."""
+    the answer in front of you; choosing from bare names is guessing.
+    """
     node = engine.nodes["accounts.primary"]
     choice = next(one for one in field_choices(node, entry) if one.name == field)
     assert (choice.current, choice.source) == (current, source)

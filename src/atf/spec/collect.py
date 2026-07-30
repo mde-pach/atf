@@ -1,24 +1,4 @@
-"""Collecting a `.feature` file directly, so a feature needs no Python beside it.
-
-pytest-bdd binds a feature to pytest through a module that calls `scenarios("…")`. For a feature
-that needs step code of its own that module is the natural home for it — but for one written
-entirely in the vocabulary ATF already provides, it is a file whose whole content is an import and
-a call, written once per feature and never read again. It is also an error path: the composer has
-to notice a feature nobody bound, offer to write the module, and explain what it is for.
-
-So ATF collects a `.feature` itself when nothing else has. The file becomes a module that was never
-on disk, holding one test per scenario, built with pytest-bdd's own public `scenario()` decorator —
-so what runs, what a failure looks like and what the report says are all exactly as before.
-
-**What an auto-collected feature can reach.** pytest-bdd resolves a step to a *fixture*, and a step
-defined in a module is visible only inside it. A feature collected here has no module, so it can
-use: every step ATF defines, every [phrase](phrasebook.py), and anything declared in a `conftest.py`
-above it. A feature that needs a `@when` of its own still wants a module — or the step moves to a
-`conftest.py`, where every feature can see it. That is the same rule as before, said out loud.
-
-**A feature some module already binds is left alone.** Collecting it here as well would run every
-scenario in it twice, and the module is the one that can see its steps.
-"""
+"""Collecting a `.feature` file directly, so a feature needs no Python beside it."""
 
 from __future__ import annotations
 
@@ -30,7 +10,7 @@ import pytest
 from pytest_bdd import scenario as bind_scenario
 from typing_extensions import override
 
-# pytest-bdd's own parse, rather than ATF's: `scenario()` parses the file again itself and raises
+# pytest-bdd's own parse, and not ATF's: `scenario()` parses the file again itself and raises
 # if a name does not match, so the two enumerations have to agree exactly.
 from pytest_bdd.feature import get_feature as _get_feature  # isort: skip
 from pytest_bdd.scenario import get_python_name_generator as _test_names  # isort: skip
@@ -41,7 +21,7 @@ SUFFIX = ".feature"
 def binds(specs_dir: Path, feature: Path) -> bool:
     """Whether some module already hands this feature to pytest.
 
-    A text scan, because at collection time the modules that would bind it have not been imported
+    A text scan: at collection time the modules that would bind it have not been imported
     yet — and the answer has to be known *before* deciding to collect the feature a second way.
     """
     for path in Path(specs_dir).rglob("*.py"):

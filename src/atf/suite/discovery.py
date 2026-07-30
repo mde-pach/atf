@@ -1,8 +1,4 @@
-"""Turns a project into the structured model the cockpit renders.
-
-Specs come from a static parse of the `.feature` files; tests and fixtures come from pytest
-itself, because pytest-bdd only resolves step fixtures while a run is happening.
-"""
+"""A suite's features, steps and fixtures as a structured model."""
 
 from __future__ import annotations
 
@@ -68,16 +64,8 @@ class Spec:
 class Question:
     """Something nobody could answer, written down beside the rule it is about.
 
-    Example Mapping produces three kinds of card: a **rule**, the **examples** that show it, and the
-    **questions** nobody in the room could answer. Gherkin has `Rule:` and `Scenario:` for the first
-    two and nothing at all for the third, so the red cards end up in a photograph of a table and are
-    never seen again — which is a shame, because they are precisely the things that become bugs.
-
-    A question is written as a comment, `# ? …`, and that choice is the whole design. Gherkin
-    already ignores comments, so a feature carrying questions is still a feature every other tool
-    can read; ATF adds meaning on top rather than a keyword nothing else knows. And a question's
-    whole life is to stop being one — it gets answered and becomes a rule or a scenario — so it has
-    to sit where that answer will be written, which is here, two characters from being deleted.
+    Written as a comment, `# ? …`, under the `Rule:` it belongs to, or under the feature where there
+    is none.
     """
 
     ask: str
@@ -116,9 +104,8 @@ class StepDef:
     `pattern` is the parser's raw expression exactly as the author wrote it, so it is both what a
     picker shows and what a composed step's wording is built from.
 
-    `needs` and `produces` are what the step reads from and writes to the per-scenario context,
-    read out of its source. They are what lets an interface offer only the steps a scenario can
-    actually use, instead of letting someone compose one that fails at the first `When`.
+    `needs` and `produces` are what the step reads from and writes to the per-scenario context, read
+    out of its source: they are what lets a surface offer only the steps a scenario can use.
     """
 
     keyword: str
@@ -212,15 +199,13 @@ def discover(
 def matching_step(text: str, steps: list[StepDef]) -> StepDef | None:
     """The definition a step's wording resolves to, or None if this suite defines no such step.
 
-    Matching happens here rather than in pytest-bdd because the parsers themselves live in the
-    collection subprocess: what survives is the raw expression. An exact hit wins, then the
-    expression read as a `{capture}` template, then the expression read as a regular expression —
-    which is what a step declared with `parsers.re` needs.
+    Matching happens here, not in pytest-bdd: the parsers live in the collection subprocess and what
+    survives is the raw expression. An exact hit wins, then the expression read as a `{capture}`
+    template, then as a regular expression, which is what `parsers.re` needs.
 
-    More than one pattern can fit one line, because a capture matches anything: `the {type} "{name}"`
-    fits `the result field "plan" is "standard"` by reading the whole middle as a name. The one with
-    the most *literal* text wins, which is the one whose wording the author actually followed —
-    without that, the loosest pattern in the suite would claim every line it happened to fit.
+    More than one pattern can fit one line, a capture matching anything: `the {type} "{name}"` fits
+    `the result field "plan" is "standard"` by reading the whole middle as a name. The one with the
+    most *literal* text wins, which is the wording the author followed.
     """
     for step in steps:
         if step.pattern == text:
@@ -254,8 +239,8 @@ CONTEXT = "context"
 def context_use(path: Path) -> dict[str, tuple[list[str], list[str]]]:
     """`{step wording: (what it reads from the context, what it writes)}` for one module.
 
-    Read from source rather than by running anything: discovery happens on every page render, and
-    against read-only environments, so it may never execute a step to find out what it does.
+    Read from source and never by running anything: discovery happens on every page render, and
+    against read-only environments.
 
     Total by construction — a module that will not parse, or a step whose wording is not a literal,
     simply contributes nothing and is treated as touching nothing.
@@ -405,8 +390,8 @@ def parse_specs(specs_dir: Path, catalog: Catalog | None = None) -> list[Spec]:
     return specs
 
 
-# A question, written where Gherkin lets you write anything: a comment. `# ?` rather than a bare
-# comment, because a feature file's comments are full of asides that are not questions.
+# A question, written where Gherkin lets you write anything: a comment. `# ?` and not a bare comment,
+# a feature file's comments being full of asides that are not questions.
 _QUESTION_RE = re.compile(r"^\s*#\s*\?\s*(?P<ask>\S.*?)\s*$")
 _RULE_RE = re.compile(r"^\s*Rule:\s*(?P<rule>.*)$")
 _FEATURE_LINE_RE = re.compile(r"^\s*Feature:\s*(?P<feature>.*)$")
@@ -415,10 +400,8 @@ _FEATURE_LINE_RE = re.compile(r"^\s*Feature:\s*(?P<feature>.*)$")
 def parse_questions(specs_dir: Path) -> list[Question]:
     """Every `# ? …` line under `specs_dir`, with the feature and rule it sits under.
 
-    Read separately from the scenarios rather than in the same pass, because the two answer
-    different questions and are wanted in different places: `atf docs` wants both, the cockpit's
-    scenario list wants both, and neither wants to pay for the other. Reading a comment costs one
-    regular expression per line.
+    A pass of its own, costing one regular expression per line: the questions and the scenarios are
+    wanted in different places, and neither caller pays for the other.
     """
     found: list[Question] = []
     if not specs_dir.is_dir():
@@ -532,8 +515,7 @@ def parse_feature(path: Path, catalog: Catalog | None = None) -> list[Spec]:
                     current.examples.append(dict(zip(example_header, cells, strict=False)))
                 continue
             # Otherwise it is a table under the step above it, and belongs to that step. A row with
-            # no step above it is a table nobody wrote a sentence for, and is dropped rather than
-            # guessed at.
+            # no step above it is a table nobody wrote a sentence for, and is dropped.
             above = background if in_background else (current.steps if current is not None else [])
             if above:
                 above[-1].table.append(cells)
@@ -901,10 +883,7 @@ def _fixtures(
 def _describe_fixtures(observed: dict[str, Any]) -> dict[str, tuple[str, str]]:
     """What each fixture is for and how long it lives, from the collection pass.
 
-    This used to run `pytest --fixtures -v -q` in a second subprocess and parse its output, which
-    was half the cost of a discovery pass — and a discovery pass is what a cockpit does before it
-    can render its first page. The observer plugin is already inside a pytest that has the fixture
-    manager open; asking it there costs nothing and removes a whole interpreter.
+    Read by the observer plugin, from inside the pytest that already has the fixture manager open.
     """
     described: dict[str, tuple[str, str]] = {}
     for name, entry in (observed.get("described") or {}).items():

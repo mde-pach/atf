@@ -1,8 +1,4 @@
-"""Overview — the landing vertical, and the one question it answers: can I ship?
-
-Every number here is one a person could act on. A metric that cannot go wrong is not a metric, so
-nothing on this page counts things that are true by construction.
-"""
+"""Overview — the landing vertical, and the one question it answers: can I ship."""
 
 from __future__ import annotations
 
@@ -50,7 +46,7 @@ def summary(request: Request) -> Any:
     """The whole answer as a fragment.
 
     The activity dock pulls `#verdict` out of this after a run or a provision finishes, so the
-    headline re-syncs without a reload — which is why the verdict lives in an element of its own.
+    headline re-syncs without a reload, the verdict living in an element of its own.
     """
     return partial(request, "partials/summary.html", **_context(current_env(request)))
 
@@ -86,9 +82,9 @@ def _context(env: str) -> dict[str, Any]:
         "runs": cockpit.results.recent_runs(env, RUNS),
         "flaky": _flaky(env, found),
         "unexercised": [name for name, view in type_views(env).items() if not view.specs],
-        # The red cards of an Example Mapping session. A gap in the *description* rather than in the
-        # coverage, which is why they belong on this page: an unanswered question is the earliest
-        # form of a bug, and the cheapest place to catch one.
+        # The red cards of an Example Mapping session: a gap in the *description*, where everything
+        # else on this page is a gap in the coverage. An unanswered question is the earliest form of
+        # a bug, and the cheapest place to catch one.
         "questions": found.questions,
         "never_run": buckets[NEVER_RUN],
         "skipped": buckets[SKIPPED_STATE],

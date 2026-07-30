@@ -348,15 +348,8 @@ def files_for(name: str) -> dict[str, str]:
 def scaffold(root: Path, name: str) -> tuple[list[Path], list[Path]]:
     """Write a new consuming project: what was written, and what was already there.
 
-    Never overwrites. A directory somebody is about to scaffold into commonly already holds a
-    `README.md`, a `.gitignore` or a `conftest.py` — `git init` then `atf init` is the ordinary way
-    to start — and taking those over would destroy work to save a template.
-
-    What it must not do is write *some* of a suite into a directory that already holds one, which is
-    what it used to do: run twice over a catalog somebody had since edited, it dropped the template's
-    `accounts.yaml` into a catalog whose `resources.yaml` no longer declared that type, and left
-    behind a suite that would not load. Refusing that case is [`cmd_init`](cli.py)'s job, because a
-    refusal is a sentence somebody reads; this reports what it found so that it can be worded.
+    Never overwrites: a file already there is reported as kept, and the two lists are what the
+    caller says out loud. Refusing a directory that already holds a suite is `cmd_init`'s.
     """
     written: list[Path] = []
     kept: list[Path] = []

@@ -1,49 +1,4 @@
-"""The suite, written out as markdown: features as living documentation.
-
-A spec is already the best description of what a system does — it is the only one that fails when
-it stops being true. The problem has never been the writing, it is that the people who most need to
-read it are the people least likely to open a `.feature` file in a repository. So `atf docs` puts
-the features where documentation already lives: narrative, `Rule:` headings, scenarios as the lines
-they were written as, and what the last run said about each one.
-
-The pattern is not new — Pickles, Augurk and Serenity's living docs all do it. What they cannot do
-is say whether the scenario currently *holds*, because they only ever see the file. ATF keeps a run
-history on disk, so a page here can carry a verdict, and that is the whole difference between a
-prettier feature file and documentation somebody trusts.
-
-**Plain markdown into a directory, not a site generator plugin.** An mkdocs plugin would render on
-every build and never go stale, and it would also tie this to mkdocs, run inside a docs build that
-has no run history to read, and make the output impossible to review in a pull request. A directory
-of CommonMark files is readable in mkdocs, in Docusaurus, in a GitHub blob view and in an editor's
-preview pane — so nothing here uses an admonition, a snippet include or any other extension.
-
-**It reads the feature files and the run store, and nothing else.** That is the same seam
-[`atf lint`](lint.py) holds, and for the same reason: documentation you cannot build in a checkout
-with no backend near it is documentation that stops being built. The alternative was full
-[discovery](discovery.py) — collecting the suite with pytest, which is what the cockpit does — and
-it would buy the resources each scenario touches at the price of needing an importable suite, every
-`*_env` secret exported, and a working environment. The catalog is not read either: a page about
-what the specs say should not fail because a resource type somewhere has a typo in it.
-
-**A verdict is matched to a scenario by the test name pytest-bdd would generate for it.** Nothing
-in the run history records which scenario a nodeid came from — it records nodeids, because that is
-what pytest reports — and finding out properly means collecting the suite, which is the thing this
-command is built not to do. pytest-bdd's own name generator is used rather than a rule
-re-derived here, so the two can only disagree if pytest-bdd changes, and then they disagree in one
-place. Two scenarios with the same title share a verdict; that is the known cost.
-
-**What is known about a test, not what the newest run happened to include.** Running a subset is
-normal, and reading only the last run would make every scenario it did not touch read "never run",
-which is worse than slightly stale. Newest run wins, per test — the same rule the cockpit uses.
-
-**A `Background:` is written into every scenario it runs before**, rather than hoisted to a heading
-of its own. That is what actually happens when the scenario runs, and a reader who has to hold three
-steps from further up the page in their head to understand this one is a reader the page has failed.
-
-**Nothing is ever deleted.** A feature that was renamed leaves its old page behind, and the writer
-removes it. A command that writes documentation is not a command that should be discovering, on its
-own initiative, which of your files are surplus.
-"""
+"""The suite, written out as markdown: features as living documentation."""
 
 from __future__ import annotations
 
@@ -80,8 +35,7 @@ class Page:
 def read(specs_dir: Path) -> list[Spec]:
     """Every scenario under `specs_dir`, from a static parse of the feature files.
 
-    The catalog is deliberately not passed, so no resource is linked and nothing here can fail on a
-    catalog it was never asked about.
+    No catalog is passed, so no resource is linked and nothing here can fail on one.
     """
     return parse_specs(Path(specs_dir))
 
@@ -102,8 +56,8 @@ def read_questions(specs_dir: Path) -> list[Question]:
 def _python_name(scenario: str) -> str:
     """The test function pytest-bdd generates for a scenario title.
 
-    Imported here rather than at module level: pytest-bdd pulls in pytest, and `atf status` should
-    not pay for that because `atf docs` exists.
+    pytest-bdd is imported inside the function: it pulls in pytest, which every other command would
+    otherwise pay for.
     """
     from pytest_bdd.scenario import get_python_name_generator
 
@@ -142,9 +96,8 @@ def _states_sentence(specs: list[Spec], results: dict[str, TestResult]) -> str:
 def _summary(specs: list[Spec], results: dict[str, TestResult], env: str) -> str:
     """How a set of scenarios stands, and where.
 
-    The environment is in the sentence rather than left to the reader, because a verdict with no
-    environment on it is a rumour: the same scenario passes against dev and fails against staging,
-    and that is the normal case rather than the odd one.
+    The environment is in the sentence: a verdict with none on it is a rumour, the same scenario
+    passing against dev and failing against staging.
     """
     size = plural(len(specs), "scenario")
     if not results:
@@ -191,9 +144,7 @@ def render(
 def _page_path(feature_file: str, specs_dir: Path) -> str:
     """A feature's page, at the same place in the tree the feature sits at under `specs`.
 
-    Flattening would read better — `cli.md` rather than `features/cli.md` — and would collide the
-    first time two directories held a feature by the same name. A generated file that silently
-    overwrites another generated file is not a trade worth a shorter path.
+    Nested, so two directories holding a feature of the same name produce two pages.
     """
     path = Path(feature_file)
     try:
@@ -233,9 +184,8 @@ def _feature_page(
 def _question_lines(questions: list[Question]) -> list[str]:
     """What nobody could answer, under the rule it is about.
 
-    On the page rather than only in the file, because the reader of a documentation site is often
-    exactly the person who can answer one — and a question they never see is a question that becomes
-    a bug instead.
+    On the page as well as in the file: the reader of a documentation site is often exactly the
+    person who can answer one.
     """
     if not questions:
         return []
@@ -273,7 +223,7 @@ def _gherkin(steps: list[Step]) -> list[str]:
 
 
 def _examples_table(rows: list[dict[str, str]]) -> list[str]:
-    """An Examples block as a markdown table, because a reader is here to read, not to parse."""
+    """An Examples block as a markdown table, its header from the first row's keys."""
     header = list(rows[0])
     lines = [f"| {' | '.join(header)} |", f"|{'---|' * len(header)}"]
     lines += [f"| {' | '.join(row.get(column, '') for column in header)} |" for row in rows]
@@ -283,8 +233,7 @@ def _examples_table(rows: list[dict[str, str]]) -> list[str]:
 def _failure(found: list[TestResult]) -> list[str]:
     """Why a failing scenario is failing: the step the run reached, and what it said there.
 
-    A blockquote rather than a warning admonition — see the module docstring: this file has to
-    render in four places and only one of them knows what an admonition is.
+    A blockquote, which is the strongest markup a page rendered in four places can count on.
     """
     failed = next((result for result in found if result.outcome in {FAILED, ERROR}), None)
     if failed is None:
@@ -307,8 +256,8 @@ def _said(detail: str) -> str:
     said = [line for line in lines if line.lstrip().startswith("E ")]
     if not said:
         return lines[-1].strip()
-    # pytest marks the lines a failure *said* with a leading `E`. One character, dropped by index
-    # rather than by `lstrip`, which would also eat the E of a message starting "Error".
+    # pytest marks the lines a failure *said* with a leading `E`. One character, dropped by index:
+    # `lstrip` would also eat the E of a message starting "Error".
     return said[0].strip()[1:].strip()
 
 

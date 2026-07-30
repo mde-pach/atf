@@ -136,7 +136,8 @@ def test_a_comment_after_a_step_is_not_part_of_it(tmp_path):
 
 def test_a_step_that_takes_a_table_carries_its_rows(tmp_path):
     """Written the way YAML writes a mapping, because a step that takes a table ends with a colon
-    and so does a mapping key. No new format: an ordinary one-key mapping."""
+    and so does a mapping key. No new format: an ordinary one-key mapping.
+    """
     phrases = load(
         book(
             tmp_path,
@@ -165,7 +166,8 @@ def test_a_line_with_rows_hands_them_over_the_way_a_table_arrives():
 
 def test_a_step_that_merely_contains_a_colon_is_still_a_line(tmp_path):
     """The distinction that matters: a table step's value is a *mapping*, and a sentence YAML found
-    structure in has a scalar. Both are one-key mappings to YAML; only one of them is a table."""
+    structure in has a scalar. Both are one-key mappings to YAML; only one of them is a table.
+    """
     written = 'the result field "output" contains "registered: env, now"'
     phrases = load(book(tmp_path, f"'it lists them':\n  - {written}\n"))
     assert phrases[0].expands_to[0].rows == ()
@@ -174,7 +176,8 @@ def test_a_step_that_merely_contains_a_colon_is_still_a_line(tmp_path):
 
 def test_an_unquoted_marker_is_a_comment_and_is_refused_by_name(tmp_path):
     """`plan: #str` is a key with a comment after it. The claim would otherwise pass for the wrong
-    reason, which is the failure mode a checker exists for."""
+    reason, which is the failure mode a checker exists for.
+    """
     with pytest.raises(PhrasebookError) as caught:
         load(
             book(
@@ -192,7 +195,8 @@ def test_an_unquoted_marker_is_a_comment_and_is_refused_by_name(tmp_path):
 
 def test_a_row_using_a_capture_the_phrase_does_not_take_is_refused(tmp_path):
     """Checked in the rows as well as in the line: a cell reaching for a capture the sentence never
-    took would otherwise run with a brace still in it."""
+    took would otherwise run with a brace still in it.
+    """
     with pytest.raises(PhrasebookError) as caught:
         load(
             book(

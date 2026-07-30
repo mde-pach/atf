@@ -1,13 +1,4 @@
-"""Launching a suite, and the results a run comes back as.
-
-One launcher: pytest in a subprocess with `ATF_ENV` set, reporting itself over the progress channel
-as it goes. A caller that wants to watch passes `on_event`; `run` is that launcher waited on.
-Guarded by a timeout, so never an unbounded wait, and serialised by a process-wide lock.
-
-The result model lives here because every producer fills the same shape: this module, the job
-runner, and a report imported from CI. For a BDD suite the useful unit of failure is the Gherkin
-step, not the tail of a traceback, which is what the progress channel carries.
-"""
+"""Launching a suite, and the results a run comes back as."""
 
 from __future__ import annotations
 
@@ -149,13 +140,12 @@ def launch(
 ) -> Launched:
     """Run pytest against `env`, handing every progress event to `on_event` as it arrives.
 
-    `keyword` and `tags` narrow what runs. They are separate arguments rather than one bag of
-    pytest flags because a caller of this function is choosing *which scenarios*, and that is a
-    thing ATF can describe; letting arbitrary flags through would make the command surface pytest's
-    entire interface by accident, which is the opposite of `atf run` becoming the only dev loop.
+    `keyword` and `tags` narrow what runs — two arguments, and not a bag of pytest flags: a caller
+    here is choosing *which scenarios*, which is a thing ATF can describe, and arbitrary flags would
+    make `atf run` surface pytest's entire interface by accident.
 
-    Output goes to a file, never a pipe: a pipe fills at ~64KB and the child blocks forever, because
-    nothing reads it until the drain loop sees the process exit.
+    Output goes to a file, never a pipe: a pipe fills at ~64KB and the child then blocks forever,
+    nothing reading it until the drain loop sees the process exit.
     """
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
@@ -288,8 +278,8 @@ def _row(results: dict[str, TestResult], nodeid: str) -> TestResult:
     return result
 
 
-# The words pytest reads as operators in a `-k` expression. Text containing one of them is an
-# expression somebody wrote on purpose and is passed through untouched.
+# The words pytest reads as operators in a `-k` expression. Text containing one of them is somebody's
+# own expression, and is passed through untouched.
 _OPERATORS = frozenset({"and", "or", "not"})
 _WORDS = re.compile(r"[^0-9a-z]+")
 
@@ -304,8 +294,8 @@ def keyword_expression(text: str) -> str:
 
     So a plain phrase is read as a phrase: the same flattening pytest-bdd does to a title when it
     makes a test name, which turns `belongs to its owner` into `belongs_to_its_owner` and matches.
-    Anything containing `and`, `or`, `not` or a bracket is left exactly as written, because that is
-    somebody deliberately writing an expression and ATF has no business rewriting it.
+    Anything containing `and`, `or`, `not` or a bracket is left exactly as written: that is somebody
+    writing an expression, and ATF has no business rewriting one.
     """
     lowered = text.strip().lower()
     if not lowered or "(" in lowered or _OPERATORS & set(lowered.split()):
@@ -316,10 +306,9 @@ def keyword_expression(text: str) -> str:
 def tag_expression(tags: Sequence[str]) -> str:
     """Several tags, as the one expression pytest takes: any of them, not all of them.
 
-    `--tag smoke --tag api` reads as *"the smoke ones and the api ones"*, which is a union — a
-    scenario carrying both tags is not what anybody is asking for. The `@` is how a tag is written
-    on a scenario rather than part of its name, so it is accepted and dropped, exactly as the
-    manifest's `requires:` accepts it.
+    `--tag smoke --tag api` reads as *"the smoke ones and the api ones"*, which is a union: a scenario
+    carrying both is not what anybody asked for. A leading `@` is accepted and dropped, exactly as the
+    manifest's `requires:` accepts one.
     """
     return " or ".join(tag.lstrip("@") for tag in tags if tag.lstrip("@"))
 

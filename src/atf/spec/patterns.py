@@ -1,12 +1,4 @@
-"""The steps ATF defines, and the grammar a step pattern is written in. Dependency-free.
-
-Everything that reads a step needs one half of this and nothing else in the module: the plugin
-registers these patterns, the step tables offer them, discovery recognises them in a feature file,
-and the phrasebook reads a project's own wording with the same grammar. Written here rather than
-imported from `steps`, which pytest registers as a plugin: importing that module to reach a string
-would have pytest import it before registering it, and warn every consuming suite about assertion
-rewriting on every run.
-"""
+"""The steps ATF defines, and the grammar a step pattern is written in. Dependency-free."""
 
 from __future__ import annotations
 
@@ -17,8 +9,8 @@ ANY_KEYWORD = "*"
 KEYWORDS = frozenset({GIVEN, WHEN, THEN, ANY_KEYWORD})
 
 # ATF's own provisioning step. The only step definition the framework itself contributes, and the
-# composer offers it as a resource picker rather than as a line of wording, so it has to be
-# recognisable by pattern wherever a step is read.
+# composer offers it as a resource picker and not as a line of wording, so it has to be recognisable
+# by pattern wherever a step is read.
 PROVISION = 'the {resource_type} "{name}"'
 PROVISION_VARIED = 'the {resource_type} "{name}" but:'
 
@@ -28,8 +20,8 @@ PROVISION_VARIED = 'the {resource_type} "{name}" but:'
 # about it: isolation is a thing a *scenario* needs, and the type it needs one of is often the same
 # type another scenario is happy to share.
 #
-# Read as English rather than as a lifecycle keyword. "A fresh one" is what a person says about a
-# glass, and the article is what carries the difference from "the" — the one everybody uses.
+# English, not a lifecycle keyword: "a fresh one" is what a person says about a glass, and the
+# article carries the difference from "the" — the one everybody uses.
 PROVISION_FRESH = 'a fresh {resource_type} "{name}"'
 PROVISION_FRESH_VARIED = 'a fresh {resource_type} "{name}" but:'
 
@@ -50,7 +42,7 @@ def fill(pattern: str, values: dict[str, str]) -> str:
     """A step pattern with its `{captures}` replaced by the values chosen for them.
 
     A capture with no value keeps its placeholder, so a half-built step reads as a half-built step
-    rather than as a sentence with a hole silently closed up.
+    and not as a sentence with a hole silently closed up.
     """
     return CAPTURE_RE.sub(lambda match: values.get(match.group(1)) or match.group(0), pattern)
 
@@ -66,5 +58,5 @@ def pattern_regex(pattern: str) -> str:
 
 
 def literal_length(pattern: str) -> int:
-    """How much of a pattern is wording rather than a hole for a value."""
+    """How much of a pattern is wording, as against a hole for a value."""
     return len(CAPTURE_RE.sub("", pattern))

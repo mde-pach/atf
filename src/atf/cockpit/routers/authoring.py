@@ -1,16 +1,4 @@
-"""Authoring the catalog: create a resource, copy one, edit one, delete one.
-
-Editing the catalog is a change to the suite's source, not to an environment — the same edit would
-be the same edit whichever environment the cockpit is pointed at. So `mutable_envs` does not gate
-anything here; a read-only environment can still have its catalog authored. Every route that writes
-is confirmed, and every path written to is derived from the manifest's `catalog_dir`, never from the
-form.
-
-One path applies every change: propose the whole new file text, write it, load the entire catalog
-back, and restore the original bytes if it no longer loads. The cockpit must never leave a catalog
-that does not load. The proposal is shown as a diff before it is applied, because a reader who
-follows the diff learns the YAML format, which is worth as much as the edit.
-"""
+"""Authoring the catalog: create a resource, copy one, edit one, delete one."""
 
 from __future__ import annotations
 
@@ -44,8 +32,8 @@ DELETE = "delete"
 # Blank rows so the key/value body can be added to without any scripting.
 SPARE_ROWS = 3
 
-# Read as a literal rather than as text, so `done: false` is a boolean and `count: 3` a number.
-# Deliberately narrow: a date-shaped string stays the string the backend was given.
+# Read as a literal, so `done: false` is a boolean and `count: 3` a number. Narrow by design: a
+# date-shaped string stays the string the backend was given.
 LITERALS: dict[str, Any] = {"true": True, "false": False, "yes": True, "no": False, "null": None, "~": None}
 NUMBER = re.compile(r"[+-]?(\d+|\d*\.\d+)([eE][+-]?\d+)?")
 
@@ -119,7 +107,7 @@ class Proposal:
 
 
 def diff_lines(text: str) -> list[tuple[str, str]]:
-    """A unified diff as (class, line) pairs, because the diff is rendered one div per line."""
+    """A unified diff as (class, line) pairs, one per rendered line."""
     out: list[tuple[str, str]] = []
     for line in text.splitlines():
         if line.startswith(("+++", "---", "@@")):
@@ -309,9 +297,8 @@ def default_file(nodes: dict[str, Node], resource_type: str) -> str:
 def _instance_path(name: str) -> Path:
     """A file name from the form, resolved inside `catalog_dir` — or refused.
 
-    The stem becomes the first half of every node id declared in it, so it has to be a plain
-    catalog file name. Anything naming a directory is refused rather than quietly stripped: a form
-    asking to write outside the catalog is not a request to honour in a different place.
+    The stem becomes the first half of every node id declared in it, so it has to be a plain catalog
+    file name. Anything naming a directory raises `HTTPException`, never stripped to fit.
     """
     root = app().manifest.catalog_dir
     given = name.strip()
@@ -504,7 +491,7 @@ def _sheet(
     source: Node | None = None,
     identity: str = "",
 ) -> Any:
-    """One overlay for all four verbs: the form, the reason it exists, and the diff it would write."""
+    """One overlay for all four verbs: the form, what it is for, and the diff it would write."""
     engine = app().state(env).materializer
     structured = any(isinstance(value, dict | list) for value in body.values())
     draft.body_mode = "yaml" if structured else "rows"
@@ -546,10 +533,9 @@ def _reload(request: Request, env: str, banner: str, focus: str, type_name: str)
 
 
 def _proposed(env: str, draft: Draft) -> tuple[Proposal | None, list[str]]:
-    """The proposal, or the reasons there is not one — both belong in the same panel.
+    """The proposal, or what is missing before there can be one — both belong in the same panel.
 
-    A form with no name yet has not been got wrong, it has not been filled in, so it is not worth
-    a complaint: the panel says what will appear there instead.
+    A form with no name yet is unfilled, not wrong, and gets no complaint.
     """
     if draft.action == CREATE and not draft.name:
         return None, []
@@ -599,10 +585,10 @@ def _free_name(node: Node, catalog: Catalog) -> str:
 
 
 def _from_record(env: str, resource_type: str, identity: str, scope_id: str) -> Derived:
-    """The node that would have produced a record out there, found by browsing for it again.
+    """The node a record out there would be declared as, found by browsing for it again.
 
-    The record is re-read rather than carried through the form: what the catalog declares has to
-    come from the environment, not from whatever a page happened to post back.
+    The record is re-read here and never carried through the form: what the catalog declares comes
+    from the environment, not from what a page posted back.
     """
     engine = app().state(env).materializer
     spec = engine.spec(resource_type)

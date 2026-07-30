@@ -1,17 +1,4 @@
-"""One live view of a suite: its environments, and what each of them is doing.
-
-Everything a surface asks for comes from here, so a page render or an agent's question never decides
-for itself whether to shell out. Run history is read from the store, which is why a fresh `atf serve`
-already knows what the last run said.
-
-Four things are cached per environment, and each is its own view of it: what the environment holds
-(`status`), what the suite says (`discovery`), what its runs said (`results`), and what is happening
-right now (`jobs`). They are separate because they go stale for different reasons and at different
-speeds — a catalog edit invalidates two of them and neither of the others.
-
-No web anywhere in here: the MCP server is a second consumer, and a module that imports FastAPI to
-hold a cache cannot be used by anything that is not a web app.
-"""
+"""One live view of a suite: its environments, and what each of them is doing."""
 
 from __future__ import annotations
 
@@ -291,7 +278,7 @@ class Session:
         _drop(self.environments.state(env))
 
     def invalidate_all(self) -> None:
-        """Every environment's caches, for a change to the source rather than to an environment.
+        """Every environment's caches, for a change to the suite's source.
 
         Editing the catalog is the same edit whichever environment is selected, so an environment
         built earlier would otherwise keep serving the catalog as it was before the edit.

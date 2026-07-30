@@ -269,7 +269,8 @@ assertion = claim
 
 def test_an_assertion_is_four_choices_not_a_pattern_to_fill_in(client):
     """A pattern is how ATF matches a line, not how anyone thinks. What someone means is a claim:
-    about this, of that, compared this way, against that."""
+    about this, of that, compared this way, against that.
+    """
     body = client.post("/compose/preview", data=claim()).text
     for name in ("subject_2", "aspect_2", "compare_2", "target_2"):
         assert f'name="{name}"' in name or f'name="{name}"' in body, name
@@ -782,7 +783,8 @@ def with_given(resource_type: str, name: str, **overrides) -> dict[str, str]:
 
 def test_a_step_is_offered_only_once_the_context_holds_what_it_reads(client):
     """The reported failure: a step whose subject the scenario never provisioned composed cleanly
-    and was only found out by running it."""
+    and was only found out by running it.
+    """
     holding_a_visitor = client.post("/compose/preview", data=with_given("visitor", "walkin")).text
     assert 'data-value="I list the projects of the account"' not in holding_a_visitor
 

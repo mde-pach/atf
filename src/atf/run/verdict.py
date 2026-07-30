@@ -1,9 +1,4 @@
-"""How a scenario stands, in one word, from what its runs said.
-
-A scenario is one line of a feature file and several tests — one per Examples row — so the word for
-it is a fold over their outcomes. Every surface that reports a suite needs that fold: the cockpit's
-verdict, `atf docs`, and anything else that answers "can I ship?".
-"""
+"""How a scenario stands, in one word, from what its runs said."""
 
 from __future__ import annotations
 

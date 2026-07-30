@@ -1,22 +1,4 @@
-"""Compose — assemble a scenario from the steps this suite really defines, then write it.
-
-A raw editor with autocomplete assumes the reader already knows the model. This does not. `Given`
-rows name resources and ATF provisions them, so they are a picker over the catalog rather than a
-line to type; `When` and `Then` rows are the author's own vocabulary and are only ever offered from
-the step definitions discovery found. Anyone who would rather type takes the text over in one click
-and is held to exactly the same checks.
-
-Two invariants govern the write. Every path is derived from `manifest.specs_dir`, never from the
-form, so no wording can reach a file outside the suite. And the file is re-parsed after writing and
-restored byte-for-byte if it no longer reads, because a `.feature` that will not parse costs the
-whole suite its scenarios.
-
-**What can be said here is not decided in this file.** Which steps a feature can reach, what a claim
-means, what a resource's fields currently hold and what those choices compose into all live in
-[`introspect.py`](../../introspect.py), which knows nothing about the web. This router turns a form
-into those questions and the answers into a page — and everything below the form is shared with
-anything else that wants to compose a scenario without opening an editor.
-"""
+"""Compose — assemble a scenario from the steps this suite really defines, then write it."""
 
 from __future__ import annotations
 
@@ -79,12 +61,12 @@ PURPOSE = "Name what a behaviour needs, then what it does and what must be true.
 
 DOCS_STEPS = "reference/specs-and-fixtures/"
 
-# A feature name becomes a filename through `slug`, which cannot emit a separator. A name that
-# carries one anyway is not a typo, so it is refused rather than quietly cleaned up.
+# A feature name becomes a filename through `slug`, which cannot emit a separator. A name carrying
+# one anyway is refused, never cleaned up.
 _PATH_ISH = re.compile(r"[/\\]|\.\.")
 
-# Lines that sit at the scenario's own indentation rather than a step's. `Examples:` is deliberately
-# absent: it belongs with the steps, and its table rows deeper still.
+# Lines that sit at the scenario's own indentation, not a step's. `Examples:` is absent from the set:
+# it belongs with the steps, and its table rows deeper still.
 _HEADING_RE = re.compile(r"^(Scenario|Scenario Outline|Example|Background):")
 
 
@@ -121,8 +103,8 @@ class Draft:
 def surface(env: str) -> Surface:
     """This environment as everything that decides what can be said about it.
 
-    Assembled here rather than cached because each part of it is already cached one layer down: the
-    cockpit hands back the same materializer, discovery and status until something invalidates them.
+    Assembled per request, each part of it already cached one layer down: the session hands back the
+    same materializer, discovery and status until something invalidates them.
     """
     cockpit = app()
     return Surface(
@@ -271,9 +253,9 @@ def _chosen(index: int, fields: dict[str, str]) -> dict[str, Any]:
 def _table(index: int, fields: dict[str, str]) -> list[list[str]]:
     """The rows somebody filled in under a step that takes a table.
 
-    A row with neither a field nor a value is one the page is offering and nobody has used, so it
-    is dropped rather than written — the preview has to be exactly what lands on disk. A row with
-    one of the two is kept, so that a half-filled row is reported rather than silently discarded.
+    A row with neither a field nor a value is one the page offered and nobody used, and is dropped:
+    the preview has to be exactly what lands on disk. A row with one of the two is kept, so a
+    half-filled row is reported.
     """
     prefix = f"tf_{index}_"
     numbers = sorted(
@@ -436,7 +418,7 @@ def _check_text(draft: Draft, catalog: Catalog, found: Discovery) -> None:
     if not added:
         return
     # The text is the authority on its own title once it is being edited directly, so the field
-    # follows it rather than the other way round: the two must not be able to disagree.
+    # follows it. The two must not be able to disagree.
     draft.title = added[0].scenario
 
     for spec in added:
@@ -662,11 +644,10 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
             where, [step for step in offered[row.keyword] if usable(step, row)], row
         ),
         # What a table's rows can be about: the fields this row's resource is known to have, with
-        # what each holds right now. The composer already reads these for the single-field claim —
-        # a whole-shape claim is the same question asked about several fields at once, and the
-        # tedium it replaces is exactly why it was worth teaching the builder to write one.
+        # what each holds right now. A whole-shape claim is the single-field question asked about
+        # several fields at once, so it reads the same options.
         "table_fields": lambda row: table_fields(where, row),
-        # What a cell may say instead of a value, offered rather than remembered.
+        # What a cell may say in place of a value, offered in the page.
         "markers": MARKERS,
         "aspect_options": lambda row: aspect_options(where, row.subject.removeprefix(NODE_SUBJECT)),
         "held_fields": lambda: held_fields(cockpit.results.of(env)),
@@ -674,13 +655,11 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         "resource_options": resource_options(where),
         "claim": comparison,
         "unusable": lambda row: [step for step in offered[row.keyword] if not usable(step, row)],
-        # Only the steps ATF itself defines get a picker per parameter: they are the only ones
-        # whose parameters ATF chose, so the only ones whose meaning it can know. A project's
-        # step keeps a text box, because `{expected}` could be anything at all.
+        # Only the steps ATF itself defines get a picker per parameter: ATF chose their parameters,
+        # so it knows what each means. A project's step keeps a text box — `{expected}` is anything.
         "generic": generic,
         # What can be *done* to a resource of this type. Data in the catalog, so it is enumerable —
-        # which is the same property that made assertions composable, and the reason `actions:` is
-        # declared rather than written as a step.
+        # the same property that made assertions composable.
         "action_options": lambda resource_type: action_options(where, resource_type),
         "field_options": lambda resource_type, name: field_options(where, resource_type, name),
         "current_value": lambda resource_type, name, of_field: current_value(

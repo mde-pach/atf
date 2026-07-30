@@ -1,18 +1,4 @@
-"""The per-scenario scratchpad, and what it remembers about what it is holding.
-
-`context` used to be a `SimpleNamespace`: a bag that forgets. A `When` set `context.result` to
-anything at all, and the `Then` after it knew the shape only because the same person wrote both.
-Nothing downstream — not the framework, not the cockpit, not a person reading the scenario — could
-say what a scenario had available to assert on once its actions had run.
-
-`Context` behaves exactly like the namespace it replaces and additionally keeps a *description* of
-everything set on it. The descriptions are what let the cockpit say "after that step, the result
-held three records that look like tasks" instead of showing an opaque bag.
-
-A description never holds a value, only names, kinds and counts. Slots are reported at the end of a
-run and persisted with it, and a record can carry a token as easily as a title — so what leaves this
-process is the shape of what was held, never the contents.
-"""
+"""The per-scenario scratchpad, and what it remembers about what it is holding."""
 
 from __future__ import annotations
 
@@ -50,7 +36,7 @@ Recogniser = Callable[[Record], str]
 
 @dataclass(frozen=True)
 class Slot:
-    """What one attribute of the context is holding, described rather than copied."""
+    """What one attribute of the context is holding: its shape, described, never its contents."""
 
     name: str
     kind: str
@@ -233,7 +219,7 @@ def _guess(recognise: Recogniser | None, record: Record) -> str:
         return ""
     try:
         return recognise(record) or ""
-    except Exception:  # noqa: BLE001 - a guess must never be the reason a scenario fails
+    except Exception:  # noqa: BLE001 - a guess must never fail a scenario
         return ""
 
 

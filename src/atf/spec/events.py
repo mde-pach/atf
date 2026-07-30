@@ -1,11 +1,4 @@
-"""The protocol a run reports itself by: the words, the writer and the reader.
-
-A run appends one JSON object per line to the file `ATF_PROGRESS_OUT` names, and whoever launched it
-tails that file. Both halves live here, because a vocabulary with two implementations is two
-vocabularies — and this one had four participants and no definition.
-
-Writing never raises and never blocks: observing a run must not be able to fail one.
-"""
+"""The protocol a run reports itself by: the words, the writer and the reader."""
 
 from __future__ import annotations
 

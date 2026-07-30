@@ -109,7 +109,8 @@ def test_a_node_reference_always_wins_over_a_provider_name():
 )
 def test_a_provider_says_whether_it_may_appear_in_a_natural_key(name, allowed):
     """Only the provider knows. A generator of fresh values must say no, or every run creates
-    another record; a source answering from the clock or the environment can say yes."""
+    another record; a source answering from the clock or the environment can say yes.
+    """
     assert providers.keyable(name) is allowed
 
 

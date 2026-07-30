@@ -42,6 +42,11 @@ jobs:
       - name: Type-check (strict)
         run: uv run ty check
 
+      # The two rules ruff cannot express: a module docstring is at most two lines, and no docstring
+      # or comment argues why the code is this way. See README, conventions.
+      - name: Docstrings and comments say what, not why
+        run: uv run python scripts/prose.py
+
       - name: Docs build with no broken links
         run: uv run mkdocs build --strict
 

@@ -461,7 +461,8 @@ def test_the_lineage_is_also_stated_in_words(client):
 
 def test_a_resource_that_depends_on_something_gets_a_diagram(client):
     """The graph is the only place the shape of the catalog is visible. Hiding it behind a size
-    threshold meant nobody found out it existed."""
+    threshold meant nobody found out it existed.
+    """
     depends = client.get("/catalog/node/projects.alpha").text
     assert 'class="graph"' in depends
     assert "alpha needs primary" in depends, "the sentence stays: it is what a reader actually reads"
@@ -480,7 +481,8 @@ def test_a_lineage_node_carries_its_description_for_the_hover_card(client):
 
 def test_an_examples_table_carries_the_outcome_of_each_row(client):
     """An outline is one behaviour run several times, so the values belong beside the Gherkin —
-    not under a card explaining what pytest collects."""
+    not under a card explaining what pytest collects.
+    """
     body = client.get("/scenarios/accounts::accounts-report-their-own-plan").text
     assert "secondary" in body and "trial" in body
     assert "<th>who</th>" in body and "<th>outcome</th>" in body

@@ -1,10 +1,4 @@
-"""Run history on disk, so "can I ship?" survives a restart of the cockpit.
-
-One JSON file per run under `<manifest root>/.atf/runs`, named `<millis>-<env>-<id>.json` so a
-directory listing is already in newest-last order. Reading is total: a file this version cannot
-parse is skipped rather than raised, because a corrupt history must never take a page down, and
-unknown keys are ignored so a newer ATF's runs stay readable by an older one.
-"""
+"""Run history on disk, so "can I ship?" survives a restart of the cockpit."""
 
 from __future__ import annotations
 

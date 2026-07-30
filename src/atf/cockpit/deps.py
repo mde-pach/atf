@@ -1,9 +1,4 @@
-"""The one session the web app serves, as a FastAPI dependency.
-
-A module-level singleton because a session holds every environment's caches and a per-request one
-would re-bootstrap the suite on every page. `set_session` exists so a test can hand it one pointed
-at a project of its own.
-"""
+"""The one session the web app serves, as a FastAPI dependency."""
 
 from __future__ import annotations
 

@@ -1,9 +1,4 @@
-"""Shared view layer: templates, page context, and the derived views every vertical renders.
-
-The routers stay thin because the interesting work is here — turning the raw model (catalog nodes,
-environment status, discovery, run history) into the conclusions the interface shows: is this
-scenario runnable, what would provisioning it actually do, can I ship.
-"""
+"""Shared view layer: templates, page context, and the derived views every vertical renders."""
 
 from __future__ import annotations
 
@@ -130,7 +125,7 @@ def partial(request: Request, template: str, **context: Any) -> Any:
 
 
 def _checked_at(age: float | None) -> float | None:
-    """Status freshness as an absolute time, because that is what `ago()` reads."""
+    """Status freshness as an absolute time, which is what `ago()` reads."""
     return None if age is None else time.time() - age
 
 
@@ -230,8 +225,8 @@ class ScenarioView:
     def step_state(self, step: Step) -> str:
         """How far the last run got: the steps before a failure are worth seeing as passed.
 
-        Matched on text rather than keyword, because pytest-bdd resolves a repeated `And` to the
-        concrete keyword it continues, so the two spellings will not agree.
+        Matched on text, never on keyword: pytest-bdd resolves a repeated `And` to the concrete
+        keyword it continues, so the two spellings do not agree.
         """
         return next((observed.state for observed in self.steps if observed.text == step.text), "")
 
@@ -566,12 +561,11 @@ def duration(seconds: float) -> str:
 def u(path: str, **params: Any) -> str:
     """A link that cannot lose the environment — the one thing every URL here must carry.
 
-    The environment comes from a context variable rather than the template context, so a macro
-    imported without `with context` still produces correct links. Losing the environment silently
-    is the one failure this helper exists to prevent, so it must not depend on how it was reached.
+    The environment comes from a context variable, not the template context, so a macro imported
+    without `with context` still produces correct links.
 
-    Values are percent-encoded here rather than at each call site: catalog names, feature names and
-    scenario states all reach these URLs, and a space or an ampersand in one must not truncate it.
+    Values are percent-encoded here, once: catalog names, feature names and scenario states all reach
+    these URLs, and a space or an ampersand in one must not truncate it.
     """
     query = {"env": _rendering_env.get(""), **params}
     encoded = urlencode({key: value for key, value in query.items() if value not in (None, "")})
@@ -585,8 +579,8 @@ def glossary(key: str) -> Term | None:
 def relative(path: str) -> str:
     """A path as the person who wrote it types it: from the suite root, not from `/`.
 
-    Every path the cockpit holds is absolute, because that is what pytest reports. Nobody reads a
-    file that way, and the leading half of it is the same on every line of every page.
+    Every path the cockpit holds is absolute, pytest reporting them that way, and the leading half of
+    one is the same on every line of every page.
     """
     if not path:
         return ""

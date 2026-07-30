@@ -1,25 +1,4 @@
-"""A run, said in the shape other tools already read.
-
-`atf run --json` exists so that a run is usable by something that is not a person: a CI gate, a
-dashboard, a bot that comments on a pull request. The temptation is to invent a shape — ATF's own
-result model is right there, and dumping it is one line.
-
-That would be wrong, and the reason is the whole point of the flag. A format nobody else reads is
-a format every consumer has to be taught, which means the gate gets written once, by hand, per
-project. **CTRF** (the Common Test Report Format) is the interchange format the tooling around test
-runs has settled on, and emitting it is what makes a run mean something to software ATF has never
-heard of.
-
-So this module is a translation and nothing more. It decides nothing, drops nothing, and holds no
-opinion the result model does not already hold — which is also why it is a pure function over a
-`RunRecord` and unit-tested as one.
-
-**The one judgement in it is what an outcome is called.** CTRF's statuses are `passed`, `failed`,
-`skipped`, `pending` and `other`, and ATF's are `passed`, `failed`, `skipped` and `error`. An error
-is a test that never got to run its body — a fixture raised, a resource could not be provisioned —
-and calling that `failed` is the honest reading: the suite did not go green, and a gate that treats
-"it broke before it started" as anything softer is a gate that lets a broken suite through.
-"""
+"""A run, said in the shape other tools already read."""
 
 from __future__ import annotations
 
@@ -68,7 +47,7 @@ def _test(nodeid: str, record: RunRecord) -> dict[str, Any]:
     }
     # The Gherkin step a scenario stopped on, which is the useful unit of failure for a BDD suite
     # and the thing a person reading CI wants first. CTRF has no field for it, so it goes in the
-    # message beside the detail rather than being dropped for want of a home.
+    # message beside the detail, where CTRF has no field of its own for one.
     if result.failed_step is not None:
         step = result.failed_step
         entry["message"] = f"{step.keyword} {step.text}".strip()

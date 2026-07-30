@@ -356,7 +356,8 @@ def _(context, client_config, title):
 
 def test_a_generated_value_survives_from_the_when_that_made_it_to_the_then(project):
     """The whole point of naming a provider: an action takes a generated value in, and the
-    assertion checking it writes the same expression and sees the same answer."""
+    assertion checking it writes the same expression and sees the same answer.
+    """
     feature = """Feature: Generated
   Scenario: An account reports the plan it was just moved to
     Given the account "primary"
@@ -410,7 +411,8 @@ def test_a_placeholder_that_cannot_resolve_says_which_one(project):
 
 def test_a_field_of_what_a_step_produced_is_compared(project):
     """Your rename example, whole: an action takes a generated value in, and the assertion checks
-    the value that came back against the same expression."""
+    the value that came back against the same expression.
+    """
     feature = """Feature: Produced
   Scenario: The rename comes back in what the API returned
     Given the account "primary"

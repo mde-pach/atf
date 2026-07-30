@@ -60,9 +60,8 @@ class Manifest:
     # Raw, like `environments`: the `*_env` pointers in it are resolved by whoever reads it.
     schemas: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Which system a tag says a scenario needs: `browser: browser` means a `@browser` scenario
-    # cannot run where the `browser` system is unavailable. Acting on a tag used to be every
-    # suite's own `pytest_collection_modifyitems`, which is a raw pytest hook in a file that
-    # otherwise never mentions pytest.
+    # cannot run where the `browser` system is unavailable. The manifest says it and ATF's plugin
+    # acts on it, so no suite writes a raw `pytest_collection_modifyitems` of its own for the case.
     requires: dict[str, str] = field(default_factory=dict)
 
     def env(self, name: str) -> EnvConfig:
@@ -167,7 +166,7 @@ def load_manifest(path: Path | None = None) -> Manifest:
 def _parse_schemas(value: Any, problems: list[str]) -> dict[str, dict[str, Any]]:
     """`schemas.<name>` — where a schema ATF can derive resource types from is found.
 
-    A named place in the manifest rather than an argument on the command line, because the point of
+    A named place in the manifest, and never an argument on the command line: the point of
     `atf import openapi` is that it is *re-run*: an API changes, and the answer to "which file was
     that again?" should not be a search through somebody's downloads. One entry, and re-importing is
     a command with nothing after it.
@@ -192,7 +191,7 @@ def _parse_schemas(value: Any, problems: list[str]) -> dict[str, dict[str, Any]]
 def _parse_requires(value: Any, problems: list[str]) -> dict[str, str]:
     """`requires: {<tag>: <system>}` — which system a tagged scenario cannot run without.
 
-    A mapping rather than a list because the tag and the system are different words: `@browser` is
+    A mapping, not a list: the tag and the system are different words. `@browser` is
     what an author writes on a scenario, and `browser` is what the manifest happens to have called
     the adapter. Nothing checks the system exists here — an environment is free not to configure
     one, which is exactly the case this is for.

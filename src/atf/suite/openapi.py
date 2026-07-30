@@ -1,65 +1,4 @@
-"""Deriving catalog resource types from an OpenAPI schema.
-
-A team adopting ATF hand-writes its whole catalog: every resource type, the path it lives at, the
-field it is recognised by. That is the blank page, and it is the first hour of using the tool —
-spent restating things the service already publishes. This reads the schema and writes that hour.
-
-**The schema is named in the manifest, not passed as a file.** `schemas.<name>.url` is one place,
-and `atf import openapi` with no arguments re-reads it, so keeping the catalog in step with an API
-change is a command rather than a hunt for whichever copy of the spec somebody last downloaded. A
-path or URL may still be given on the command line, for a schema that is not the project's own.
-Anything secret about reaching it goes through the manifest's `*_env` pointers, like every other
-credential: this module never sees a literal.
-
-**Written once, proposed thereafter.** The first import fills a registry nobody has written yet.
-Every import after that only ever *proposes*, because by then the file belongs to the person who
-corrected a `natural_key` or set `mode: reference` — and a generator that silently reverted those is
-a generator nobody can afford to re-run. Re-running is the entire point, so a re-import adds the
-types that are missing, leaves every declared one byte-for-byte alone, and reports what has drifted
-rather than fixing it. Nothing is written to produce a diff.
-
-**Every guess carries its reason, in the file.** The one thing a reader has to check is what ATF
-decided to match on, so that decision is written next to the answer as the comment that produced it.
-A generator whose output has to be checked against a separate report is a generator whose output
-does not get checked.
-
-**A wrong natural key is the worst failure available here**, and it is silent: `find` never matches,
-so every run creates another record, and nothing goes red until somebody looks at the environment.
-That asymmetry is why ambiguity is left unresolved. When the leading candidate is not clearly ahead
-of the runner-up, no `natural_key` is written and the candidates are listed instead — a type that
-refuses to provision until a person chooses costs an afternoon, and a type that duplicates costs a
-cleanup nobody scheduled.
-
-**The scoring is arithmetic over the schema, not a model.** It has to give the same answer twice, it
-has to be explainable in one line of English, and it must not add a dependency to a test framework.
-So each signal is a fixed weight and a sentence, the weights are ordered by how much the signal
-actually knows, and the whole of the decision is the sum. In order:
-
-1. *The collection endpoint filters by it.* `GET /accounts` taking an `email` query parameter is the
-   API documenting "you can find one this way", which is exactly what a natural key means to ATF.
-   Nothing else in a schema states the intent this directly, so nothing else is worth as much.
-2. *Another type in this catalog is already keyed on that field name.* The project's own convention,
-   learned rather than assumed — and it compounds: correct one guess by hand and that field name is
-   worth more to the next import. This is the signal that makes the command better the more it is
-   used, which is why it outranks everything the schema says about shape.
-3. *`format:` or `pattern`.* An email, a uuid, a hostname, a constrained string — a field somebody
-   bothered to constrain is a field that identifies something.
-4. *Required, a string, and not the identity.* Weak on its own, and it is what separates a candidate
-   from an optional display field.
-5. *The name looks like a key* — `email`, `slug`, `code`, `key`, `reference`, `username`, `sku`,
-   `name`. Last, and **only when the catalog has taught us nothing yet**: a resemblance is a guess
-   about English, and a project that has already said what it keys on should never be overruled by
-   one. It exists so that the very first import is not helpless.
-
-Path scoping is not scored, because it is not a guess: `/accounts/{account_id}/projects` says a
-project is found *within* an account, so `account_id` is part of the key whatever else is, and the
-type depends on an account. That dependency is written as a comment rather than as configuration —
-`depends_on` belongs to an instance, and the schema knows nothing about which instances exist.
-
-Against all of it are the fields that can never be a key: the identity the backend assigns,
-timestamps, booleans, numbers, structures, prose, and anything the schema marks `readOnly`. A
-natural key has to be settable at creation time and stable afterwards, and none of those are both.
-"""
+"""Deriving catalog resource types from an OpenAPI schema."""
 
 from __future__ import annotations
 
@@ -84,15 +23,13 @@ DEFAULT_TIMEOUT = 30.0
 
 # ---- how much each signal is worth ------------------------------------------
 #
-# The gaps matter more than the numbers. Filtering outranks everything, because it is the API
-# stating the intent rather than hinting at it. Convention outranks shape, because a project that
-# has already decided beats a schema that merely allows. Each signal is worth more than every
-# weaker one put together, so a stronger reason is never outvoted by a pile of weak ones.
+# The gaps matter more than the numbers. Filtering outranks everything: it is the API stating the
+# intent. Convention outranks shape: a project that has already decided beats a schema that merely
+# allows. Each signal is worth more than every weaker one put together, so a stronger reason is never
+# outvoted by a pile of weak ones.
 #
-# The margin is the weakest signal there is: one reason the runner-up does not have is enough to
-# decide, and two fields with the same reasons are a tie — because at that point there is nothing
-# left to prefer one by, and inventing a preference is how a catalog ends up matching on the wrong
-# field forever.
+# The margin is the weakest signal there is: one reason the runner-up lacks decides, and two fields
+# with the same reasons are a tie.
 
 FILTERS = 50
 CONVENTION = 30
@@ -176,12 +113,9 @@ def _opened(source: str) -> str:
 
 
 def _fetched(source: str, headers: Mapping[str, str] | None, timeout: float) -> str:
-    """One GET, no retries and no session.
+    """One GET of a static document: no retries, no session, no pagination.
 
-    Deliberately not routed through `http.build_client`, which exists for talking to a system under
-    test: it carries auth flows, pagination and a retry policy, and every one of them is about a
-    conversation. This is a single read of a static document, and the only thing it needs from that
-    machinery is a header — so it takes the header and leaves the machinery alone.
+    Raises `SchemaError` naming the source when the read fails or the response is not text.
     """
     import httpx
 
@@ -304,8 +238,8 @@ def said_together(parts: list[str]) -> str:
 def convention_of(types: Mapping[str, Any]) -> dict[str, list[str]]:
     """Which field names this project already keys resources on, and which types do it.
 
-    Read from the catalog rather than assumed, which is what makes correcting a guess by hand pay
-    for itself: the correction becomes the evidence the next import scores on.
+    Read from the catalog, so a guess corrected by hand becomes the evidence the next import scores
+    on.
     """
     out: dict[str, list[str]] = {}
     for name, entry in sorted(types.items()):
@@ -438,7 +372,7 @@ def _could_be_a_key(name: str, schema: Mapping[str, Any], id_field: str, scope: 
     if lowered == id_field.lower() or lowered in IDENTITYISH:
         return False  # the identity the backend assigns, which a create cannot ask for
     if name in scope:
-        return False  # already in the key, because the path puts it there
+        return False  # already in the key: the path put it there
     if schema.get("readOnly") is True:
         return False
     declared = schema.get("type")
@@ -467,10 +401,8 @@ def _is_text(schema: Mapping[str, Any]) -> bool:
 def type_name(segment: str) -> str:
     """A path segment as a catalog type name: singular, lower case, underscores.
 
-    A resource type is a thing, and a collection path names many of them. The singularisation is
-    deliberately the four rules everybody knows and nothing else — a table of irregular English
-    plurals inside a test framework would be a liability, and a name that comes out wrong is a name
-    somebody renames once in a generated file.
+    The singularisation is the four rules everybody knows and nothing else, so a name that comes out
+    wrong is one somebody renames once, in a generated file.
     """
     stem = re.sub(r"[^a-z0-9]+", "_", segment.lower()).strip("_")
     if stem.endswith("ies") and len(stem) > 3:
@@ -516,7 +448,7 @@ def _id_field(properties: Fragment, name: str) -> str:
 def _request_schema(operation: Fragment, document: Fragment) -> dict[str, Any]:
     body = _deref(operation.get("requestBody"), document)
     schema = _json_schema(body.get("content"), document)
-    # Swagger 2 puts the body in a parameter rather than in a request body.
+    # Swagger 2 puts the body in a parameter, where OpenAPI 3 has a request body.
     if not schema:
         for entry in operation.get("parameters") or []:
             resolved = _deref(entry, document)
@@ -610,7 +542,7 @@ def _pointer(ref: str, document: Fragment) -> Any:
 
 
 def render(collection: Collection) -> str:
-    """One resource type as the YAML a person would have written, reasons and all."""
+    """One resource type as the YAML a person writes by hand, each guessed key annotated."""
     lines = [f"{collection.name}:", f"  system: {SYSTEM}", f"  path: {scalar(collection.path)}"]
     if collection.scope:
         # `path` is what a create posts to and `list_path` is what a lookup fills in from the body,
@@ -784,13 +716,9 @@ def _drift(collection: Collection, declared: Any) -> str:
 def _must_reload(text: str, names: list[str], before: str = "") -> None:
     """Proof the proposal is loadable YAML declaring what it claims to, before anyone is shown it.
 
-    The cockpit writes a catalog edit and rolls it back when the catalog stops loading. Here the
-    text is generated rather than typed, so the same guarantee is cheaper to give earlier: check it
-    before it is offered, and there is never a state to roll back from.
-
-    Almost every way this fails is about the file being appended to rather than about the schema —
-    a registry written as one flow mapping has nowhere to put a block entry — so the refusal says
-    that, rather than reporting a parse error about lines nobody wrote.
+    Raises `SchemaError` naming the file, not the parse error: almost every way this fails is about
+    the file being appended to — a registry written as one flow mapping has nowhere to put a block
+    entry — and a reader did not write the lines a parse error would point at.
     """
     try:
         loaded = yaml.safe_load(text) if text.strip() else {}

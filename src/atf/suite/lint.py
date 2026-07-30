@@ -1,27 +1,4 @@
-"""Whether a feature file is well-formed — the shape of it, never the words in it.
-
-This used to check the *vocabulary*: a spec line naming a field, a status code, a path, a flag or a
-selector was reported as the layer below leaking into the layer above. That rule is real, and it is
-the reason the [phrasebook](phrasebook.py) exists. It is also not checkable, and shipping it as a
-check was a mistake worth writing down rather than quietly reversing.
-
-The reason is that it inferred **meaning** from **syntax**. A quoted `/products/42` is a route
-leaking out of an adapter in one suite and the domain's own value in another — a redirect target, a
-CMS slug, a router rule. `503` is an implementation detail here and the entire subject matter of a
-monitoring product. There is no amount of tuning that separates the two, because the difference is
-what the system under test *is*, and a linter cannot know that. What such a rule produces is false
-positives on correct specs, one waiver comment per line, and a check that means nothing.
-
-So what is left is what a machine can actually decide: **is this file the thing it claims to be?**
-Every rule below is a fact about the file that is wrong in every domain — a step above the first
-scenario, an outline with no examples, a row with the wrong number of cells, two scenarios that
-generate one test name. Nothing here has an opinion about what a suite is testing.
-
-**No waivers, and there is nothing to waive.** The old rules needed them because they were
-sometimes wrong. These are not sometimes wrong: a `Scenario Outline:` with no `Examples:` never
-runs, whoever wrote it and whatever they meant. A rule that needs an escape hatch is a rule that
-should not have been mechanical in the first place, which is the whole lesson here.
-"""
+"""Whether a feature file is well-formed — the shape of it, never the words in it."""
 
 from __future__ import annotations
 
@@ -32,9 +9,8 @@ from pathlib import Path
 
 from ..model.text import plural
 
-# The keywords, and what each one starts. Read as text rather than through a Gherkin library
-# because `atf lint` has to work in a checkout with nothing configured — the same seam
-# `atf docs` holds.
+# The keywords, and what each one starts. Read as text, through no Gherkin library: `atf lint` works
+# in a checkout with nothing configured, which is the same seam `atf docs` holds.
 _STEP_RE = re.compile(r"^\s*(?P<keyword>Given|When|Then|And|But|\*)\s+(?P<text>\S.*)$")
 _FEATURE_RE = re.compile(r"^\s*Feature:(?P<title>.*)$")
 _RULE_RE = re.compile(r"^\s*Rule:(?P<title>.*)$")
@@ -256,11 +232,10 @@ def check_text(text: str, path: Path) -> list[Finding]:
 
 
 def _under_background(text: str, number: int) -> bool:
-    """Whether the step on line `number` sits under a `Background:` rather than nowhere at all.
+    """Whether the step on line `number` sits under a `Background:` or under a `Scenario:`.
 
-    A background's steps belong to every scenario in the feature, so they are not stray — and the
-    walk above forgets which of the two it is in, because everything else it decides is the same
-    for both.
+    A background's steps belong to every scenario in the feature, so they are not stray. The walk
+    above forgets which of the two it is in: everything else it decides is the same for both.
     """
     for line in reversed(text.splitlines()[: number - 1]):
         if _BACKGROUND_RE.match(line):

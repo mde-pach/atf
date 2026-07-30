@@ -1,37 +1,4 @@
-"""A page as the server sent it, and what is on it — by role and accessible name, no browser.
-
-```yaml
-catalog:
-  system: html
-  mode: data
-  body:
-    at: /catalog
-```
-
-```gherkin
-Given the page "catalog"
-Then the heading "Catalog" is showing
-And the link "Compose" is showing
-```
-
-Most of what a suite claims about a server-rendered interface is true of the *response*: the
-headings are in it, the links are in it, the rows of the table are in it. Asking those questions of
-a real browser costs a browser on every machine that runs the suite, and it is the reason a UI
-suite is the first thing a team stops running.
-
-So this adapter answers them from the HTML, through the same [reading](../accessible.py) a screen
-reader would do — and a scenario written against it says exactly what it would say against the
-`browser` system. Which one answers is a property of the environment, not of the sentence.
-
-**What it cannot do, it does not pretend to do.** It cannot click, because a response is not a
-running page. It cannot see a stylesheet apply, a fragment swap in, or a combobox open. Those are
-what `browser` is for, and a suite is entitled to both: the cheap claims on every machine, the
-expensive ones where a browser exists.
-
-**A page is `mode: data`** — somewhere to look, never something ATF makes — and what `find` brings
-back is deliberately thin: where it is, what came back, what it is called. Everything else worth
-claiming is a control, and a control is named in the scenario rather than in the catalog.
-"""
+"""A page as the server sent it, and what is on it — by role and accessible name, no browser."""
 
 from __future__ import annotations
 

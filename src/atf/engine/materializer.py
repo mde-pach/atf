@@ -1,9 +1,4 @@
-"""The provisioning engine.
-
-Walks a resource's dependency closure, orders it dependency-first, and asks the adapter for each
-node in turn: does this exist, and if not, create it. Domain-free — it dispatches to adapters and
-never branches per system.
-"""
+"""The provisioning engine."""
 
 from __future__ import annotations
 
@@ -55,8 +50,7 @@ log = logging.getLogger("atf.materializer")
 # understands about identity. So a fresh instance is the node with a discriminator appended to each
 # key field that is text of its own, and nothing else about it changes.
 
-# What separates the discriminator from the value the catalog wrote. Visible in the data on purpose:
-# an instance a killed run left behind then says what it was, rather than looking like a typo.
+# What separates the discriminator from the value the catalog wrote.
 FRESH_MARK = "-fresh-"
 
 # How much of a `${uuid}` is enough to tell two of them apart. Eight hex characters is four billion,
@@ -79,7 +73,7 @@ class UnknownResource(LookupError):
 
 
 class ScopeRequired(Exception):
-    """Browsing this type needs a parent named first, because its listing is scoped to one."""
+    """Browsing this type needs a parent named first: its listing is scoped to one."""
 
     def __init__(self, resource_type: str, fields: list[str]) -> None:
         self.resource_type = resource_type
@@ -100,7 +94,7 @@ class Materializer:
         self._generated: dict[str, Any] = {}
         # The instances this scenario asked to have to itself: the node as it was varied to make one
         # (the key it was given, still written as `${...}`), and the record that came back. Held for
-        # one scenario, because that is exactly how long such an instance lives.
+        # exactly as long as such an instance lives.
         self._fresh: dict[str, tuple[Node, Record]] = {}
         self._isolated = 0
         self.reload()
@@ -151,19 +145,8 @@ class Materializer:
     def forget_scenario(self) -> None:
         """Start a fresh scenario: nothing the last one learned is this one's to assume.
 
-        Two things are dropped. **Generated values**, because within a scenario they must stand
-        still — a `${fake:email}` written in a body and again in the assertion checking it has to be
-        the same email — and across scenarios they must not, or an ephemeral resource meant to be
-        new every time is not. **Known identities**, because a resource that was absent when the
-        last scenario looked may exist now, and one that existed may be gone; `_ids` caches `None`
-        as readily as an id, and a stale `None` makes `${owners.primary.id}` unresolvable for the
-        rest of the session.
-
-        Called once per scenario by the plugin. A provisioning pass clears `_ids` too, so this only
-        adds the case of a scenario that asserts without provisioning first.
-
-        The instances a scenario had to itself go with them: one is torn down when its scenario
-        ends, so remembering it into the next one could only ever point at something deleted.
+        Three things go: the values generated for it, the identities it looked up, and the instances
+        it had to itself. Called once per scenario by the plugin.
         """
         self._generated.clear()
         self._ids.clear()
@@ -231,9 +214,8 @@ class Materializer:
     def browse(self, resource_type: str, limit: int = 200, scope: dict[str, Any] | None = None) -> list[Record]:
         """Every record this type already has in the environment.
 
-        Answers the question a catalog author actually starts with — "what is out there?" — so a
-        node can be written from a real record instead of guessed. Adapters opt in by implementing
-        `browse`; one that does not simply has nothing to show.
+        Empty when the type's adapter cannot list: `browse` is optional SPI. Raises `ScopeRequired`
+        when the listing is scoped to a parent and `scope` does not name one.
         """
         spec = self.spec(resource_type)
         adapter = self.adapters.get(spec.system)
@@ -327,14 +309,10 @@ class Materializer:
         `on_start` and `on_result` observe the pass as it happens, node by node, for a caller
         showing progress; they see exactly the entries the return value collects.
 
-        `fresh` names the one node this pass must *make* rather than look up, whatever its
-        lifecycle. Every other node is provisioned as it always is — found-or-created and shared —
-        with one exception: a node this scenario already has an instance of its own of is handed
-        that instance back rather than looked up again. That is what lets a chain of them be written
-        a line per link, a fresh list hanging off the fresh owner this scenario made rather than off
-        the shared one. It also settles what a plain `Given the …` means *after* a fresh one in the
-        same scenario: the one you already have. Provisioning the shared resource as well would
-        leave the scenario holding two of a thing it named once.
+        `fresh` names the one node this pass creates and never looks up, whatever its lifecycle.
+        Every other node is found-or-created and shared, with one exception: a node this scenario
+        already holds an instance of its own of is handed that instance back. So a plain `Given
+        the …` after a fresh one in the same scenario means the one you already have.
         """
         # A listing is memoised for the duration of one pass, not the session: the materializer is
         # session-scoped, and the system under test mutates the same backend between passes.
@@ -431,9 +409,9 @@ class Materializer:
     def act(self, node: Node, record: Record, action: str) -> Record | None:
         """Do something to a resource that is already there.
 
-        `delete` is ATF's own, because every adapter has one — a backend without deletion no-ops it
-        through `NoopDelete`, and the scenario after it reads the resource back and finds out.
-        Every other action is one the catalog declared and the adapter interprets.
+        `delete` is ATF's own: it is in the required SPI, so every adapter has one. Every other
+        action is one the catalog declared and the adapter interprets. Raises `ProvisioningError`
+        when there is no adapter for the node's system, or when it cannot `act`.
         """
         adapter = self.adapters.get(node.system)
         if adapter is None:
@@ -474,9 +452,7 @@ class Materializer:
         Callers need the second element to tear down ephemeral resources reached *through* a
         dependency — those are created on every pass and nothing else would ever delete them.
 
-        `overrides` vary *this* node's body for this pass only, which is what lets a scenario say
-        `Given the task "milk" but: | due_at | ... |` instead of the catalog needing a second node
-        for every variation anyone ever wants. The catalog is untouched — see `_varied`.
+        `overrides` vary *this* node's body for this pass only; the catalog is untouched.
         """
         nid = self.resolve_id(resource_type, name)
         outcome = self.create_closure(nid, overrides={nid: overrides} if overrides else None)
@@ -499,16 +475,12 @@ class Materializer:
     ) -> tuple[Record, dict[str, Record]]:
         """An instance of a catalog node that belongs to this scenario, and is taken away with it.
 
-        The same closure as `ensure_closure`, with one node made instead of found. Its dependencies
-        are *not* made afresh — see `materialize` — because the mix is the point: the expensive
-        scaffolding stays shared and seeded once, and only what a scenario needs to itself is built
-        per scenario. Cascading would be the all-or-nothing model this exists to escape.
+        The same closure as `ensure_closure`, with one node created, not found. Its dependencies
+        are *not* made afresh: they are provisioned as they always are, found-or-created and shared.
 
-        Two questions this deliberately does not answer are the step's, because the step is where
-        the sentence a person reads is written: whether the node is one ATF can create at all
-        (`provisionable`), and whether it can be told apart from the shared one
-        (`key_of_its_own`). Called with neither asked, this still does the honest thing — it creates
-        a second resource — and the caller has simply not said what makes it a second one.
+        Two questions are the step's to ask first, and this answers neither: whether the node is one
+        ATF can create at all (`provisionable`), and whether it can be told apart from the shared one
+        (`key_of_its_own`). Called with neither asked, it creates a second resource anyway.
         """
         nid = self.resolve_id(resource_type, name)
         written = dict(overrides or {})
@@ -580,12 +552,11 @@ class Materializer:
     def teardown(self, records: Mapping[str, Record] | Iterable[tuple[str, Record]]) -> None:
         """Best-effort delete of what this scenario built for itself. Never raises.
 
-        Accepts pairs as well as a mapping, because one scenario can provision several instances
-        of the same ephemeral node — each is a distinct record that has to be deleted.
+        Accepts pairs as well as a mapping: one scenario can provision several instances of the same
+        ephemeral node, and each is a distinct record to delete.
 
-        Two kinds of resource are taken away: an ephemeral one, and an instance of a persistent node
-        this scenario asked to have to itself. Nothing else, ever — the guard is what keeps a
-        shared resource from being deleted by a scenario that merely used it.
+        Two kinds of resource are taken away and no others: an ephemeral one, and an instance of a
+        persistent node this scenario asked to have to itself.
         """
         source: Any = records.items() if isinstance(records, Mapping) else records
         pairs: list[tuple[str, Record]] = [(str(nid), record) for nid, record in source]
@@ -603,7 +574,7 @@ class Materializer:
 
 
 def _is_own_text(value: Any) -> bool:
-    """Whether a body field is text this resource holds of its own, rather than a link elsewhere."""
+    """Whether a body field is text this resource holds of its own: not a link, not a number."""
     return isinstance(value, str) and bool(value) and not references(value)
 
 

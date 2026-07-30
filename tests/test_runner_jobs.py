@@ -67,7 +67,8 @@ def wait_for(predicate, timeout: float = 120.0, interval: float = 0.02):
 def test_run_all_returns_structured_results(project):
     """Derived, not written down. `passed == 7` and `skipped == 1` were the sample project's size
     baked into an assertion: add a scenario to the reference project and this broke, for a reason
-    unrelated to whether a run comes back structured."""
+    unrelated to whether a run comes back structured.
+    """
     summary = runner.run(None, "dev", project, project / "specs")
     assert summary.returncode == 0
     assert sum(summary.counts.values()) == len(summary.results), summary.counts
@@ -232,7 +233,8 @@ def test_a_job_starts_with_everything_queued_and_holds_its_environment(project):
 
 def test_a_finished_job_accounts_for_every_test_it_started(project):
     """Nine assertions used to be one test called `streams_queued_running_then_passed`, which is
-    three claims in a coat. A failure gave a line number rather than a fact."""
+    three claims in a coat. A failure gave a line number rather than a fact.
+    """
     _, job, nodeids = a_run_of_everything(project)
     wait_for(lambda: job.done)
 

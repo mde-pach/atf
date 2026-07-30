@@ -1,30 +1,4 @@
-"""What can be said about this environment, read out as data.
-
-The cockpit's composer already answers the only question that matters before a scenario is written:
-*what can be said here?* It knows every step this suite can reach and what each of them needs, every
-resource in the catalog and where it stands right now, every field one of them is known to have and
-what it currently holds, and the closed list of ways two values may be compared. That knowledge was
-buried in a FastAPI router, reachable only by rendering a page and reading the HTML back.
-
-So it lives here instead, and the router consumes it. Two things follow from that, and both are the
-point rather than a side effect.
-
-**Nothing here knows about the web.** No fastapi, no templates, no request. That is not tidiness: a
-module that imports fastapi at import time cannot be used by anything that is not a web app, which
-is why [`docs.py`](docs.py) had to write out four state words the cockpit already had names for. A
-second consumer — the [MCP server](mcp.py) — would have had to do the same.
-
-**Nothing here re-describes the vocabulary.** Every answer is derived from the tables that already
-define it: `GENERIC_STEPS` and `COMPARISONS` in [`steps.py`](steps.py), `MARKERS` in
-[`compare.py`](compare.py), the catalog nodes, and whatever [discovery](discovery.py) saw the
-project register. Add a generic step, a comparison, a marker, a resource type, a phrase or an
-adapter and it appears through here with nothing in this file to change. That property is worth more
-than the code below and is guarded by an acceptance test, not by intent.
-
-The surface is three verbs, because three verbs is what does not change when the vocabulary does:
-`describe` — what can be said; `compose` — these choices, and the Gherkin they mean or the reason
-they do not make a scenario; and `try_scenario` — run a draft without keeping it.
-"""
+"""What can be said about this environment, read out as data."""
 
 from __future__ import annotations
 
@@ -65,14 +39,12 @@ from ..suite.discovery import Discovery, StepDef
 
 KEYWORDS = (GIVEN, WHEN, THEN)
 
-# The three things a Then can be about, plus a project's own step. A step is a subject too: choosing
-# it is choosing what the assertion is, which is the same question the other three answer. A slot
-# and a type carry their name in the prefix, because *which* one is half of what the choice says.
+# The three things a Then can be about, plus a project's own step. A slot and a type carry their name
+# in the prefix: *which* one is half of what the choice says.
 NODE_SUBJECT, SLOT_SUBJECT, STEP_SUBJECT, TYPE_SUBJECT = "node:", "slot:", "step:", "type:"
 
 # What a step wording is filed under, so a caller can tell whose vocabulary it is looking at without
-# knowing where any file lives. A phrase is called out separately from the suite's own steps because
-# there is no Python behind one, and someone going looking for it would not find it.
+# knowing where any file lives. A phrase is its own answer: there is no Python behind one.
 FROM_ATF, FROM_SUITE, FROM_PHRASEBOOK = "atf", "suite", "phrasebook"
 
 # A `scenarios(...)` call on its own line — what binds a feature to pytest.
@@ -103,9 +75,8 @@ class Outside(Exception):
 class Surface:
     """One environment, as everything that decides what can be said about it.
 
-    Held together rather than passed as five arguments because every question below needs most of
-    them, and because the set is exactly what an answer depends on: change the catalog, the
-    environment's status or the steps the project registers, and every answer changes with it.
+    The set is exactly what an answer depends on: change the catalog, the environment's status or the
+    steps the project registers, and every answer below changes with it.
     """
 
     env: str
@@ -199,8 +170,8 @@ class Row:
     definition: StepDef | None = None
     node_id: str = ""
     # A Then said the way someone thinks it: what it is about, what of it, how, and against what.
-    # Kept beside `pattern`/`values`, never instead of them — the two are derived from each other,
-    # so a scenario written by hand reads back into the same four choices.
+    # Kept beside `pattern`/`values`: each is derived from the other, so a scenario written by hand
+    # reads back into the same four choices.
     subject: str = ""
     aspect: str = ""
     compare: str = ""
@@ -211,8 +182,8 @@ class Row:
     # resource re-reads it live and a claim about a slot does not — so offering the slot would be
     # offering the worse of two ways to say the same thing. See `steps.py`.
     produced: set[str] = field(default_factory=set)
-    # The rows of a table, for the steps that take one. Held as pairs because that is what a table
-    # is; empty for every other step, which is most of them.
+    # The rows of a table, for the steps that take one — pairs, which is what a table is. Empty for
+    # every other step, which is most of them.
     table: list[list[str]] = field(default_factory=list)
     text: str = ""
     shown_keyword: str = ""
@@ -236,11 +207,9 @@ def make_row(
 ) -> Row:
     """The choices somebody made for one row, as the row they describe.
 
-    Written against a plain mapping rather than against a web form, so that the same four choices
-    mean the same line whether they arrived from a `<select>` or from a tool call. The keys are the
-    choices themselves — `subject`, `aspect`, `compare`, `target` for a claim, `pattern` and
-    `params` for a step said by its wording — and the caller is whoever knows how they were spelled
-    on the way in.
+    `chosen` is a plain mapping, so the same four choices mean the same line whether they arrived
+    from a `<select>` or from a tool call. Its keys are the choices themselves: `subject`, `aspect`,
+    `compare`, `target` for a claim, `pattern` and `params` for a step said by its wording.
     """
     row = Row(index=index, keyword=keyword)
     if row.given:
@@ -252,7 +221,7 @@ def make_row(
     row.aspect = str(chosen.get("aspect", "")).strip()
     row.compare = str(chosen.get("compare", "")).strip()
     # A resource chosen as the target arrives as `node:<id>`; a value arrives as itself. Stored bare
-    # either way, because what the claim writes is the same in both cases.
+    # either way: what the claim writes is the same.
     row.target = str(chosen.get("target", "")).strip().removeprefix(NODE_SUBJECT)
     row.pattern = str(chosen.get("pattern", ""))
     row.table = [[str(cell) for cell in pair] for pair in chosen.get("table") or []]
@@ -268,7 +237,7 @@ def make_row(
     if row.definition is not None:
         row.values = {name: str(params.get(name, "")).strip() for name in row.definition.params}
     # A pattern that arrived without the four choices — from text, or from a scenario written by
-    # hand — is read back into them, so the row means one thing rather than two.
+    # hand — is read back into them, so the row means one thing.
     if not row.subject:
         read_claim(row, catalog)
     return row
@@ -367,10 +336,9 @@ def reachable(step: StepDef, module: Path | None, specs_dir: Path) -> bool:
     visible in that module, one declared in a `conftest.py` is visible below it, and one a plugin
     registered — every step ATF itself defines — is visible everywhere.
 
-    A [phrase](phrasebook.py) is in that last group and looks like the first, which is why it is
-    named here. Its `file` is the phrasebook it was written in, which sits inside the specs tree; but
-    nothing declared it in a module — ATF's plugin registered it, so every feature can say it. Read
-    by path alone, a phrase would be offered nowhere at all.
+    A [phrase](../spec/phrasebook.py) is in that last group and is named here: its `file` is the
+    phrasebook, which sits inside the specs tree, but ATF's plugin is what registered it, so every
+    feature can say it.
     """
     if not step.file or step.phrase:
         return True
@@ -405,11 +373,10 @@ def offered_steps(surface: Surface, feature: str = "") -> dict[str, list[StepDef
 def elsewhere(
     found: Discovery, offered: dict[str, list[StepDef]], binding: Path | None, specs_dir: Path
 ) -> list[str]:
-    """Modules holding steps this feature cannot use, so the reason can be said rather than felt.
+    """Modules holding steps this feature cannot use, for a surface that has to say so.
 
-    The fix is one a person has to choose between — put the scenario in the feature whose module
-    already has the step, or move the step into a `conftest.py` where every feature can see it —
-    so this names both files and picks neither.
+    The fix is a choice between two files — move the scenario, or move the step into a `conftest.py`
+    every feature can see — so this names both and picks neither.
     """
     shown = {step.pattern for steps in offered.values() for step in steps}
     files = {
@@ -461,8 +428,7 @@ def usable(step: StepDef, row: Row) -> bool:
     """Whether the scenario, as far as this row, can use this step at all.
 
     A step reading a fixed slot needs that one held. A step reading the slot its own wording names
-    needs there to be *some* slot worth naming — which one it names is a choice, and it is checked
-    when the row is resolved rather than when the step is offered.
+    needs there to be *some* slot worth naming; which one it names is checked when the row resolves.
     """
     if not set(step.needs) <= row.held:
         return False
@@ -545,8 +511,8 @@ def _resolve_step(row: Row, found: Discovery, catalog: Catalog) -> None:
         )
         return
 
-    # A step ATF defines names a catalog resource, so it can be held to the catalog exactly as a
-    # Given row is — rather than writing a line that only fails when it runs.
+    # A step ATF defines names a catalog resource, so it is held to the catalog exactly as a Given
+    # row is, here, and not by a line that only fails when it runs.
     if generic(row.definition.pattern) is not None and NAME in row.definition.params:
         resource_type, name = row.values.get(TYPE, ""), row.values.get(NAME, "")
         node = catalog.find(resource_type, name)
@@ -561,7 +527,7 @@ def _resolve_step(row: Row, found: Discovery, catalog: Catalog) -> None:
 
 
 def row_problems(rows: list[Row]) -> list[str]:
-    """Everything standing between these rows and a scenario, said in words rather than in flags."""
+    """Everything standing between these rows and a scenario, each said in a sentence."""
     if not rows:
         return ["A scenario with no steps asserts nothing. Add a When and a Then."]
     problems: list[str] = []
@@ -580,9 +546,8 @@ def row_problems(rows: list[Row]) -> list[str]:
 def gherkin(title: str, rows: list[Row]) -> str:
     """The scenario block exactly as it will be written: two spaces in, its steps four.
 
-    A repeated keyword becomes `And`, which is what someone writing this by hand would do and what
-    the file has to look like for the diff to be worth reading. An untitled scenario is written
-    untitled rather than given a placeholder name, so nothing invented here can end up on disk.
+    A repeated keyword becomes `And`, as a person writing it by hand would. An untitled scenario is
+    written untitled: nothing invented here ends up on disk.
     """
     lines = [f"  Scenario: {title}".rstrip()]
     # A row with nothing chosen yet contributes no line: a bare `Given` is not something that would
@@ -596,12 +561,7 @@ def gherkin(title: str, rows: list[Row]) -> str:
 
 
 def table_lines(row: Row) -> list[str]:
-    """A table under its step, its columns padded so a reader can follow a row across.
-
-    Aligned because every table written by hand in this project is, and a generated one that is not
-    would be the single ragged block in the file — which is how a tool teaches people to stop using
-    it for anything they care about.
-    """
+    """A table under its step, its columns padded so a reader can follow a row across."""
     if not row.takes_table or not row.table:
         return []
     widest = [max(len(pair[column]) for pair in row.table) for column in (0, 1)]
@@ -611,8 +571,7 @@ def table_lines(row: Row) -> list[str]:
 # ---- the choices, each carrying what is needed to make it --------------------
 #
 # A list of names tells you nothing about which name you want. Every option below carries a label, a
-# short `meta` and a longer `desc`, because the interface that renders them and the agent that reads
-# them are answering the same question and neither can answer it from a bare identifier.
+# short `meta` and a longer `desc` — what an interface renders and what an agent reads, in one shape.
 
 
 def feature_options(found: Discovery) -> list[dict[str, str]]:
@@ -693,23 +652,28 @@ def resource_options(surface: Surface, group: str = "") -> list[dict[str, str]]:
 def step_options(steps: list[StepDef]) -> list[dict[str, str]]:
     """Every step of one keyword, the ones needing no code first.
 
-    Order is the whole point here. An author looking for "check this field" will take the first
-    plausible thing they see, and if that is a step the project had to write, they conclude that
-    assertions are something you write. They are not, for anything in the catalog — and a phrase
-    sits between the two, because it is this suite's own wording over steps that needed no code.
+    Order is the whole point: ATF's own steps first, then this suite's phrases, then the steps it
+    had to write. An author takes the first plausible thing they see, and what that is teaches them
+    whether assertions are something you write.
     """
     options = [
         {
             "value": step.pattern,
             "label": step.pattern,
             "meta": Path(step.file).name if step.file else "",
-            "desc": step.docstring,
+            "desc": summary_of(step),
             "group": _group(step),
             "rank": _rank(step),
         }
         for step in steps
     ]
     return sorted(options, key=lambda option: (option["rank"], option["label"]))
+
+
+def summary_of(step: StepDef) -> str:
+    """What a step says it does: its table entry where ATF defines it, else its own docstring."""
+    own = generic(step.pattern)
+    return own.summary if own else step.docstring
 
 
 def _group(step: StepDef) -> str:
@@ -727,12 +691,11 @@ def _rank(step: StepDef) -> str:
 def subject_options(surface: Surface, steps: list[StepDef], row: Row) -> list[dict[str, str]]:
     """What a Then can be about: a resource, a whole type of them, a slot, or a step of your own.
 
-    One question first — *what are you asserting about?* — because it is the one anybody actually
-    starts from, and because answering it is what decides the shape of everything after it.
+    One question — *what are you asserting about?* — and answering it decides the shape of the rest.
     """
     options = resource_options(surface, group="A resource")
-    # A whole type, for the one claim that is about a population rather than about a resource:
-    # "nothing was created the second time" names nothing, because there is nothing to name.
+    # A whole type, for the one claim that is about a population and not about a resource:
+    # "nothing was created the second time" names nothing, having nothing to name.
     for resource_type in surface.engine.resource_types():
         options.append(
             {
@@ -743,12 +706,11 @@ def subject_options(surface: Surface, steps: list[StepDef], row: Row) -> list[di
                 "group": "All of a type",
             }
         )
-    # One option per slot the rows above actually put there, rather than the single `result` this
-    # offered while that was the only slot an assertion could name. A scenario with two actions has
-    # two things to be about, and the picker is where that has to be visible.
+    # One option per slot the rows above actually put there: a scenario with two actions has two
+    # things to be about, and the picker is where that has to be visible.
     for name in sorted(row.produced):
-        # `result` is the name ATF suggests, so it keeps the wording it always had. A slot a suite
-        # named itself is said by that name, because the name is the whole point of having chosen it.
+        # `result` is the name ATF suggests, so it keeps ATF's wording. A slot a suite named itself
+        # is said by that name — the name is the whole point of having chosen it.
         conventional = name == RESULT
         options.append(
             {
@@ -764,10 +726,9 @@ def subject_options(surface: Surface, steps: list[StepDef], row: Row) -> list[di
             }
         )
     for step in steps:
-        # A step ATF defines is normally reached through the four choices rather than by its
-        # wording — that is what the claim row is. The exception is a step that takes a table:
-        # there is no comparison to pick, because the table *is* the comparison, so it is offered
-        # here by name and the rows are filled in underneath.
+        # A step ATF defines is reached through the four choices, which is what a claim row is. The
+        # exception is a step taking a table: the table *is* the comparison, so there is no
+        # comparison to pick, and it is offered here by name with the rows filled in underneath.
         if generic(step.pattern) is not None and not step.takes_table:
             continue
         options.append(
@@ -775,7 +736,7 @@ def subject_options(surface: Surface, steps: list[StepDef], row: Row) -> list[di
                 "value": f"{STEP_SUBJECT}{step.pattern}",
                 "label": step.pattern,
                 "meta": Path(step.file).name if step.file else "",
-                "desc": step.docstring,
+                "desc": summary_of(step),
                 # A phrase is not a step this suite defines — it is this suite's wording over
                 # steps that needed no code, and saying so is what keeps someone from going
                 # looking for the Python behind it.
@@ -822,7 +783,7 @@ def table_fields(surface: Surface, row: Row) -> list[dict[str, str]]:
     """The fields a table row may name, and what each holds — empty where the row names no resource.
 
     A slot's shape has nothing to offer: the slot is filled by a step that has not run yet, so there
-    is no record to read. Those rows are typed, and that is honest rather than a gap.
+    is no record to read. Those rows are typed by hand.
     """
     node = surface.nodes.get(row.node_id) if row.node_id else None
     if node is None:
@@ -886,8 +847,8 @@ def current_value(surface: Surface, resource_type: str, name: str, of_field: str
 def held_fields(results: dict[str, TestResult]) -> list[str]:
     """Completions for a field of a slot, gathered from what the last run saw every slot hold.
 
-    Across all slots rather than per slot: it is a hint while typing, and a slot the run has never
-    seen is exactly the case where a hint is worth having.
+    Across all slots, not per slot: it is a hint while typing, and a slot the run has never seen is
+    exactly the case where a hint is worth having.
     """
     return sorted({name for result in results.values() for slot in result.held for name in slot.fields})
 
@@ -898,10 +859,8 @@ def held_fields(results: dict[str, TestResult]) -> list[str]:
 def describe(surface: Surface, feature: str = "") -> dict[str, Any]:
     """Everything that decides what a scenario in this suite may say, as plain data.
 
-    Every part of the answer is read from something that already existed. Nothing below enumerates a
-    wording, a comparison or a marker: the tables that define them are, and remain, the only place
-    they are written down. That is what makes this surface extend itself — and it is why the answer
-    is a mapping of lists rather than a hand-written schema per section.
+    Nothing below enumerates a wording, a comparison or a marker: the tables that define them stay
+    the only place they are written down, so this surface extends itself when they grow.
     """
     offered = offered_steps(surface, feature)
     binding = binding_module(surface.found, feature) if feature else None
@@ -914,8 +873,8 @@ def describe(surface: Surface, feature: str = "") -> dict[str, Any]:
         "resource_types": _types_described(surface),
         "resources": _resources_described(surface),
         "steps": steps,
-        # A phrase is already among the steps above; it is listed again because what it stands for
-        # is the whole of what a reader needs in order to trust it, and that is not a step's shape.
+        # A phrase is already among the steps above, and is listed again with what it stands for —
+        # which is the whole of what a reader needs in order to trust it.
         "phrases": [
             {
                 "pattern": step.pattern,
@@ -929,8 +888,8 @@ def describe(surface: Surface, feature: str = "") -> dict[str, Any]:
         ],
         "comparisons": [_comparison_entry(item) for item in COMPARISONS],
         "markers": [{"marker": marker, "means": means} for marker, means in MARKERS.items()],
-        # Said rather than left out: a step this feature cannot reach is a step someone will go
-        # looking for, and the fix is a choice between two files rather than a missing option.
+        # Named, not left out: a step this feature cannot reach is a step someone will go looking
+        # for, and what they need is the two files to choose between.
         "out_of_reach": elsewhere(surface.found, offered, binding, surface.specs_dir),
     }
 
@@ -947,7 +906,7 @@ def _step_entry(step: StepDef) -> dict[str, Any]:
         "needs_slot": step.needs_slot,
         "takes_table": step.takes_table,
         "defined_by": FROM_PHRASEBOOK if step.phrase else (FROM_ATF if own else FROM_SUITE),
-        "summary": own.summary if own else step.docstring,
+        "summary": summary_of(step),
         "file": step.file,
     }
 
@@ -1023,12 +982,12 @@ class Composition:
 def compose(
     surface: Surface, chosen: list[dict[str, Any]], title: str = "", feature: str = ""
 ) -> Composition:
-    """A list of choices, turned into the scenario they mean or the reason they are not one yet.
+    """A list of choices, turned into the scenario they mean or why they are not one yet.
 
     The refusals are the valuable half. An agent composing from `available steps × catalog nodes`
-    cannot write a step this suite does not define or name a resource the catalog does not declare —
-    not because it is asked not to, but because there is nothing here that would turn those into a
-    line. What comes back when it tries is a sentence saying which choice does not exist.
+    cannot write a step this suite does not define or name a resource the catalog does not declare:
+    nothing here turns those into a line. What comes back is a sentence naming the choice that does
+    not exist.
     """
     offered = offered_steps(surface, feature)
     rows: list[Row] = []
@@ -1088,11 +1047,10 @@ def steps_dir(surface: Surface) -> Path:
 
 
 def rebound(source: str, feature: Path, module_dir: Path) -> str:
-    """A steps module, rewritten to bind `feature` instead of whatever it bound before.
+    """A steps module, rewritten so that it binds `feature` and nothing else.
 
-    Copying the module rather than writing a bare one is what makes a trial faithful: a step is
-    only visible to the module that declares it, so a scenario tried anywhere else would report
-    steps missing that will resolve perfectly well once it is saved.
+    A copy is what makes a trial faithful: a step is only visible to the module that declares it, so
+    a scenario tried beside a bare module reports steps missing that will resolve once it is saved.
     """
     call = f'scenarios("{Path(os.path.relpath(feature, module_dir)).as_posix()}")'
     seen = False

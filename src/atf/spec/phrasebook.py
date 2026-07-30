@@ -1,68 +1,4 @@
-"""The layer between a domain sentence and a primitive claim.
-
-ATF's generic claims read fine while a scenario is only saying whether something is there —
-`Then the owner "primary" exists` needs no translation. The moment a *value* is involved they stop:
-`Then the result field "exit_code" is "2"` is a struct field access spelled in English, and making a
-suite generic used to mean making its specs less readable exactly where they mattered most. There
-was nothing between the sentence someone means and the claim ATF can decide.
-
-A **phrase** is that missing layer, and it is data:
-
-```yaml
-'it is refused because "{reason}"':
-  - the result field "exit_code" is "2"
-  - the result field "output" contains "{reason}"
-```
-
-```gherkin
-Then it is refused because "not in mutable_envs"
-```
-
-The technical vocabulary now lives in one file — which is also the only place to edit when
-`mutable_envs` is renamed — and the spec says what a person means.
-
-**A step is read as the line it was written as.** YAML would rather it were something else — a colon
-and a space start a mapping, so `contains "registered: env, now"` loads as a dict, and `"flag: true"`
-comes back holding a boolean. Both are sentences. They are read from the document tree rather than
-from loaded values, which takes that footgun away instead of asking every author to know about it.
-
-**A step that takes a table carries its rows, written as YAML writes a mapping.** A step that takes
-one ends with a colon, and so does a mapping key, so the two fit together with nothing invented:
-
-```yaml
-'the account is set up the way a new customer should be':
-  - the account "primary" is:
-      plan: free
-      trial_ends_at: "#datetime"
-```
-
-Which is also what tells a table from the colon trap above: a table step's value is another
-*mapping*, and a sentence YAML found structure in has a scalar. One quoting rule is unavoidable and
-is checked at load — `#` starts a comment in YAML, so a marker has to be quoted.
-
-**Three rules hold this in place.**
-
-*A phrase expands to steps, never to another phrase.* Flat, one level, no recursion, checked when
-the file loads and refused by name. This is the guard against the phrasebook becoming a badly
-designed programming language, which is the documented way layered-keyword frameworks fail at
-scale. A phrase that wants another phrase's meaning writes the same two lines, and two lines of
-YAML are cheaper than a language with a call stack, no types and no debugger.
-
-*An expansion runs under the keyword the phrase was said with.* A phrase is a synonym for a group
-of steps of one kind — `Then it is refused` stands for claims, `When the developer seeds` stands
-for actions. Letting one phrase mix them would hide a `When` inside a `Then`, which is the
-readability the phrase was supposed to buy, spent.
-
-*A phrase is not a step.* It performs nothing itself. Everything it stands for is a step some suite
-already had — ATF's or the project's — so a phrasebook adds no capability, only wording, and there
-is never a question of where the behaviour lives.
-
-**Why it does not simply rewrite the feature.** Expanding before pytest-bdd parses would be less
-code, and the run report would then show four primitive steps where the file shows one sentence.
-The reader would be reading one thing and the cockpit reporting another. So a phrase is a real step
-definition that runs its steps inside itself, and what fails is the phrase — named, alongside the
-step that failed inside it.
-"""
+"""The layer between a domain sentence and a primitive claim."""
 
 from __future__ import annotations
 
@@ -80,8 +16,7 @@ from ..model.placeholders import PLACEHOLDER_RE, Unresolved
 from .patterns import CAPTURE_RE, fill, pattern_regex
 
 # pytest-bdd has no public way to run one step from inside another, and a phrase is exactly that.
-# These are its internals, imported in one place so that a version which moves them breaks here,
-# next to this sentence, rather than somewhere a reader would have to guess about.
+# These are its internals, imported in one place, so a version that moves them breaks here.
 from pytest_bdd.parser import Step as _Step  # isort: skip
 from pytest_bdd.scenario import get_step_function as _resolve_step  # isort: skip
 from pytest_bdd.scenario import parse_step_arguments as _parse_arguments  # isort: skip
@@ -118,8 +53,8 @@ class PhrasebookError(Exception):
 class Line:
     """One step a phrase stands for: the line, and the rows under it where it takes a table.
 
-    A step that takes a table is written in YAML the way YAML writes a mapping, because a step that
-    takes one ends with a colon and so does a mapping key:
+    A step that takes a table is written in YAML the way YAML writes a mapping — a step that takes
+    one ends with a colon, and so does a mapping key:
 
     ```yaml
     'the account is set up the way a new customer's should be':
@@ -191,13 +126,10 @@ def load(path: Path) -> list[Phrase]:
 def _steps(node: yaml.Node, source: str, problems: list[str]) -> list[Line] | None:
     """The steps a phrase stands for, as the *text* they were written as.
 
-    Read from the document tree rather than from loaded values, because a step is a line of English
-    and YAML would rather it were something else. `contains "registered: env, now"` is a mapping to
-    YAML — a colon and a space start one — and `contains "flag: true"` would come back holding a
-    boolean. Both are sentences, and both are recovered here exactly as they were typed.
-
-    The alternative was to refuse them and make every author quote a line they had no reason to
-    think was special. This is that footgun taken away rather than labelled.
+    Read from the document tree, never from loaded values: a step is a line of English, and YAML
+    finds structure in one. `contains "registered: env, now"` is a mapping to YAML — a colon and a
+    space start one — and `contains "flag: true"` comes back holding a boolean. Both are sentences,
+    and both are recovered here exactly as they were typed, unquoted.
     """
     if isinstance(node, yaml.ScalarNode):
         return [Line(text=_text(node, source))]
@@ -229,8 +161,7 @@ def _rows(node: yaml.MappingNode, source: str, problems: list[str]) -> tuple[tup
     """The rows of a table, as a step reads them: a field and what it must hold.
 
     A value YAML read as nothing is almost always a marker somebody did not quote — `plan: #str` is
-    a key with a comment after it, not a key holding `#str`. Saying so is worth the check, because
-    the claim would otherwise pass for the wrong reason.
+    a key with a comment after it, not a key holding `#str` — and is reported as a problem.
     """
     rows: list[tuple[str, str]] = []
     for key, value in node.value:
@@ -252,8 +183,8 @@ def _text(node: yaml.Node, source: str) -> str:
     Anything else — which is always YAML having found structure in a sentence — is taken back from
     the source between the marks the parser left.
 
-    The first line of it, because a step is one line and a node's end mark runs on to the next
-    token: past the blank lines and the comment that follow it.
+    The first line of it: a step is one line, and a node's end mark runs on to the next token, past
+    the blank lines and the comment that follow it.
     """
     if isinstance(node, yaml.ScalarNode):
         return str(node.value)
@@ -337,9 +268,9 @@ def _run_step(request: pytest.FixtureRequest, phrase: Phrase, line: Line, keywor
     arguments |= {name: request.getfixturevalue(name) for name in _required_args(function) if name not in arguments}
     _resolve_placeholders(request, arguments, phrase, text)
     # The table, last: a step that takes one declares `datatable` with a default, so it is never a
-    # required argument and nothing above would have passed it. `${...}` in a cell is left alone —
-    # a table step resolves its own cells, because pytest-bdd hands them over as one argument and
-    # they never reach the hook that resolves everything else.
+    # required argument and nothing above passes it. `${...}` in a cell is left alone — a
+    # table step resolves its own cells, pytest-bdd handing them over as one argument that never
+    # reaches the hook resolving everything else.
     if DATATABLE in parameters:
         arguments[DATATABLE] = line.datatable
 
@@ -354,8 +285,8 @@ def _resolve_placeholders(
 ) -> None:
     """`${...}` in a step a phrase stands for, resolved as it is in one a scenario wrote itself.
 
-    pytest-bdd's hook does this for every step the feature file names; a step inside a phrase never
-    reaches that hook, because a phrase is one step as far as pytest-bdd is concerned.
+    pytest-bdd's hook does this for every step the feature file names. A step inside a phrase never
+    reaches it: a phrase is one step as far as pytest-bdd is concerned.
     """
     engine = request.getfixturevalue("materializer")
     for name, value in list(arguments.items()):
@@ -382,9 +313,8 @@ def current_keyword(request: pytest.FixtureRequest) -> str:
 def make_step(phrase: Phrase, source: Path) -> Any:
     """The function ATF registers for one phrase.
 
-    pytest-bdd hands a step only the parameters its signature names, so the signature has to carry
-    this phrase's captures — declared rather than written, because they are known only once the
-    file has been read.
+    pytest-bdd hands a step only the parameters its signature names, so the signature carries this
+    phrase's captures — built at run time, being known only once the file has been read.
     """
 
     def _phrase_step(**values: Any) -> None:

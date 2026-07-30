@@ -1,32 +1,4 @@
-"""The read-and-compare steps, so that every suite stops writing them again.
-
-ATF used to define exactly one step — `Given the {resource_type} "{name}"` — and every project
-re-wrote the same family of assertions on top of it: does this exist, has it gone, is this field
-that value. Those are not domain knowledge. They are a record read through an adapter ATF already
-has and compared with a value the author already wrote, and the comparison is the same one `find`
-makes when it decides whether a resource is already there.
-
-Two decisions shape the whole module.
-
-**A step resolves its resource from the catalog and reads it live.** It never consults `context`.
-That is what makes an assertion independent of the action before it: `When I complete the task` can
-be hand-written code hitting a real service, and the `Then` after it is still generic, because it
-goes back to the backend and looks. The three parts of a test stop being entangled.
-
-**Nothing here decides what a record contains.** The scenario names the field; ATF reads that field
-and compares it with the written value. It requires no field to exist, reads nothing into a field's
-name, and interprets no value. That is the same act as `natural_key: email` in the catalog — see
-[the model](../../docs/explanation/the-model.md).
-
-An ephemeral resource is the one exception to reading live, and it is forced: an ephemeral resource
-is never looked up — that is what ephemeral means — so the record this scenario built is the only
-one there is.
-
-An instance a scenario asked to have to itself (`Given a fresh …`) is deliberately *not* a second
-exception. It was given a natural key of its own precisely so that it can be looked up, so every
-claim below reads it back the way it reads back any other resource — and `When I delete it` followed
-by `Then it is gone` means what it says about the copy, not about the resource everybody shares.
-"""
+"""The read-and-compare steps, so that every suite stops writing them again."""
 
 from __future__ import annotations
 
@@ -61,9 +33,9 @@ from .patterns import PROVISION, PROVISION_FRESH, PROVISION_FRESH_VARIED, PROVIS
 # ---- the vocabulary --------------------------------------------------------
 
 # ATF's own provisioning steps are defined in `plugin.py`, beside the factories they drive, and
-# spelled in [patterns.py](patterns.py) so that both say the same thing. They are listed in the
-# table below because it is what the composer reads to know which of a step's parameters it can
-# offer a real choice for, and that is as true of the Given as of the assertions.
+# spelled in [patterns.py](patterns.py) so that both say the same thing. They are in the table below
+# too: it is what the composer reads to know which of a step's parameters it can offer a choice for,
+# and that is as true of the Given as of the assertions.
 
 EXISTS = 'the {resource_type} "{name}" exists'
 GONE = 'the {resource_type} "{name}" is gone'
@@ -74,9 +46,8 @@ FIELD_LACKS = 'the {resource_type} "{name}" field "{field}" does not contain "{v
 FIELD_EMPTY = 'the {resource_type} "{name}" field "{field}" is empty'
 FIELD_NOT_EMPTY = 'the {resource_type} "{name}" field "{field}" is not empty'
 
-# How many of a type an environment holds. The one claim that is about a resource *type* rather
-# than about one resource, because "nothing was created the second time" is a claim about a
-# population and there is nothing to name.
+# How many of a type an environment holds. The one claim about a resource *type*: "nothing was
+# created the second time" is a claim about a population, with no one resource to name.
 COUNT = "the environment has {count:d} {resource_type}"
 
 # Whole-shape claims. A record has a shape, and checking it a field at a time costs a line each and
@@ -92,21 +63,18 @@ SLOT_SHAPE_IS = "the {slot:w} is:"
 # to perform. An adapter offers mechanical verbs, the catalog names a domain action in terms of
 # them, and this says the domain action.
 #
-# `{action:w}` is one word, because an action is a name the catalog chose. That is also what keeps
-# this from swallowing a project's own `When`: `I list the projects of the account` names no
-# instance in quotes, and `I run "atf seed local"` has no ` the ` in it.
+# `{action:w}` is one word — an action is a name the catalog chose. That is also what keeps this from
+# swallowing a project's own `When`: `I list the projects of the account` names no instance in
+# quotes, and `I run "atf seed local"` has no ` the ` in it.
 ACT = 'I {action:w} the {resource_type} "{name}"'
 LIST_EVERY = "I list every {resource_type}"
 
-# Running a command, said the way a person writes one. The command line is the whole of it: a
-# reader knows what `atf seed local` means and would have to be taught what a program and a list of
-# arguments to append to it meant. What came back lands on `result`, so every claim already in this
-# module applies to it.
+# Running a command, said the way a person writes one: the command line is the whole of it. What
+# came back lands on `result`, so every claim already in this module applies to it.
 RUN = 'I run "{command}"'
 
-# The four claims about what a step produced name the slot they are about, rather than assuming the
-# one called `result`. `Context` has always described every slot it holds; until these patterns
-# named one, a scenario with two actions could compare neither of them with the other.
+# The four claims about what a step produced name the slot they are about, so a scenario with two
+# actions can compare either of them.
 #
 # `{slot:w}` is letters, numbers and underscore — no spaces, no quotes. That is what keeps these
 # patterns from also matching `the todo_list "groceries" field "owner_id" is "…"`: a resource claim
@@ -120,14 +88,13 @@ SLOT_FIELD_LACKS = 'the {slot:w} field "{field}" does not contain "{value}"'
 SLOT_FIELD_EMPTY = 'the {slot:w} field "{field}" is empty'
 SLOT_FIELD_NOT_EMPTY = 'the {slot:w} field "{field}" is not empty'
 
-# A capture's parameter name is also what it means, because ATF chose both. A project's step may
-# well have a parameter called `field` that means something else entirely, which is why only the
-# patterns in this table are read this way.
+# A capture's parameter name is also what it means, ATF having chosen both. Only the patterns in
+# this table are read that way: a project's step may have a `field` that means something else.
 TYPE, NAME, FIELD, VALUE, SLOT, COUNT_OF = "resource_type", "name", "field", "value", "slot", "count"
 ACTION, COMMAND = "action", "command"
 
 # How many records a count claim will read before it gives up. A listing that hits the cap is
-# reported rather than counted: a number that might be the cap is not an answer.
+# reported, never counted: a number that might be the cap is not an answer.
 LISTING_LIMIT = 1000
 
 
@@ -139,14 +106,13 @@ class GenericStep:
     pattern: str
     summary: str
     captures: tuple[str, ...]
-    # What the step reads from the context. Declared rather than read out of the source below,
-    # because these reach it through `getattr` and an attribute is what source analysis can see.
+    # What the step reads from the context, declared: these reach it through `getattr`, and an
+    # attribute name is all source analysis can see.
     needs: tuple[str, ...] = ()
-    # What it writes to the context. Declared for the same reason `needs` is: these are ATF's own
-    # steps, and their decorators name a constant rather than a literal, so nothing reading the
-    # source can pair a wording with what it does.
+    # What it writes to the context, declared for the same reason: their decorators name a constant,
+    # so nothing reading the source can pair a wording with what it does.
     produces: tuple[str, ...] = ()
-    # Whether the step reads the slot it names, rather than a slot fixed in advance. Nothing can be
+    # Whether the step reads the slot it names, and not a slot fixed in advance. Nothing can be
     # listed in `needs` for these — which slot they need is a choice the author has not made yet —
     # so what an interface checks is that the slot they *did* name is one the scenario holds.
     needs_slot: bool = False
@@ -342,9 +308,9 @@ def generic(pattern: str) -> GenericStep | None:
 #
 # A pattern is how ATF matches a line; it is not how anyone thinks. What someone means is a claim
 # about something: *this* resource, *that* field of it, compared *this way*, against *that*. The
-# table below is the same six steps read that way round, and it is the whole vocabulary — kept
-# small on purpose, because every entry is a thing ATF must be able to decide, and a comparison
-# language that grows without a decision procedure behind it is a schema language nobody asked for.
+# table below is the same six steps read that way round, and it is the whole vocabulary. Every entry
+# is a thing ATF must be able to decide: a comparison with no decision procedure behind it is a
+# schema language nobody asked for.
 
 RESOURCE, SLOT_OF, TYPE_OF = "resource", "slot", "type"
 
@@ -363,8 +329,8 @@ class Comparison:
     field: bool = False
     target: str = ""  # "" | "value" | "resource"
     # Which of the pattern's captures the target is written into. Every claim compared against a
-    # written value uses `value`; a count writes a number, and calling that capture `value` in the
-    # spec text would read as a value the resource holds rather than as how many there are.
+    # written value uses `value`; a count writes a number, and `value` in the spec text would read as
+    # a value the resource holds, not as how many there are.
     value_capture: str = VALUE
 
 
@@ -413,7 +379,6 @@ def comparisons_for(subject: str, on_field: bool) -> list[Comparison]:
 
 @when(parsers.parse(ACT))
 def _(request: pytest.FixtureRequest, context: Any, action: str, resource_type: str, name: str) -> None:
-    """Do to this resource what its type says that action means."""
     engine, node = _node(request, resource_type, name)
     known = engine.spec(resource_type).actions
     if action not in known:
@@ -438,7 +403,6 @@ def _(request: pytest.FixtureRequest, context: Any, action: str, resource_type: 
 
 @when(parsers.parse(RUN))
 def _(request: pytest.FixtureRequest, context: Any, command: str) -> None:
-    """Run a command line, and keep what it said."""
     engine: Materializer = request.getfixturevalue("materializer")
     runners = [one for one in engine.adapters.values() if isinstance(one, CommandAdapter)]
     if not runners:
@@ -456,14 +420,12 @@ def _(request: pytest.FixtureRequest, context: Any, command: str) -> None:
 
 @when(parsers.parse(LIST_EVERY))
 def _(request: pytest.FixtureRequest, context: Any, resource_type: str) -> None:
-    """Read back every resource of this type the environment holds."""
     engine: Materializer = request.getfixturevalue("materializer")
     context.result = _listing(engine, resource_type, doing="list")
 
 
 @then(parsers.parse(EXISTS))
 def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: str) -> None:
-    """Read this resource back from the environment and require it to be there."""
     engine, node = _node(request, resource_type, name)
     if read(engine, node, context) is None:
         pytest.fail(_absent(engine, node))
@@ -471,7 +433,6 @@ def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: st
 
 @then(parsers.parse(GONE))
 def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: str) -> None:
-    """Read this resource back and require it to be absent — what a deletion is checked with."""
     engine, node = _node(request, resource_type, name)
     if node.ephemeral:
         pytest.fail(
@@ -490,7 +451,6 @@ def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: st
 def _(
     request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, field: str, value: str
 ) -> None:
-    """Read this resource back and compare one of its fields with a value."""
     actual = _field(request, context, resource_type, name, field)
     if not written_matches(actual, value):
         pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, not {describe(value)}")
@@ -500,7 +460,6 @@ def _(
 def _(
     request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, field: str, value: str
 ) -> None:
-    """Read this resource back and require one of its fields to differ from a value."""
     actual = _field(request, context, resource_type, name, field)
     if written_matches(actual, value):
         pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, which is what it must not be")
@@ -510,7 +469,6 @@ def _(
 def _(
     request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, field: str, value: str
 ) -> None:
-    """Read this resource back and require one of its fields to hold a value."""
     actual = _field(request, context, resource_type, name, field)
     if not _contains(actual, value):
         pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, which does not hold {value!r}")
@@ -520,7 +478,6 @@ def _(
 def _(
     request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, field: str, value: str
 ) -> None:
-    """Read this resource back and require one of its fields not to hold a value."""
     actual = _field(request, context, resource_type, name, field)
     if _contains(actual, value):
         pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, which holds {value!r}")
@@ -528,7 +485,6 @@ def _(
 
 @then(parsers.parse(FIELD_EMPTY))
 def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, field: str) -> None:
-    """Read this resource back and require one of its fields to hold nothing."""
     actual = _field(request, context, resource_type, name, field)
     if not is_empty(actual):
         pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, not empty")
@@ -536,7 +492,6 @@ def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: st
 
 @then(parsers.parse(FIELD_NOT_EMPTY))
 def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, field: str) -> None:
-    """Read this resource back and require one of its fields to hold something."""
     actual = _field(request, context, resource_type, name, field)
     if is_empty(actual):
         pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, which is empty")
@@ -546,7 +501,6 @@ def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: st
 def _(
     request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, datatable: Any = None
 ) -> None:
-    """Read this resource back and compare a whole table of its fields at once."""
     engine, node = _node(request, resource_type, name)
     record = read(engine, node, context)
     if record is None:
@@ -556,7 +510,6 @@ def _(
 
 @then(parsers.parse(SLOT_SHAPE_IS))
 def _(request: pytest.FixtureRequest, context: Any, slot: str, datatable: Any = None) -> None:
-    """Compare a whole table of fields against what a step put on the context."""
     records = _slot(context, slot)
     if len(records) != 1:
         pytest.fail(
@@ -578,8 +531,8 @@ def _shape(record: Record, datatable: Any, subject: str, engine: Materializer) -
     __tracebackhide__ = True
     wrong: list[str] = []
     for field, written in _rows(datatable, subject):
-        # `${...}` resolves here rather than in the plugin's hook: a table's cells never reach it,
-        # because pytest-bdd hands them over as one `datatable` argument rather than as values.
+        # `${...}` resolves here, not in the plugin's hook: a table's cells never reach it, since
+        # pytest-bdd hands them over as one `datatable` argument.
         try:
             expected = str(engine.resolve(written))
         except Unresolved as exc:
@@ -598,8 +551,8 @@ def _wanted(written: str) -> str:
     marker = written.strip()
     if marker in MARKERS:
         return f"{marker} ({MARKERS[marker]})"
-    # `#regex ^AC-[0-9]+$` carries its pattern, so it is not a key of the table — but a reader
-    # meeting one in a failure wants to be told it was a pattern rather than a value.
+    # `#regex ^AC-[0-9]+$` carries its pattern, so it is not a key of the table — and a reader
+    # meeting one in a failure has to be told it was a pattern.
     if is_marker(marker):
         _, _, pattern = marker.partition(" ")
         return f"text matching {pattern.strip()!r}"
@@ -624,7 +577,6 @@ def _rows(datatable: Any, subject: str) -> list[tuple[str, str]]:
 
 @then(parsers.parse(COUNT))
 def _(request: pytest.FixtureRequest, count: int, resource_type: str) -> None:
-    """Count what this environment holds of a resource type."""
     engine: Materializer = request.getfixturevalue("materializer")
     records = _listing(engine, resource_type)
     if len(records) != count:
@@ -677,7 +629,6 @@ def _contains(actual: Any, value: str) -> bool:
 
 @then(parsers.parse(SLOT_CONTAINS))
 def _(request: pytest.FixtureRequest, context: Any, slot: str, resource_type: str, name: str) -> None:
-    """Require the records a step put on the context to include this resource."""
     engine, node = _node(request, resource_type, name)
     records = _slot(context, slot)
     if not any(identifies(engine, node, record) for record in records):
@@ -686,7 +637,6 @@ def _(request: pytest.FixtureRequest, context: Any, slot: str, resource_type: st
 
 @then(parsers.parse(SLOT_LACKS))
 def _(request: pytest.FixtureRequest, context: Any, slot: str, resource_type: str, name: str) -> None:
-    """Require the records a step put on the context not to include this resource."""
     engine, node = _node(request, resource_type, name)
     records = _slot(context, slot)
     if any(identifies(engine, node, record) for record in records):
@@ -697,7 +647,6 @@ def _(request: pytest.FixtureRequest, context: Any, slot: str, resource_type: st
 
 @then(parsers.parse(SLOT_FIELD_IS))
 def _(context: Any, slot: str, field: str, value: str) -> None:
-    """Compare one field of what a step put on the context with a value."""
     actual = _slot_field(context, slot, field)
     if not written_matches(actual, value):
         pytest.fail(f"{slot}'s {field!r} is {describe(actual)}, not {describe(value)}")
@@ -705,7 +654,6 @@ def _(context: Any, slot: str, field: str, value: str) -> None:
 
 @then(parsers.parse(SLOT_FIELD_IS_NOT))
 def _(context: Any, slot: str, field: str, value: str) -> None:
-    """Require one field of what a step put on the context to differ from a value."""
     actual = _slot_field(context, slot, field)
     if written_matches(actual, value):
         pytest.fail(f"{slot}'s {field!r} is {describe(actual)}, which is what it must not be")
@@ -713,7 +661,6 @@ def _(context: Any, slot: str, field: str, value: str) -> None:
 
 @then(parsers.parse(SLOT_FIELD_CONTAINS))
 def _(context: Any, slot: str, field: str, value: str) -> None:
-    """Require one field of what a step put on the context to hold a value."""
     actual = _slot_field(context, slot, field)
     if not _contains(actual, value):
         pytest.fail(f"{slot}'s {field!r} is {describe(actual)}, which does not hold {value!r}")
@@ -721,7 +668,6 @@ def _(context: Any, slot: str, field: str, value: str) -> None:
 
 @then(parsers.parse(SLOT_FIELD_LACKS))
 def _(context: Any, slot: str, field: str, value: str) -> None:
-    """Require one field of what a step put on the context not to hold a value."""
     actual = _slot_field(context, slot, field)
     if _contains(actual, value):
         pytest.fail(f"{slot}'s {field!r} is {describe(actual)}, which holds {value!r}")
@@ -729,7 +675,6 @@ def _(context: Any, slot: str, field: str, value: str) -> None:
 
 @then(parsers.parse(SLOT_FIELD_EMPTY))
 def _(context: Any, slot: str, field: str) -> None:
-    """Require one field of what a step put on the context to hold nothing."""
     actual = _slot_field(context, slot, field)
     if not is_empty(actual):
         pytest.fail(f"{slot}'s {field!r} is {describe(actual)}, not empty")
@@ -737,7 +682,6 @@ def _(context: Any, slot: str, field: str) -> None:
 
 @then(parsers.parse(SLOT_FIELD_NOT_EMPTY))
 def _(context: Any, slot: str, field: str) -> None:
-    """Require one field of what a step put on the context to hold something."""
     actual = _slot_field(context, slot, field)
     if is_empty(actual):
         pytest.fail(f"{slot}'s {field!r} is {describe(actual)}, which is empty")
@@ -746,8 +690,8 @@ def _(context: Any, slot: str, field: str) -> None:
 def _slot_field(context: Any, slot: str, field: str) -> Any:
     """One field of the single record a slot holds.
 
-    A list is refused rather than guessed at: a slot holding five records has no one field, and
-    picking the first would be a different assertion than the one written.
+    Fails when the slot holds anything but one record: five records have no one field, and the first
+    of them is a different assertion from the one written.
     """
     records = _slot(context, slot)
     if len(records) != 1:
@@ -768,8 +712,8 @@ def _slot_field(context: Any, slot: str, field: str) -> Any:
 def read(engine: Materializer, node: Node, context: Any) -> Record | None:
     """This resource as it is *now*, not as it was when the scenario provisioned it.
 
-    The cache is dropped first because it is the whole point: the listing behind it was read before
-    the actions ran, and an assertion after an action has to see what the action did.
+    The cache is dropped first: the listing behind it was read before the actions ran, and an
+    assertion after an action has to see what the action did.
     """
     if node.ephemeral:
         return ephemeral_record(context, node.id)
@@ -808,8 +752,7 @@ def _node(request: pytest.FixtureRequest, resource_type: str, name: str) -> tupl
         )
     # Where this scenario asked for an instance of its own, that is the one every claim below is
     # about — the node as it was varied to make it, carrying the key it was given. Substituted here,
-    # once, rather than in each step: a claim says which resource it is about and nothing about how
-    # that resource came to be, and it should not have to.
+    # once: a claim says which resource it is about and nothing about how that resource came to be.
     return engine, engine.made_fresh(node.id) or node
 
 
@@ -846,7 +789,7 @@ def _slot(context: Any, slot: str) -> list[Record]:
 
 
 def _holding(context: Any) -> str:
-    """What the scenario *does* hold, so a mistyped slot name is one line to fix rather than a hunt."""
+    """What the scenario *does* hold, for a failure about a slot name nothing put there."""
     slots = getattr(context, "slots", None)
     if not isinstance(slots, dict) or not slots:
         return " This scenario holds nothing at all yet."

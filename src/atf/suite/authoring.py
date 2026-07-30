@@ -1,13 +1,4 @@
-"""Writing the catalog: derive a node from a real record, and edit instance files in place.
-
-Two halves. `derive` turns a record the environment already holds into the node that would have
-produced it — which is how a catalog gets written against a system that predates it. `edit`,
-`insert` and `remove` change one top-level entry in one instance file and leave every other byte
-alone, because those files are hand-authored and their comments and ordering are part of the work.
-
-Nothing here writes without the caller validating first: `load_catalog` reports every problem in a
-proposed catalog, so a change that would stop the suite loading is refused rather than saved.
-"""
+"""Writing the catalog: derive a node from a real record, and edit instance files in place."""
 
 from __future__ import annotations
 
@@ -22,8 +13,8 @@ from typing_extensions import override
 from ..model.catalog import Node
 from ..model.typespec import TypeSpec
 
-# Fields a backend owns rather than the catalog: they appear in a record but must never be declared,
-# because the backend will assign them again on the next create.
+# Fields a backend owns, not the catalog: they appear in a record and must never be declared, since
+# the backend assigns them again on the next create.
 SERVER_OWNED = frozenset(
     {
         "id",
@@ -83,11 +74,11 @@ def derive(
     identities: dict[str, Any] | None = None,
     name: str = "",
 ) -> Derived:
-    """The catalog node that would have produced `record`.
+    """The catalog node a record out there is declared as.
 
-    Server-assigned fields are dropped rather than declared. A field whose value is the identity of
-    a resource already in the catalog becomes a `${...id}` placeholder and a dependency, which is
-    what makes the derived node re-creatable in an empty environment instead of tied to this one.
+    Server-assigned fields are dropped. A field whose value is the identity of a resource already in
+    the catalog becomes a `${...id}` placeholder and a dependency, so the derived node is re-creatable
+    in an empty environment.
     """
     identities = identities or {}
     by_identity = {
@@ -136,8 +127,8 @@ def _suggest_name(
 ) -> str:
     """A name from what the record calls itself — never `account_1`, which says nothing.
 
-    Human labels come before natural keys, because a composite natural key often leads with a
-    foreign key: naming a list after its owner's identity would describe the parent, not the list.
+    Human labels come before natural keys: a composite natural key often leads with a foreign key,
+    and a list named after its owner's identity describes the parent.
     """
     foreign = foreign or set()
     candidates = ["name", "slug", "title", "label", "reference", "email", *keys]
@@ -188,7 +179,7 @@ class _CatalogDumper(yaml.SafeDumper):
 
 
 def render_entry(name: str, entry: dict[str, Any], indent: int = 2) -> str:
-    """One top-level catalog entry as the YAML a person would have written."""
+    """One top-level catalog entry, as the YAML a person writes by hand: block style, keys in order."""
     dumped = yaml.dump(
         {name: entry},
         Dumper=_CatalogDumper,
@@ -253,8 +244,8 @@ def remove(path: Path, name: str) -> str:
     lines = text.splitlines(keepends=True)
     start, end = span
 
-    # Take the blank line that separated this entry from the one before it, so removing an entry
-    # leaves the file as it was rather than accumulating gaps where entries used to be.
+    # Take the blank line that separated this entry from the one before it, so a removal leaves the
+    # file as it was and gaps do not accumulate.
     if start > 0 and not lines[start - 1].strip():
         start -= 1
     remaining = "".join(lines[:start]) + "".join(lines[end:])

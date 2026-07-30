@@ -48,7 +48,8 @@ def test_a_run_is_a_ctrf_document():
 
 def test_an_error_is_reported_as_a_failure():
     """A gate that treats "it broke before it started" as softer than a failure lets a broken suite
-    through, and CTRF has no word of its own for it."""
+    through, and CTRF has no word of its own for it.
+    """
     document = as_ctrf(
         record(
             a__ok=Result(nodeid="a::ok", outcome=PASSED),

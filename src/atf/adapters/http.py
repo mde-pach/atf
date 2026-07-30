@@ -1,7 +1,4 @@
-"""Shared HTTP plumbing: auth schemes, retries and paginated listings.
-
-Adapters and system-under-test clients apply auth the same way, so both live here.
-"""
+"""Shared HTTP plumbing: auth schemes, retries and paginated listings."""
 
 from __future__ import annotations
 
@@ -92,7 +89,7 @@ class SessionAuth(httpx.Auth):
 
     @override
     def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, httpx.Response, None]:
-        # httpx reads the response body for us because `requires_response_body` is set.
+        # `requires_response_body` is set, so httpx has already read the response body.
         if not self._ready:
             response = yield self._login_request(request)
             self._capture(response)

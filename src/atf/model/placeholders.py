@@ -1,13 +1,4 @@
-"""Resolution of the `${...}` placeholders a catalog body or a step value may contain.
-
-One form is the framework's own: `${<node id>.id}`, a dependency's identity, which is checked when
-the catalog loads and becomes an edge in the graph. Everything else is a call to a registered
-[provider](providers.py) — `${now+1d 09:00}`, `${uuid}`, `${fake:email}` — so generated values are
-an extension point rather than a list written into this module.
-
-A node reference always wins, so no provider can shadow a collection, and a catalog naming one that
-way is refused at load.
-"""
+"""Resolution of the `${...}` placeholders a catalog body or a step value may contain."""
 
 from __future__ import annotations
 
@@ -55,7 +46,7 @@ def resolve(value: Any, lookup: Lookup, memo: Memo | None = None) -> Any:
 
 
 def generated(expression: str) -> bool:
-    """Whether this expression asks a provider for a value rather than naming a node."""
+    """Whether this expression asks a provider for a value, as against naming a node."""
     return _REF_RE.match(expression.strip()) is None
 
 

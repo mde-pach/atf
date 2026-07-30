@@ -1,13 +1,4 @@
-"""Background work with live per-item progress: test runs and provisioning, in one model.
-
-A run happens in a pytest subprocess reporting itself over the progress channel; provisioning
-happens in-process, on a thread, because the materializer holds the adapters. What they have in
-common is a `Row` per unit of work — a test, or a catalog node — so one progress view renders both
-without either pretending to be the other.
-
-At most one job is active per environment *across both kinds*: provisioning an environment while
-tests run against it would race the very resources they read.
-"""
+"""Background work with live per-item progress: test runs and provisioning, in one model."""
 
 from __future__ import annotations
 
@@ -43,9 +34,9 @@ _COUNTED = {
 class Row(Protocol):
     """One unit of a job's work, as the progress view reads it.
 
-    What a test result and a node being provisioned have in common, and no more than that: a single
-    row type would have to hold a run outcome and a provisioning action in one field, and every
-    reader would need to know which kind of job it was looking at to know what that field meant.
+    What a test result and a node being provisioned have in common, and no more: one row type holds a
+    run outcome and a provisioning action in one field, and every reader of it has to know which kind
+    of job it is looking at to know what that field means.
     """
 
     duration: float

@@ -151,7 +151,7 @@ uv run atf serve                  # …then ATF, browsing the suite that tests i
 
 ### Conventions
 
-Four, and they are conventions rather than tests. Three of them used to be tests that read ATF's own
+Five, and they are conventions rather than tests. Three of them used to be tests that read ATF's own
 source with a regular expression, which is a linter's job wearing a test's costume — a rule that can
 only be broken by somebody editing the repository cannot regress on its own.
 
@@ -164,6 +164,12 @@ only be broken by somebody editing the repository cannot regress on its own.
   shipped to users can be swapped and no linter reads it.
 - **The scaffold must run green.** CI scaffolds a suite with `atf init` and runs it with nothing
   else set up, because that is what a newcomer is handed.
+- **A comment says what a scope is or what a function does.** Not why it is that way, not what it
+  replaced, not what else was considered. A decision that needs recording is a commit message, where
+  it is read by whoever asks why rather than by everyone who asks what. Enforced mechanically for
+  length and for the phrases that always mean rationale — `uv run python scripts/prose.py`, in CI
+  beside `ruff check`, which itself holds a docstring to a one-line summary (`D200`, `D205`, `D400`)
+  — and the rest is review's job.
 
 The documentation is MkDocs Material, organised by [Diátaxis](https://diataxis.fr), and built with
 `--strict` in CI:

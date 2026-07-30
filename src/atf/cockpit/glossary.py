@@ -1,9 +1,4 @@
-"""The vocabulary the cockpit explains in place.
-
-Every domain word the interface renders as a chip, pill or heading is defined here once, so the
-same sentence appears everywhere the word does. `doc` names an anchor on the documentation's
-glossary page, which carries the longer treatment; keep the two in step when adding a term.
-"""
+"""The vocabulary the cockpit explains in place."""
 
 from __future__ import annotations
 
@@ -13,7 +8,7 @@ from importlib.metadata import PackageNotFoundError, metadata
 
 
 def docs_url(path: str = "") -> str:
-    """Where the documentation is, so the cockpit can point at it rather than paraphrase it.
+    """Where the documentation is, so the cockpit points at it and never paraphrases it.
 
     `ATF_DOCS` wins, which is how you read the docs of the checkout you are working on — run
     `mkdocs serve` in the ATF repository and export `ATF_DOCS=http://127.0.0.1:8000/atf`.

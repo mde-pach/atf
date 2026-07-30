@@ -40,9 +40,9 @@ class Adapter(Protocol):
 class Browsable(Protocol):
     """Optional: an adapter that can enumerate what a resource type already has in an environment.
 
-    `find` answers "is this one node there?"; browsing answers "what is there at all?", which is
-    what lets a catalog be written from an environment instead of typed from scratch. The node
-    passed in is a probe carrying the type's config and whatever body fields scope the listing.
+    `find` answers "is this one node there?"; browsing answers "what is there at all?", which is what
+    lets a catalog be written from an environment. The node passed in is a probe carrying the type's
+    config and whatever body fields scope the listing.
     """
 
     def browse(self, node: Node, ctx: Context, limit: int = 200) -> list[Record]: ...
@@ -55,9 +55,8 @@ def can_browse(adapter: Adapter) -> bool:
 class Actionable(Protocol):
     """Optional: an adapter that can *do* something to a resource, not only read or make one.
 
-    ATF could always create and delete, because those are what a catalog is for. Everything else a
-    system can do — complete a task, close an account, retry a job — was a step some project had to
-    write, including the ones that are one HTTP call the adapter already knows how to make.
+    ATF creates and deletes of its own accord. Everything else a system can do — complete a task,
+    close an account, retry a job — is declared.
 
     An adapter offers *mechanical* verbs; the catalog names a *domain* action in terms of them; the
     spec says the domain action:
@@ -70,8 +69,8 @@ class Actionable(Protocol):
         When I complete the task "milk"
 
     The action's body is adapter configuration, exactly as `path` is — ATF validates its shape and
-    reads nothing into it. Because `actions` is data it is also *enumerable*, which is what lets the
-    composer offer it in a dropdown, and it is the same property that made assertions composable.
+    reads nothing into it. Being data, it is also *enumerable*, which is what lets the composer offer
+    it in a dropdown.
 
     Returns the record as it is after the action, or `None` when the system says nothing useful —
     in which case the assertions after it read the resource back for themselves, as they always do.
@@ -94,10 +93,10 @@ class Showing(Protocol):
     """Optional: an adapter whose resources are things to *look at*, which can say what is on one.
 
     The reading surface for an interface is a **role** and an **accessible name** — `the button
-    "Save"` — and never a selector, because a selector describes today's markup and a role and a
-    name describe the thing. This is the seam that makes those claims mean one thing whichever
-    adapter answers them: ATF's `html` system reads the page a server sent, its `browser` system
-    reads the page after it has run, and a scenario says the same sentence to both.
+    "Save"` — and never a selector: a selector describes today's markup, and a role and a name
+    describe the thing. It is the seam that makes those claims mean one thing whichever adapter
+    answers them: ATF's `html` system reads the page a server sent, its `browser` system reads the
+    page after it has run, and a scenario says the same sentence to both.
 
     Acting on a control — clicking it, typing into it — is not here. Reading a response can never
     do it, and pretending otherwise would make a suite silently weaker on the machines that have no
@@ -105,10 +104,10 @@ class Showing(Protocol):
 
     `wait` is how long to keep looking, in milliseconds, where **0 means as long as this system
     usually would**. An interface that swaps a fragment in after a request has settled is
-    asynchronous, not broken — and a claim that only ever looks at the first instant fails for a
-    reason the scenario is not about. A negative claim passes a smaller number of its own, because
-    waiting the full timeout for every "is not showing" would make a suite of them unusable.
-    Something that cannot change while a scenario looks at it ignores the whole question.
+    asynchronous, not broken, and a claim looking only at the first instant fails for something the
+    scenario is not about. A negative claim passes a smaller number of its own: waiting a full timeout
+    for every "is not showing" makes a suite of them unusable. Something that cannot change while a
+    scenario looks at it ignores the question.
     """
 
     def controls(self, role: str = "", name: str = "", *, wait: float = 0.0) -> list[Control]: ...
@@ -134,8 +133,8 @@ class Available(Protocol):
     without it, saying what is missing — not fail, which reads as a broken suite, and not pass,
     which is a lie.
 
-    Returns the reason it is unavailable, or `""` when it is fine. A reason is required because a
-    skip nobody can act on is a skip nobody removes.
+    Returns what is missing, or `""` when it is fine. Saying what is required: a skip nobody can act
+    on is a skip nobody removes.
     """
 
     def unavailable(self) -> str: ...
@@ -202,16 +201,14 @@ class NoopDelete:
         return None
 
 
-# Which module each built-in lives in, rather than the built-in itself. The registry needs to know
-# the *names* of the systems ATF ships — a catalog naming an unregistered one is refused by name, and
-# that check must not depend on anything being importable — but it does not need the code until
-# something asks for an adapter.
+# Which module each built-in lives in, and not the built-in itself. The registry needs the *names* of
+# the systems ATF ships — a catalog naming an unregistered one is refused by name, and that check must
+# not depend on anything being importable — and it needs the code only once something asks for an
+# adapter.
 #
-# The difference is not academic. `rest` and the two that build on it reach for `httpx`, which is
-# 80ms of an interpreter's life and, because httpx ships a command-line interface, brings `click` and
-# `pygments` with it. Registering eagerly meant `atf --help` — and `atf init`, and `atf lint`, and
-# `atf docs`, none of which speak HTTP — paid all of it before printing anything. A framework whose
-# every invocation costs a third of a second teaches people to reach for something else.
+# `rest` and the two that build on it reach for `httpx`: 80ms of an interpreter's life, plus the
+# `click` and `pygments` its command-line interface brings. `atf --help`, `atf init`, `atf lint` and
+# `atf docs` speak no HTTP and pay none of it.
 _BUILT_IN = {
     "rest": (".rest", "RestAdapter"),
     "reference": (".reference", "ReferenceAdapter"),

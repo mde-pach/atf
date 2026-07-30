@@ -1,25 +1,4 @@
-"""Named sources of values a catalog body or a step can interpolate.
-
-`${...}` used to resolve exactly two things, both written into the resolver: a node reference and
-`now+Nd HH:MM`. Everything that is not a node reference is now a call to a *registered* provider,
-so a project can plug in a generator the way it plugs in an adapter.
-
-    ${now+1d 09:00}        a timestamp relative to now
-    ${uuid}                a fresh identifier
-    ${env:BASE_EMAIL}      a variable from the environment
-    ${fake:email}          whatever a project registered under `fake`
-
-**Fresh by default.** Stability is not the point of a generated value — if it must stay put you can
-type it once. Randomness is incoherent in exactly one place, a natural key ATF has to look up
-again, and the catalog refuses that combination rather than seeding around it: see
-`catalog._check_generated_keys`.
-
-**One evaluation per scenario, per expression.** Without that rule a provider is useless in the
-place it is most wanted — `When I rename it to "${fake:company}"` followed by an assertion on the
-same expression would compare two different companies. Identical expressions inside one scenario
-therefore give the same value, and a discriminator distinguishes two that should differ:
-`${fake:company}` and `${fake:company#new}`.
-"""
+"""Named sources of values a catalog body or a step can interpolate."""
 
 from __future__ import annotations
 
@@ -41,7 +20,7 @@ _NOW_RE = re.compile(r"^\s*([+-])\s*(\d+)d\s+(\d{1,2}):(\d{2})$")
 
 
 class Provider(Protocol):
-    """A named source of values. One method, because that is all a value needs.
+    """A named source of values, and one method: a value is all anything here needs.
 
     `keyable` answers the one question the catalog has to ask of a provider: may this be used in a
     natural key? Only the provider knows. A generator of fresh values must say no, or every run
@@ -86,8 +65,8 @@ def registered() -> set[str]:
 def configure(settings: dict[str, dict[str, Any]] | None = None) -> None:
     """Point every provider at one environment's settings, from `environments.<env>.providers`.
 
-    Called once when a suite boots. Everything already built is dropped, because a provider
-    configured for the last environment has no business answering for this one.
+    Called once when a suite boots. Everything already built is dropped: a provider configured for
+    the last environment has no business answering for this one.
     """
     _SETTINGS.clear()
     _SETTINGS.update(settings or {})
@@ -141,7 +120,7 @@ def split(expression: str) -> tuple[str, str]:
 class Now:
     """`${now+1d 09:00}` — a moment relative to this one, as the backend spells it.
 
-    Keyable, deliberately. A resource keyed on its own due date gets one record per day and that
+    Keyable. A resource keyed on its own due date gets one record per day, and that
     is what someone writing `${now+1d 09:00}` into a key is asking for — unlike a random value,
     which produces a new record every single run and is never what anyone meant.
     """
@@ -180,7 +159,7 @@ class Uuid:
 class Env:
     """`${env:NAME}` — a variable from the process environment, refused when it is not set.
 
-    A missing one is an error rather than an empty string: a resource silently created with a blank
+    A missing one raises, and never resolves to an empty string: a resource created with a blank
     field is a resource that looks fine and is not.
     """
 

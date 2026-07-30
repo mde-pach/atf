@@ -1,32 +1,4 @@
-"""What is on a page, from the HTML it sent — by role and accessible name, never by selector.
-
-A server-rendered page says what it is in the bytes it returns. Reading it therefore needs no
-browser, and a suite that reads it this way still says what it means:
-
-```gherkin
-Then the heading "Catalog" is showing
-And the link "Compose" is showing
-```
-
-**Why not a selector.** `table.instances tbody tr` describes today's markup: rename the class and
-every scenario that mentioned it is wrong about a page that still works perfectly. A role and an
-accessible name describe the *thing* — what a screen reader announces, and what a person means when
-they say "the Save button". A suite written in them survives a redesign and fails a regression,
-which is the right way round.
-
-**Why not only a browser.** ATF's `browser` adapter answers the same questions against a page that
-has actually run, and it must exist for the claims no amount of parsing can make — a stylesheet
-applied, a fragment swapped in, a combobox opened. But it needs a browser installed, and most of
-what a suite claims about a server-rendered interface is true of the response itself. This is that
-half, and it costs nothing.
-
-**What is implemented is a subset of ARIA, and it says so.** The roles below are the implicit ones
-HTML gives an element, with an explicit `role=` always winning; the name is computed in the order
-the accessible name specification gives, stopping at the first that answers. What is deliberately
-not here: anything needing layout (a thing scrolled out of view is still showing to this module),
-CSS from a stylesheet (only an inline `display:none` hides), and roles nothing renders. A page whose
-name computation this cannot follow is a page to look at with the `browser` adapter instead.
-"""
+"""What is on a page, from the HTML it sent — by role and accessible name, never by selector."""
 
 from __future__ import annotations
 
@@ -105,7 +77,7 @@ INPUT_ROLES: dict[str, str] = {
     "url": "textbox",
 }
 
-# Controls whose name is what a person types into or beside, rather than what they read inside.
+# Controls whose name is what a person types into or beside, and not what they read inside.
 # A `<label>` names these; everything else is named by its own text.
 LABELLED = frozenset({"input", "select", "textarea"})
 
@@ -235,7 +207,7 @@ class Page:
         builder.close()
         self.root = builder.root
         # Every element carrying an id, for `aria-labelledby` and `<label for=…>` to reach. Built
-        # once, because a name computation that walked the document per control would be quadratic.
+        # once: a name computation walking the document per control is quadratic.
         self.by_id: dict[str, Element] = {}
         self.labels: dict[str, list[Element]] = {}
         for element in self.root.walk():
@@ -259,7 +231,7 @@ class Page:
         A name is matched as a **substring**, case-insensitively, with whitespace collapsed —
         which is what `get_by_role(role, name=…)` does in a browser, so a scenario means one thing
         whichever system answers it. That is the whole promise of [`Showing`](adapters/__init__.py),
-        and this used to break it: matching whole names here while the browser matched substrings
+        and both match a substring: `the link "Scenarios"` finds a link whose name runs on
         meant `the link "Scenarios" is showing` was true through one adapter and false through the
         other, on the same page.
 

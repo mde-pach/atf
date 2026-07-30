@@ -30,7 +30,7 @@ import pytest
 
 from atf.model.catalog import load_catalog
 from atf.spec.patterns import PROVISION, fill, pattern_regex
-from atf.spec.steps import EXISTS, GENERIC_STEPS, SLOT_CONTAINS
+from atf.spec.steps import EXISTS, GENERIC_STEPS, SLOT_CONTAINS, generic
 from atf.suite.discovery import Discovery, StepDef, context_use, discover, matching_step, parse_feature, slug
 from atf.suite.discovery import _step_defs as step_defs
 from tests.sample_project import write_sample_project
@@ -273,13 +273,15 @@ def test_the_read_and_compare_steps_are_part_of_every_suites_vocabulary(found):
 
     reading = next(step for step in found.steps if step.pattern == EXISTS)
     assert reading.params == ["resource_type", "name"]
-    assert reading.docstring
     assert reading.file.endswith("spec/steps.py")
+    # What one says it does comes from the table declaring it, never from a docstring repeating it.
+    assert generic(reading.pattern).summary
 
 
 def test_a_step_declares_what_it_touches_on_the_context_by_being_read(found):
     """Steps talk to each other through `context`, and nothing outside a step's body knew which
-    attributes — which is why someone could compose a step whose subject was never provisioned."""
+    attributes — which is why someone could compose a step whose subject was never provisioned.
+    """
     reads = next(step for step in found.steps if step.pattern == "I list the projects of the account")
     assert reads.needs == ["account"]
     assert reads.produces == ["result"]

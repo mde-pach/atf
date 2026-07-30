@@ -1,13 +1,4 @@
-"""Comparing a value someone wrote against a value a backend returned.
-
-Two callers, one problem. An adapter's `find` matches a catalog body against a record: both sides
-are already typed, because YAML gave them their types. A read-and-compare step matches a record
-against a value quoted in Gherkin: that side is *always* a string, because Gherkin has no other
-kind. `written_matches` is the second case layered on the first, so the rule that decides whether
-`find` recognised a resource is the same rule that decides whether an assertion passed.
-
-Pure functions; no I/O, no knowledge of any particular backend.
-"""
+"""Comparing a value someone wrote against a value a backend returned."""
 
 from __future__ import annotations
 
@@ -29,9 +20,8 @@ FALSE = frozenset({"false", "no", "0"})
 def matches(actual: Any, expected: Any) -> bool:
     """Whether a record's value is the one a catalog body asked for.
 
-    Deliberately loose about spelling and strict about presence: a backend that returns an id as a
-    string when the body wrote a number has still returned the right record, but a backend with no
-    value at all has not.
+    Loose about spelling and strict about presence: a backend returning an id as a string where the
+    body wrote a number has still returned the right record, and one returning nothing has not.
     """
     if actual is None:
         return False
@@ -46,9 +36,8 @@ def written_matches(actual: Any, written: str) -> bool:
     """Whether a record's value is the one a scenario wrote between quotes.
 
     Gherkin only has strings, so every comparison here is against text: `"false"` has to reach a
-    boolean, `"3"` an integer, `""` an absent value. The type of the record's value decides how its
-    text is read — never the other way round, because guessing a type from the written side is how
-    `"0"` starts matching `false`.
+    boolean, `"3"` an integer, `""` an absent value. The type of the *record's* value decides how the
+    text is read, and never the other way round — that is what keeps `"0"` from matching `false`.
     """
     text = written.strip()
 
@@ -78,11 +67,10 @@ def written_matches(actual: Any, written: str) -> bool:
 def written_contains(actual: Any, written: str) -> bool:
     """Whether a record's value holds the text a scenario wrote between quotes.
 
-    Containment means one thing per kind of value, and only the kinds where it means something
-    decidable are answered. Text holds a substring. A list holds an item, matched the same way a
-    field is — so `contains "3"` finds the number 3. A record holds neither: `contains` over a
-    record would have to guess between a key and a value, so it is refused and the reader is told
-    to name the field inside it instead.
+    Containment means one thing per kind of value, and only the decidable kinds are answered. Text
+    holds a substring. A list holds an item, matched the same way a field is, so `contains "3"` finds
+    the number 3. A record holds neither: a guess between a key and a value is not decidable, so the
+    claim is refused and the reader told to name the field inside it.
     """
     if actual is None:
         return False
@@ -123,30 +111,24 @@ class Uncontainable(Exception):
 #
 # A table row compares one field with one written value, and sometimes the value is not the point:
 # an id is whatever the backend assigned, a timestamp is whatever `now` was. A marker says what
-# *kind* of thing must be there instead of what it must equal.
+# *kind* of thing must be there, where a value says what it must equal.
 #
-# **The names follow Pact's matchers**, because this is not a new idea and a project that already
-# publishes contracts should not have to learn a second vocabulary for the same act. `match.int(…)`,
-# `match.str(…)`, `match.uuid(…)`, `match.datetime(…)`, `match.regex(…, regex=…)` are theirs;
-# `#int`, `#str`, `#uuid`, `#datetime`, `#regex` are these. Where the two differ they differ for a
-# reason worth knowing:
+# **The names follow Pact's matchers**: `match.int(…)`, `match.str(…)`, `match.uuid(…)`,
+# `match.datetime(…)`, `match.regex(…, regex=…)` are theirs; `#int`, `#str`, `#uuid`, `#datetime`,
+# `#regex` are these. Two differences:
 #
-# - **A Pact matcher wraps an example value; a marker replaces it.** `match.int(12345)` keeps the
-#   12345, because a pact file is a contract published to the provider team and needs concrete data
-#   in it. A marker is an assertion — nobody downstream reads it — so there is nothing to keep.
+# - **A Pact matcher wraps an example value; a marker replaces it.** A marker is an assertion, and
+#   nobody downstream reads it, so there is no concrete value to keep.
 # - **Presence has no Pact equivalent.** `#present`, `#absent`, `#notnull` and `#null` are about
-#   whether a field is *there*, which Pact expresses structurally by the body's shape. A claim has
-#   no body to shape, so it says it.
+#   whether a field is *there*, which Pact expresses through the body's shape.
 #
-# Otherwise a closed list of things ATF can decide, so that every one of them can be offered in a
-# dropdown — with `#regex` the single exception, because a pattern is the one kind of expectation
-# that cannot be enumerated and Pact treats it as core.
+# A closed list, so every one of them can be offered in a dropdown. `#regex` is the exception: a
+# pattern cannot be enumerated.
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
-# The marker that takes an argument: `#regex ^AC-[0-9]+$`. Written with a space rather than
-# brackets, because a table cell is already delimited and `#regex(^\|)` would need escaping a pipe
-# inside brackets inside a cell.
+# The marker that takes an argument: `#regex ^AC-[0-9]+$`. A space, not brackets — a table cell is
+# already delimited, and `#regex(^\|)` would need a pipe escaped inside brackets inside a cell.
 REGEX_MARKER = "#regex"
 
 MARKERS: dict[str, str] = {
@@ -229,8 +211,8 @@ def _is_moment(actual: Any, marker: str) -> bool:
 def _matches_pattern(actual: Any, marker: str) -> bool:
     """`#regex <pattern>` — the one marker that takes an argument, and the one Pact calls core.
 
-    A pattern that will not compile is not a match rather than a crash: the scenario is what is
-    wrong, and it says so through the ordinary "did not hold" message with the pattern in it.
+    A pattern that will not compile is not a match, never a crash: the scenario is what is wrong, and
+    it says so through the ordinary "did not hold" message with the pattern in it.
     """
     _, _, pattern = marker.partition(" ")
     if not pattern.strip() or not isinstance(actual, str):

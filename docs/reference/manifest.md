@@ -175,7 +175,7 @@ A provider with no settings needs no entry here — `now`, `uuid` and `env` work
 ### `clients.<name>` {#env-clients}
 
 Mapping of client name to settings, exposed to specs through the
-[`client_config`](specs-and-fixtures.md#client_config) fixture. ATF does not interpret the contents.
+[`client_config`](fixtures.md#client_config) fixture. ATF does not interpret the contents.
 
 This is deliberately separate from `adapters`: one is how ATF provisions data, the other is how your
 tests talk to the system under test. They usually point at the same place, and they need not.
@@ -211,7 +211,7 @@ put the right things in the environment, pick a working directory, run it, keep 
 both streams, decide what "it failed" means. That is the shape of a *class of system*, the same way
 a status code and a body are the shape of a JSON API.
 
-Configure it, and [`When I run "…"`](specs-and-fixtures.md#read-and-compare-steps) is the whole of
+Configure it, and [`When I run "…"`](assertions.md#read-and-compare-steps) is the whole of
 the reading surface:
 
 ```gherkin
@@ -260,7 +260,7 @@ project, so it is answered once here instead of in every suite's
 ### `html` {#html-settings}
 
 Pages as a server sent them, asked what is on them by **role and accessible name** — no browser, no
-selectors. See [acting on an interface](specs-and-fixtures.md#ui).
+selectors. See [acting on an interface](acting.md#ui).
 
 ```yaml
 environments:
@@ -298,7 +298,7 @@ and a control is named in the scenario.
 The same pages, in a real browser — for the claims no amount of reading can make: a stylesheet
 applied, a fragment swapped in, a combobox opened. It answers exactly the same sentences `html`
 does, so which one a suite configures decides what a claim *costs*, never what it says. Acting on a
-control needs this one. See [acting on an interface](specs-and-fixtures.md#ui).
+control needs this one. See [acting on an interface](acting.md#ui).
 
 | Setting | Meaning |
 |---|---|

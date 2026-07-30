@@ -30,7 +30,7 @@ thing being done; `Then` is what should be true afterwards. If you find yourself
 
 The `Given the <type> "<name>"` step is ATF's, and works for anything in the catalog with no
 registration. See the
-[specs and fixtures reference](../reference/specs-and-fixtures.md#the-provisioning-step).
+[specs and fixtures reference](../reference/provisioning.md#the-provisioning-step).
 
 ## Reuse a resource, or add one
 
@@ -63,7 +63,7 @@ catalog declares, ATF already has a step for it:
 
 Those need no code, in any suite. They read the resource back through the adapter at the moment they
 run, so they hold even after a `When` of yours has changed it — see
-[read-and-compare steps](../reference/specs-and-fixtures.md#read-and-compare-steps). Writing a step
+[read-and-compare steps](../reference/assertions.md#read-and-compare-steps). Writing a step
 by hand to compare one field is re-implementing something the framework does.
 
 ## Add the missing vocabulary
@@ -124,7 +124,7 @@ Given a fresh account "primary"
 That builds an instance of the same catalog node that belongs to this scenario and is taken away
 with it — the shared one is untouched, and no other scenario notices. The catalog does not change,
 because wanting one to yourself is a fact about a *scenario* and the type is usually one everybody
-else is happy to share. See [One to yourself](../reference/specs-and-fixtures.md#fresh).
+else is happy to share. See [One to yourself](../reference/provisioning.md#fresh).
 
 ## Write down what you could not answer
 
@@ -143,7 +143,7 @@ Write them where the answer will go:
 ATF shows these under the rule in the cockpit, counts them on the overview, and puts them on the
 page [`atf docs`](../reference/cli.md#atf-docs) writes — which is how they reach somebody who can
 answer one. It is a comment, so the file is still ordinary Gherkin, and answering one is deleting
-two characters. See [Questions](../reference/specs-and-fixtures.md#questions).
+two characters. See [Questions](../reference/provisioning.md#questions).
 
 ## Run just what you added
 
@@ -187,6 +187,6 @@ your dev environment happens to have.
 - [How to add a resource](add-a-resource.md) — when the scenario needs something new to exist.
 - [How to find out why an environment is red](find-out-why-an-environment-is-red.md) — when it does
   not pass.
-- [Specs and fixtures reference](../reference/specs-and-fixtures.md) — tags, `Background:`, and the
-  fixtures your steps can ask for.
+- [Provisioning reference](../reference/provisioning.md) — tags and `Background:`.
+- [Fixtures reference](../reference/fixtures.md) — the fixtures your steps can ask for.
 - [About lifecycles](../explanation/lifecycles.md) — sharing a resource, and when not to.

@@ -69,8 +69,8 @@
   </a>
 {% endmacro %}
 
-{# A choice made with the information needed to make it. `options` is a list of dicts:
-   {value, label, meta, desc, group}. `value` "" is the empty choice. #}
+{# A choice made with the information needed to make it. `options` is a list of
+   `introspect.Option`; `value` "" is the empty choice. #}
 {% macro combo(name, options, value="", placeholder="Type to search…", empty="Nothing matches.") %}
   {%- set chosen = (options | selectattr("value", "equalto", value) | list | first) if value else None -%}
   <div class="combo{{ ' chosen' if chosen }}" data-combo>

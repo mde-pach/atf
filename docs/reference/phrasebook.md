@@ -14,18 +14,14 @@ Then it is refused because "not in mutable_envs"
 ```
 
 The file is optional. A suite without one is perfectly idiomatic — reach for a phrase where a
-[generic claim](specs-and-fixtures.md#read-and-compare-steps) would otherwise leak a field name, a
+[generic claim](assertions.md#read-and-compare-steps) would otherwise leak a field name, a
 code or a flag into the spec text.
 
 ## Why it exists {#why}
 
-The generic claims read fine while a scenario is only saying whether something is there:
-`Then the owner "primary" exists` needs no translation. The moment a *value* is involved they stop.
-`Then the result field "exit_code" is "2"` is a struct field access spelled in English, so making a
-suite generic used to mean making its specs *less* readable exactly where it mattered.
-
-A phrase is the layer between the two. The technical vocabulary lives in one file — which is also
-the only place to edit when `mutable_envs` is renamed — and the spec says what a person means.
+A phrase is the layer between a generic claim and a value that would otherwise leak a field name, a
+code or a flag into spec text — the technical vocabulary lives in one file, and the spec says what a
+person means. See [About the phrasebook](../explanation/why-the-phrasebook.md#why) for the reasoning.
 
 ## The file {#file}
 
@@ -47,7 +43,7 @@ refused when the file loads.
 
 ### A step that takes a table {#tables}
 
-A step ending with a colon takes [a table](specs-and-fixtures.md#tables) under it. So does a YAML
+A step ending with a colon takes [a table](assertions.md#tables) under it. So does a YAML
 mapping key, which is what lets a phrase carry one with no second format to learn:
 
 ```yaml
@@ -113,11 +109,19 @@ A phrase registers as a real step definition, so everything that offers steps of
 being told: the composer lists them under *this suite's wording*, between the claims that need no
 code and the steps the suite had to write. What a phrase stands for is its description, and what it
 *needs* is the union of what its steps need — so a phrase standing for a claim about
-[a slot](specs-and-fixtures.md#slots) is offered only once a step above has produced one.
+[a slot](assertions.md#slots) is offered only once a step above has produced one.
 
 ## Why it does not rewrite the feature {#not-a-rewrite}
 
-Expanding before pytest-bdd parses would be less code, and the run report would then show four
-primitive steps where the file shows one sentence — the reader reading one thing and the cockpit
-reporting another. So a phrase is a real step definition that runs its steps inside itself. One
-line in the file, one line in the report.
+A phrase is a real step definition that runs its steps inside itself, rather than expanding into
+them before pytest-bdd parses. See
+[About the phrasebook](../explanation/why-the-phrasebook.md#not-a-rewrite) for why.
+
+## Where to go next
+
+- [About the phrasebook](../explanation/why-the-phrasebook.md) — why the file exists, and why it
+  stays a flat mapping.
+- [Assertions reference](assertions.md#read-and-compare-steps) — the generic claims a phrase stands
+  in front of.
+- [CLI reference](cli.md#lint-vocabulary-rules) — the syntactic half of the same rule, checked by
+  `atf lint`.

@@ -161,5 +161,5 @@ them, and when a test fails you can go and look at the data it failed on.
   things.
 - [How to diagnose a failing provision](../how-to/diagnose-a-failing-provision.md) — when step 5
   goes wrong.
-- [Specs and fixtures reference](../reference/specs-and-fixtures.md) — the exact surface of steps 1,
-  2 and 7.
+- [Provisioning reference](../reference/provisioning.md) — the exact surface of steps 1 and 2.
+- [Assertions reference](../reference/assertions.md) — the exact surface of step 7's `Then` lines.

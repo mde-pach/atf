@@ -59,20 +59,26 @@ nav:
           - Find out why an environment is red: how-to/find-out-why-an-environment-is-red.md
           - Diagnose a failing provision: how-to/diagnose-a-failing-provision.md
   - Reference:
-      - Manifest reference: reference/manifest.md
-      - Catalog reference: reference/catalog.md
-      - Providers reference: reference/providers.md
-      - Phrasebook reference: reference/phrasebook.md
-      - Specs and fixtures reference: reference/specs-and-fixtures.md
-      - CLI reference: reference/cli.md
-      - Cockpit reference: reference/cockpit.md
-      - Adapter SPI reference: reference/adapter-spi.md
+      - Configuration:
+          - Manifest reference: reference/manifest.md
+          - Catalog reference: reference/catalog.md
+          - Providers reference: reference/providers.md
+          - Phrasebook reference: reference/phrasebook.md
+      - Runtime:
+          - Provisioning reference: reference/provisioning.md
+          - Acting reference: reference/acting.md
+          - Assertions reference: reference/assertions.md
+          - Fixtures reference: reference/fixtures.md
+          - CLI reference: reference/cli.md
+          - Cockpit reference: reference/cockpit.md
+          - Adapter SPI reference: reference/adapter-spi.md
   - Explanation:
       - Glossary: explanation/glossary.md
       - Life of a run: explanation/life-of-a-run.md
       - About the model: explanation/the-model.md
       - About declarative catalogs: explanation/why-declarative-catalogs.md
       - About lifecycles: explanation/lifecycles.md
+      - About the phrasebook: explanation/why-the-phrasebook.md
 
 markdown_extensions:
   - admonition

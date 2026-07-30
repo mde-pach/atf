@@ -103,7 +103,7 @@ authenticating reverse proxy. See the [cockpit reference](docs/reference/cockpit
 
 v1 is **single-worker**: the session materializer, its listing cache and get-or-create are not safe
 under parallel workers, and the cockpit serializes runs with one active job per environment. Do not
-enable `pytest-xdist`. See [concurrency](docs/reference/specs-and-fixtures.md#concurrency).
+enable `pytest-xdist`. See [concurrency](docs/reference/fixtures.md#concurrency).
 
 ## The example is the one you are given
 

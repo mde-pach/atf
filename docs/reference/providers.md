@@ -167,5 +167,5 @@ Raising is how a provider refuses — the message reaches whoever wrote the expr
 
 - [Catalog reference](catalog.md#placeholders) — where placeholders may appear in a body.
 - [Manifest reference](manifest.md#env-providers) — the `providers` block.
-- [Specs and fixtures reference](specs-and-fixtures.md#read-and-compare-steps) — the steps that
+- [Specs and fixtures reference](assertions.md#read-and-compare-steps) — the steps that
   compare a generated value with what a backend returned.

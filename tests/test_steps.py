@@ -108,9 +108,57 @@ PASSING = {
 }
 
 
+# The same claims, each written so that it does *not* hold, with what its failure has to say. Every
+# claim about a field is decided from one table now, so a row whose wording never reaches the output
+# is a row that has quietly stopped saying anything.
+FAILING = [
+    ('the account "primary" field "plan" is "enterprise"', ["field 'plan' is", ", not "]),
+    ('the account "primary" field "plan" is not "standard"', ["which is what it must not be"]),
+    ('the account "primary" field "email" contains "nowhere"', ["which does not hold"]),
+    ('the account "primary" field "email" does not contain "example.test"', ["which holds"]),
+    ('the account "primary" field "plan" is empty', ["not empty"]),
+    ('the account "primary" field "notes" is not empty', ["which is empty"]),
+    ('the result field "plan" is "enterprise"', ["result's 'plan' is", ", not "]),
+    ('the result field "plan" is not "standard"', ["which is what it must not be"]),
+    ('the result field "email" contains "nowhere"', ["which does not hold"]),
+    ('the result field "email" does not contain "example.test"', ["which holds"]),
+    ('the result field "plan" is empty', ["not empty"]),
+    ('the result field "notes" is not empty', ["which is empty"]),
+    ('the account "primary" field "tier" is "gold"', ["has no field 'tier'", "the record carries"]),
+    ('the result field "tier" is "gold"', ["has no field 'tier'", "it carries"]),
+]
+
+HOLDING = '''
+
+from pytest_bdd import when
+
+
+@when("I hold the account")
+def _(context):
+    context.result = [context.account]
+'''
+
+
 def test_the_table_lists_exactly_the_thens_that_are_proved():
     proved = {step.pattern for step in GENERIC_STEPS if step.keyword in {"then", "when"}}
     assert proved == set(PASSING)
+
+
+@pytest.mark.parametrize(("line", "said"), FAILING, ids=[line for line, _ in FAILING])
+def test_a_claim_that_does_not_hold_says_what_it_found(project, line, said):
+    """One scenario per wording, because a scenario stops at the first step that fails."""
+    feature = (
+        "Feature: Wrong\n  Scenario: A claim that does not hold\n"
+        '    Given the account "primary"\n    When I hold the account\n'
+        f"    Then {line}\n"
+    )
+    result = run_feature(project, "wrong", feature, HOLDING)
+
+    assert result.returncode != 0
+    assert "no step definition matches" not in result.stdout
+    for wanted in said:
+        assert wanted in result.stdout, result.stdout[-900:]
+
 
 def test_every_then_in_the_table_resolves_to_a_registered_definition(project):
     """A pattern in the table with nothing behind it would be offered by the composer, then fail.
@@ -122,17 +170,8 @@ def test_every_then_in_the_table_resolves_to_a_registered_definition(project):
     lines = ['    Given the account "primary"', "    When I hold the account"]
     lines += [f"    Then {PASSING[step.pattern]}" for step in GENERIC_STEPS if step.keyword == "then"]
 
-    steps = '''
-
-from pytest_bdd import when
-
-
-@when("I hold the account")
-def _(context):
-    context.result = [context.account]
-'''
     feature = "Feature: Registered\n  Scenario: Every generic Then resolves\n" + "\n".join(lines) + "\n"
-    result = run_feature(project, "registered", feature, steps)
+    result = run_feature(project, "registered", feature, HOLDING)
     assert "no step definition matches" not in result.stdout
     assert result.returncode == 0, result.stdout + result.stderr
 

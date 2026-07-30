@@ -62,18 +62,26 @@ Recipes for getting a specific job done, assuming you know your way around.
 
 Facts to look up while you work. Dry by design, and every key has its own anchor.
 
+**Configuration**
+
 - **[Manifest](reference/manifest.md)** — every key of `atf.yaml`, the built-in adapter settings,
   the auth schemes.
 - **[Catalog](reference/catalog.md)** — the type registry, instance files, placeholders, validation
   rules, node structure.
-- **[Specs and fixtures](reference/specs-and-fixtures.md)** — the provisioning step, the claims,
-  acting on a system and on an interface, tables and markers, questions, the fixtures.
+- **[Providers](reference/providers.md)** — the `${...}` sources: generated values, the environment,
+  now.
 - **[Phrasebook](reference/phrasebook.md)** — one sentence, and the claims it stands for.
+
+**Runtime**
+
+- **[Provisioning](reference/provisioning.md)** — the provisioning step, `Given a fresh …`,
+  `Background:`, tags, questions.
+- **[Acting](reference/acting.md)** — doing something to a system or an interface.
+- **[Assertions](reference/assertions.md)** — the claims, tables and markers.
+- **[Fixtures](reference/fixtures.md)** — `context`, teardown, the `Materializer`.
 - **[CLI](reference/cli.md)** — every command, flag, exit code and environment variable.
 - **[Cockpit](reference/cockpit.md)** — the three verticals, readiness, provisioning, the composer,
   run history.
-- **[Providers](reference/providers.md)** — the `${...}` sources: generated values, the environment,
-  now.
 - **[Adapter SPI](reference/adapter-spi.md)** — the protocol, the registry, the HTTP helpers.
 
 ## Explanation

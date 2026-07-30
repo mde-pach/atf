@@ -119,7 +119,7 @@ Flakiness in an end-to-end suite is usually one of:
 - **A slow downstream system.** The resource exists but is not ready yet. Waiting for readiness
   belongs in the adapter's `create`, not in a step.
 - **Two runs against one environment at once.** Provisioning is not safe under concurrency; see
-  [concurrency](../reference/specs-and-fixtures.md#concurrency).
+  [concurrency](../reference/fixtures.md#concurrency).
 
 Fix the flakiness before chasing the failure. A test you cannot trust cannot tell you whether you
 fixed anything.

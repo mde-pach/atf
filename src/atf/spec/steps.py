@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from inspect import Parameter, Signature
 from typing import Any, cast
 
 import pytest
@@ -332,25 +334,76 @@ class Comparison:
     # written value uses `value`; a count writes a number, and `value` in the spec text would read as
     # a value the resource holds, not as how many there are.
     value_capture: str = VALUE
+    # How the claim is decided, for the ones about a field. `negated` pairs each with its opposite:
+    # "is not" is "is", answered the other way round.
+    holds: Callable[[Any, str], bool] | None = None
+    negated: bool = False
+    # What a failure says after "… is <what it holds>,". `{expected}` is the written value described,
+    # `{written}` the raw text of it.
+    otherwise: str = ""
 
+
+def _matches(actual: Any, written: str) -> bool:
+    return written_matches(actual, written)
+
+
+def _holds(actual: Any, written: str) -> bool:
+    return _contains(actual, written)
+
+
+def _empty(actual: Any, written: str) -> bool:
+    return is_empty(actual)
+
+
+# What a failure says after "… is <what it holds>,". `{expected}` is the written value described,
+# `{written}` the raw text of it.
+NOT_THAT = "not {expected}"
+MUST_NOT_BE = "which is what it must not be"
+DOES_NOT_HOLD = "which does not hold {written!r}"
+DOES_HOLD = "which holds {written!r}"
+NOT_EMPTY_SAID = "not empty"
+IS_EMPTY_SAID = "which is empty"
 
 COMPARISONS: tuple[Comparison, ...] = (
     Comparison("exists", "exists", EXISTS, RESOURCE),
     Comparison("gone", "is gone", GONE, RESOURCE),
-    Comparison("is", "is", FIELD_IS, RESOURCE, field=True, target="value"),
-    Comparison("is-not", "is not", FIELD_IS_NOT, RESOURCE, field=True, target="value"),
-    Comparison("holds", "contains", FIELD_CONTAINS, RESOURCE, field=True, target="value"),
-    Comparison("holds-not", "does not contain", FIELD_LACKS, RESOURCE, field=True, target="value"),
-    Comparison("empty", "is empty", FIELD_EMPTY, RESOURCE, field=True),
-    Comparison("not-empty", "is not empty", FIELD_NOT_EMPTY, RESOURCE, field=True),
+    Comparison("is", "is", FIELD_IS, RESOURCE, True, "value", holds=_matches, otherwise=NOT_THAT),
+    Comparison(
+        "is-not", "is not", FIELD_IS_NOT, RESOURCE, True, "value",
+        holds=_matches, negated=True, otherwise=MUST_NOT_BE,
+    ),
+    Comparison(
+        "holds", "contains", FIELD_CONTAINS, RESOURCE, True, "value", holds=_holds, otherwise=DOES_NOT_HOLD
+    ),
+    Comparison(
+        "holds-not", "does not contain", FIELD_LACKS, RESOURCE, True, "value",
+        holds=_holds, negated=True, otherwise=DOES_HOLD,
+    ),
+    Comparison("empty", "is empty", FIELD_EMPTY, RESOURCE, True, holds=_empty, otherwise=NOT_EMPTY_SAID),
+    Comparison(
+        "not-empty", "is not empty", FIELD_NOT_EMPTY, RESOURCE, True,
+        holds=_empty, negated=True, otherwise=IS_EMPTY_SAID,
+    ),
     Comparison("contains", "contains", SLOT_CONTAINS, SLOT_OF, target="resource"),
     Comparison("lacks", "does not contain", SLOT_LACKS, SLOT_OF, target="resource"),
-    Comparison("result-is", "is", SLOT_FIELD_IS, SLOT_OF, field=True, target="value"),
-    Comparison("result-is-not", "is not", SLOT_FIELD_IS_NOT, SLOT_OF, field=True, target="value"),
-    Comparison("result-holds", "contains", SLOT_FIELD_CONTAINS, SLOT_OF, field=True, target="value"),
-    Comparison("result-holds-not", "does not contain", SLOT_FIELD_LACKS, SLOT_OF, field=True, target="value"),
-    Comparison("result-empty", "is empty", SLOT_FIELD_EMPTY, SLOT_OF, field=True),
-    Comparison("result-not-empty", "is not empty", SLOT_FIELD_NOT_EMPTY, SLOT_OF, field=True),
+    Comparison("result-is", "is", SLOT_FIELD_IS, SLOT_OF, True, "value", holds=_matches, otherwise=NOT_THAT),
+    Comparison(
+        "result-is-not", "is not", SLOT_FIELD_IS_NOT, SLOT_OF, True, "value",
+        holds=_matches, negated=True, otherwise=MUST_NOT_BE,
+    ),
+    Comparison(
+        "result-holds", "contains", SLOT_FIELD_CONTAINS, SLOT_OF, True, "value",
+        holds=_holds, otherwise=DOES_NOT_HOLD,
+    ),
+    Comparison(
+        "result-holds-not", "does not contain", SLOT_FIELD_LACKS, SLOT_OF, True, "value",
+        holds=_holds, negated=True, otherwise=DOES_HOLD,
+    ),
+    Comparison("result-empty", "is empty", SLOT_FIELD_EMPTY, SLOT_OF, True, holds=_empty, otherwise=NOT_EMPTY_SAID),
+    Comparison(
+        "result-not-empty", "is not empty", SLOT_FIELD_NOT_EMPTY, SLOT_OF, True,
+        holds=_empty, negated=True, otherwise=IS_EMPTY_SAID,
+    ),
     Comparison("count", "how many there are", COUNT, TYPE_OF, target="value", value_capture=COUNT_OF),
 )
 
@@ -444,56 +497,6 @@ def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: st
             f"{node.id} is still in {engine.env}: {node.id_field}="
             f"{record.get(node.id_field)!r} matches what the catalog declares."
         )
-
-
-@then(parsers.parse(FIELD_IS))
-def _(
-    request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, field: str, value: str
-) -> None:
-    actual = _field(request, context, resource_type, name, field)
-    if not written_matches(actual, value):
-        pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, not {describe(value)}")
-
-
-@then(parsers.parse(FIELD_IS_NOT))
-def _(
-    request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, field: str, value: str
-) -> None:
-    actual = _field(request, context, resource_type, name, field)
-    if written_matches(actual, value):
-        pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, which is what it must not be")
-
-
-@then(parsers.parse(FIELD_CONTAINS))
-def _(
-    request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, field: str, value: str
-) -> None:
-    actual = _field(request, context, resource_type, name, field)
-    if not _contains(actual, value):
-        pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, which does not hold {value!r}")
-
-
-@then(parsers.parse(FIELD_LACKS))
-def _(
-    request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, field: str, value: str
-) -> None:
-    actual = _field(request, context, resource_type, name, field)
-    if _contains(actual, value):
-        pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, which holds {value!r}")
-
-
-@then(parsers.parse(FIELD_EMPTY))
-def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, field: str) -> None:
-    actual = _field(request, context, resource_type, name, field)
-    if not is_empty(actual):
-        pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, not empty")
-
-
-@then(parsers.parse(FIELD_NOT_EMPTY))
-def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: str, field: str) -> None:
-    actual = _field(request, context, resource_type, name, field)
-    if is_empty(actual):
-        pytest.fail(f"{resource_type} {name!r} field {field!r} is {describe(actual)}, which is empty")
 
 
 @then(parsers.parse(SHAPE_IS))
@@ -644,46 +647,52 @@ def _(request: pytest.FixtureRequest, context: Any, slot: str, resource_type: st
         )
 
 
-@then(parsers.parse(SLOT_FIELD_IS))
-def _(context: Any, slot: str, field: str, value: str) -> None:
-    actual = _slot_field(context, slot, field)
-    if not written_matches(actual, value):
-        pytest.fail(f"{slot}'s {field!r} is {describe(actual)}, not {describe(value)}")
+# ---- one claim, said sixteen ways ------------------------------------------
+#
+# Every claim about a field reads its subject, decides, and says what it found instead. Which of
+# those three differs per row is in `COMPARISONS`, so this is the body all twelve of them share and
+# the table is the only place a claim is written down.
 
 
-@then(parsers.parse(SLOT_FIELD_IS_NOT))
-def _(context: Any, slot: str, field: str, value: str) -> None:
-    actual = _slot_field(context, slot, field)
-    if written_matches(actual, value):
-        pytest.fail(f"{slot}'s {field!r} is {describe(actual)}, which is what it must not be")
+def _held(said: str, actual: Any, item: Comparison, written: str) -> None:
+    """Fail unless the claim holds, saying what the field holds and what was wanted of it."""
+    __tracebackhide__ = True
+    if item.holds is None or item.holds(actual, written) != item.negated:
+        return
+    wanted = item.otherwise.format(written=written, expected=describe(written))
+    pytest.fail(f"{said} is {describe(actual)}, {wanted}")
 
 
-@then(parsers.parse(SLOT_FIELD_CONTAINS))
-def _(context: Any, slot: str, field: str, value: str) -> None:
-    actual = _slot_field(context, slot, field)
-    if not _contains(actual, value):
-        pytest.fail(f"{slot}'s {field!r} is {describe(actual)}, which does not hold {value!r}")
+def _claim_step(item: Comparison) -> Any:
+    """The function ATF registers for one field claim, declaring the captures its pattern names."""
+    about_resource = item.subject == RESOURCE
+
+    def _step(**values: Any) -> None:
+        __tracebackhide__ = True
+
+        if about_resource:
+            said = f"{values[TYPE]} {values[NAME]!r} field {values[FIELD]!r}"
+            actual = _field(values["request"], values["context"], values[TYPE], values[NAME], values[FIELD])
+        else:
+            said = f"{values[SLOT]}'s {values[FIELD]!r}"
+            actual = _slot_field(values["context"], values[SLOT], values[FIELD])
+        _held(said, actual, item, values.get(VALUE, ""))
+
+    named = ["request", "context", *([TYPE, NAME] if about_resource else [SLOT]), FIELD]
+    if item.target == "value":
+        named.append(VALUE)
+    _step.__name__ = item.key.replace("-", "_")
+    # `inspect.signature` reports this in preference to the real one, which is what pytest-bdd reads
+    # to decide what to pass. The body still takes `**values`.
+    _step.__signature__ = Signature(  # ty: ignore[unresolved-attribute]
+        [Parameter(name, Parameter.POSITIONAL_OR_KEYWORD) for name in named]
+    )
+    return _step
 
 
-@then(parsers.parse(SLOT_FIELD_LACKS))
-def _(context: Any, slot: str, field: str, value: str) -> None:
-    actual = _slot_field(context, slot, field)
-    if _contains(actual, value):
-        pytest.fail(f"{slot}'s {field!r} is {describe(actual)}, which holds {value!r}")
-
-
-@then(parsers.parse(SLOT_FIELD_EMPTY))
-def _(context: Any, slot: str, field: str) -> None:
-    actual = _slot_field(context, slot, field)
-    if not is_empty(actual):
-        pytest.fail(f"{slot}'s {field!r} is {describe(actual)}, not empty")
-
-
-@then(parsers.parse(SLOT_FIELD_NOT_EMPTY))
-def _(context: Any, slot: str, field: str) -> None:
-    actual = _slot_field(context, slot, field)
-    if is_empty(actual):
-        pytest.fail(f"{slot}'s {field!r} is {describe(actual)}, which is empty")
+for _claim in COMPARISONS:
+    if _claim.field:
+        then(parsers.parse(_claim.pattern))(_claim_step(_claim))
 
 
 def _slot_field(context: Any, slot: str, field: str) -> Any:

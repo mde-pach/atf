@@ -164,7 +164,7 @@ for the one reason that is not the author's fault.
 ## Keep it to one worker
 
 Do not add `pytest-xdist`, and do not let two pipelines provision one environment at once — see
-[concurrency](../reference/specs-and-fixtures.md#concurrency). If you need parallelism, split by
+[concurrency](../reference/fixtures.md#concurrency). If you need parallelism, split by
 environment: one worker per environment, never several per environment.
 
 ## Test a pull request against a throwaway environment

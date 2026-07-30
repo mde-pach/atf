@@ -153,5 +153,6 @@ run `atf status dev` on its own to see the manifest or catalog error in isolatio
 - [How to add a resource](add-a-resource.md) — the second resource, and the tenth.
 - [How to add a scenario](add-a-scenario.md) — converting a test into a spec.
 - [How to run ATF in CI](run-atf-in-ci.md) — making the new suite a gate.
-- [Specs and fixtures reference](../reference/specs-and-fixtures.md) — what the plugin adds to a
-  suite that already has fixtures.
+- [Provisioning reference](../reference/provisioning.md) — what the plugin adds to a suite that
+  already has fixtures.
+- [Fixtures reference](../reference/fixtures.md) — the fixtures ATF generates alongside your own.

@@ -133,7 +133,7 @@ Given a fresh account "primary"
 ```
 
 which builds an instance that belongs to that scenario and is taken away with it, leaving the shared
-one untouched. See [One to yourself](../reference/specs-and-fixtures.md#fresh) and
+one untouched. See [One to yourself](../reference/provisioning.md#fresh) and
 [About lifecycles](../explanation/lifecycles.md#a-scenario-that-mutates-a-persistent-resource-must-own-it).
 
 ## When the catalog will not load at all

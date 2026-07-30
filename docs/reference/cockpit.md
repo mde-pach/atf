@@ -164,7 +164,7 @@ resource is known to have, so the page asks four questions and writes the Gherki
 | `Then` | **what it is about**, then what of it, then how, then against what |
 
 A `Then` starts from the subject because that is what a person starts from: a resource, a whole type
-of them, a [slot](specs-and-fixtures.md#slots) a step above produced, or a step of the suite's own.
+of them, a [slot](assertions.md#slots) a step above produced, or a step of the suite's own.
 Choosing a resource then offers its fields *with what each currently holds in this environment*, so
 the value is usually one click rather than a guess.
 
@@ -176,9 +176,9 @@ the option being silently missing — *"3 more steps are not offered here: nothi
 
 ### Tables {#composer-tables}
 
-A step ending in a colon takes [a table](specs-and-fixtures.md#tables), and the composer builds one:
+A step ending in a colon takes [a table](assertions.md#tables), and the composer builds one:
 each field the resource is known to have is offered with its current value, and
-[`#markers`](specs-and-fixtures.md#markers) are offered beside the value box for the fields whose
+[`#markers`](assertions.md#markers) are offered beside the value box for the fields whose
 exact contents are not the point. A half-filled row is reported; a row nobody filled in is not
 written, because the page always offers a spare one and an offer is not a line.
 
@@ -186,7 +186,7 @@ written, because the page always offers a spare one and an offer is not a line.
 
 **Try it** runs the draft without saving it, and reports the Gherkin step it reached. **Save**
 appends it to the feature file — and writes no Python at all, because every step the composer offers
-is one an [auto-collected feature](specs-and-fixtures.md#collecting) can already reach.
+is one an [auto-collected feature](provisioning.md#collecting) can already reach.
 
 Writing is **not gated by `mutable_envs`** and needs a confirmation token instead: it changes files
 in your repository and touches no environment. Conflating *may write to production* with *may
@@ -206,7 +206,7 @@ composes from.
 The point is what it *cannot* do. An agent handed a file and a docstring writes arbitrary
 automation; an agent that can only choose from `available steps × catalog nodes × phrases` cannot
 write a step this suite does not define, name a resource the catalog does not declare, or assert
-about a [slot](specs-and-fixtures.md#slots) nothing above it produced. Those are not rules it is
+about a [slot](assertions.md#slots) nothing above it produced. Those are not rules it is
 asked to follow — there is nothing on the surface that would turn them into a line.
 
 ### Three tools {#introspection-tools}
@@ -221,7 +221,7 @@ Three, and structural rather than one per wording. `describe` returns the steps 
 captures, needs and produces; the catalog's resources with their status in this environment and the
 fields each is known to have, with current values; the [phrases](phrasebook.md) this suite writes
 and what they stand for; the closed lists of comparisons and of
-[`#markers`](specs-and-fixtures.md#markers); and the resource types with the actions declared on
+[`#markers`](assertions.md#markers); and the resource types with the actions declared on
 them. All of it is derived from the tables that define ATF's vocabulary, so **adding a generic step,
 a resource type, a phrase, a marker or an adapter surfaces it with no change to the MCP layer** —
 which is asserted by a guard in the test suite rather than merely intended.
@@ -270,7 +270,7 @@ Everything a spec author needs in order to use one:
 The generated per-type factory is documented here rather than in a vertical of its own. It belongs
 to the type, and framework plumbing fixtures — `request`, `context`, `materializer`, `api` — were
 noise in a browsable list. Fixtures remain a real part of the model and are documented in the
-[specs and fixtures reference](specs-and-fixtures.md#fixtures).
+[specs and fixtures reference](fixtures.md#fixtures).
 
 An instance shows the same states `atf status` reports: `present`, `absent`, `ephemeral`,
 `unsupported`, `error`. They are defined in the [CLI reference](cli.md#status-words).
@@ -326,7 +326,7 @@ itself discovered may pass.
 
 There is one active job per environment. Starting one while another is in flight returns the running
 job rather than starting a second. A job that exceeds its timeout is killed, reported as timed out,
-and releases the slot — see the [timeouts table](specs-and-fixtures.md#timeouts).
+and releases the slot — see the [timeouts table](fixtures.md#timeouts).
 
 ### The activity dock {#activity-dock}
 

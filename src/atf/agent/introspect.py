@@ -112,6 +112,35 @@ class Surface:
         return self.engine.nodes
 
 
+# ---- the choices themselves --------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Option:
+    """One choice, carrying what is needed to make it.
+
+    A list of names tells a reader nothing about which name they want, so every choice offered
+    anywhere here has a short `meta` beside its label and a longer `desc` under it, and `group` is
+    the heading it files under. The interface renders these and an agent reads them.
+    """
+
+    value: str
+    label: str
+    meta: str = ""
+    desc: str = ""
+    group: str = ""
+
+    def as_dict(self) -> dict[str, str]:
+        """The same choice for a caller that speaks JSON."""
+        return {
+            "value": self.value,
+            "label": self.label,
+            "meta": self.meta,
+            "desc": self.desc,
+            "group": self.group,
+        }
+
+
 # ---- the fields of a resource, for an assertion built without an editor -----
 
 
@@ -123,9 +152,9 @@ class FieldChoice:
     current: str = ""
     source: str = ""
 
-    def as_option(self) -> dict[str, str]:
+    def as_option(self) -> Option:
         """This field as a choice: what it is called, and what it holds right now."""
-        return {"value": self.name, "label": self.name, "meta": self.current, "desc": self.source}
+        return Option(value=self.name, label=self.name, meta=self.current, desc=self.source)
 
     @property
     def hint(self) -> str:
@@ -595,17 +624,12 @@ def table_lines(row: Row) -> list[str]:
 # short `meta` and a longer `desc` — what an interface renders and what an agent reads, in one shape.
 
 
-def feature_options(found: Discovery) -> list[dict[str, str]]:
+def feature_options(found: Discovery) -> list[Option]:
     counts: dict[str, int] = {}
     for spec in found.specs:
         counts[spec.feature] = counts.get(spec.feature, 0) + 1
     return [
-        {
-            "value": name,
-            "label": name,
-            "meta": plural(counts.get(name, 0), "scenario"),
-            "desc": "",
-        }
+        Option(value=name, label=name, meta=plural(counts.get(name, 0), "scenario"))
         for name in sorted(counts)
     ]
 
@@ -617,10 +641,10 @@ def instances_by_type(surface: Surface) -> dict[str, list[Node]]:
     return grouped
 
 
-def type_options(surface: Surface) -> list[dict[str, str]]:
+def type_options(surface: Surface) -> list[Option]:
     status = surface.status
     instances = instances_by_type(surface)
-    options: list[dict[str, str]] = []
+    options: list[Option] = []
     for name in surface.catalog.resource_types:
         spec = surface.catalog.types[name]
         members = instances.get(name, [])
@@ -629,66 +653,62 @@ def type_options(surface: Surface) -> list[dict[str, str]]:
         note += " · must already exist here" if spec.mode == REFERENCE else ""
         note += " · observed, never created" if spec.mode == DATA else ""
         options.append(
-            {
-                "value": name,
-                "label": name,
-                "meta": spec.system,
-                "desc": f"{len(members)} in the catalog, {present} present in this environment{note}",
-            }
+            Option(
+                value=name,
+                label=name,
+                meta=spec.system,
+                desc=f"{len(members)} in the catalog, {present} present in this environment{note}",
+            )
         )
     return options
 
 
-def instance_options(members: list[Node], status: Statuses) -> list[dict[str, str]]:
+def instance_options(members: list[Node], status: Statuses) -> list[Option]:
     """The resources of one type, each with where it stands and what it is for.
 
     Choosing between `primary` and `secondary` is impossible from the names alone, which is exactly
     what `represents` was written to answer.
     """
     return [
-        {
-            "value": node.name,
-            "label": node.name,
-            "meta": status.state(node.id),
-            "desc": node.represents or node.id,
-        }
+        Option(value=node.name, label=node.name, meta=status.state(node.id), desc=node.represents or node.id)
         for node in members
     ]
 
 
-def resource_options(surface: Surface, group: str = "") -> list[dict[str, str]]:
+def resource_options(surface: Surface, group: str = "") -> list[Option]:
     status = surface.status
     return [
-        {
-            "value": f"{NODE_SUBJECT}{node.id}",
-            "label": node.name,
-            "meta": node.resource,
-            "desc": node.represents or status.state(node.id),
-            "group": group,
-        }
+        Option(
+            value=f"{NODE_SUBJECT}{node.id}",
+            label=node.name,
+            meta=node.resource,
+            desc=node.represents or status.state(node.id),
+            group=group,
+        )
         for node in sorted(surface.nodes.values(), key=lambda item: (item.resource, item.name))
     ]
 
 
-def step_options(steps: list[StepDef]) -> list[dict[str, str]]:
+def step_options(steps: list[StepDef]) -> list[Option]:
     """Every step of one keyword, the ones needing no code first.
 
     Order is the whole point: ATF's own steps first, then this suite's phrases, then the steps it
     had to write. An author takes the first plausible thing they see, and what that is teaches them
     whether assertions are something you write.
     """
-    options = [
-        {
-            "value": step.pattern,
-            "label": step.pattern,
-            "meta": Path(step.file).name if step.file else "",
-            "desc": summary_of(step),
-            "group": _group(step),
-            "rank": _rank(step),
-        }
-        for step in steps
-    ]
-    return sorted(options, key=lambda option: (option["rank"], option["label"]))
+    return sorted(
+        (
+            Option(
+                value=step.pattern,
+                label=step.pattern,
+                meta=Path(step.file).name if step.file else "",
+                desc=summary_of(step),
+                group=_group(step),
+            )
+            for step in steps
+        ),
+        key=lambda option: (_rank(option.group), option.label),
+    )
 
 
 def summary_of(step: StepDef) -> str:
@@ -697,19 +717,24 @@ def summary_of(step: StepDef) -> str:
     return own.summary if own else step.docstring
 
 
+# The headings a When's step picker files a step under, worst-to-best order and all. An author
+# takes the first plausible thing they see, and what that is teaches them whether assertions are
+# something you write.
+READY, WORDING, OWN = "Ready to use", "This suite's wording", "This suite's own"
+_ORDER = (READY, WORDING, OWN)
+
+
 def _group(step: StepDef) -> str:
     if step.phrase:
-        return "This suite's wording"
-    return "Ready to use" if generic(step.pattern) is not None else "This suite's own"
+        return WORDING
+    return READY if generic(step.pattern) is not None else OWN
 
 
-def _rank(step: StepDef) -> str:
-    if step.phrase:
-        return "1"
-    return "0" if generic(step.pattern) is not None else "2"
+def _rank(group: str) -> int:
+    return _ORDER.index(group) if group in _ORDER else len(_ORDER)
 
 
-def subject_options(surface: Surface, steps: list[StepDef], row: Row) -> list[dict[str, str]]:
+def subject_options(surface: Surface, steps: list[StepDef], row: Row) -> list[Option]:
     """What a Then can be about: a resource, a whole type of them, a slot, or a step of your own.
 
     One question — *what are you asserting about?* — and answering it decides the shape of the rest.
@@ -719,13 +744,13 @@ def subject_options(surface: Surface, steps: list[StepDef], row: Row) -> list[di
     # "nothing was created the second time" names nothing, having nothing to name.
     for resource_type in surface.engine.resource_types():
         options.append(
-            {
-                "value": f"{TYPE_SUBJECT}{resource_type}",
-                "label": f"every {resource_type}",
-                "meta": resource_type,
-                "desc": f"how many {resource_type} records this environment holds",
-                "group": "All of a type",
-            }
+            Option(
+                value=f"{TYPE_SUBJECT}{resource_type}",
+                label=f"every {resource_type}",
+                meta=resource_type,
+                desc=f"how many {resource_type} records this environment holds",
+                group="All of a type",
+            )
         )
     # One option per slot the rows above actually put there: a scenario with two actions has two
     # things to be about, and the picker is where that has to be visible.
@@ -734,17 +759,17 @@ def subject_options(surface: Surface, steps: list[StepDef], row: Row) -> list[di
         # is said by that name — the name is the whole point of having chosen it.
         conventional = name == RESULT
         options.append(
-            {
-                "value": f"{SLOT_SUBJECT}{name}",
-                "label": "what the step before produced" if conventional else f"what {name} holds",
-                "meta": "" if conventional else name,
-                "desc": (
+            Option(
+                value=f"{SLOT_SUBJECT}{name}",
+                label="what the step before produced" if conventional else f"what {name} holds",
+                meta="" if conventional else name,
+                desc=(
                     "the records a When put on the context"
                     if conventional
                     else f"what a step above put on the context as {name}"
                 ),
-                "group": "A resource",
-            }
+                group="A resource",
+            )
         )
     for step in steps:
         # A step ATF defines is reached through the four choices, which is what a claim row is. The
@@ -752,17 +777,16 @@ def subject_options(surface: Surface, steps: list[StepDef], row: Row) -> list[di
         # comparison to pick, and it is offered here by name with the rows filled in underneath.
         if generic(step.pattern) is not None and not step.takes_table:
             continue
+        # A phrase is not a step this suite defines — it is this suite's wording over steps that
+        # needed no code, and saying so keeps someone from going looking for the Python behind it.
         options.append(
-            {
-                "value": f"{STEP_SUBJECT}{step.pattern}",
-                "label": step.pattern,
-                "meta": Path(step.file).name if step.file else "",
-                "desc": summary_of(step),
-                # A phrase is not a step this suite defines — it is this suite's wording over
-                # steps that needed no code, and saying so is what keeps someone from going
-                # looking for the Python behind it.
-                "group": _subject_group(step),
-            }
+            Option(
+                value=f"{STEP_SUBJECT}{step.pattern}",
+                label=step.pattern,
+                meta=Path(step.file).name if step.file else "",
+                desc=summary_of(step),
+                group=_subject_group(step),
+            )
         )
     return options
 
@@ -779,20 +803,18 @@ def _subject_group(step: StepDef) -> str:
     return "A phrase this suite writes" if step.phrase else "A step this suite defines"
 
 
-def aspect_options(surface: Surface, node_id: str) -> list[dict[str, str]]:
+def aspect_options(surface: Surface, node_id: str) -> list[Option]:
     """The thing itself, or one of its fields. Which of the two decides what can be claimed."""
-    options = [
-        {"value": "", "label": "the resource itself", "meta": "", "desc": "whether it is there at all"}
-    ]
+    options = [Option(value="", label="the resource itself", desc="whether it is there at all")]
     node = surface.nodes.get(node_id)
     if node is None:
         return options
     return options + [choice.as_option() for choice in field_choices(node, surface.status.of(node_id))]
 
 
-def comparison_options(subject: str, aspect: str) -> list[dict[str, str]]:
+def comparison_options(subject: str, aspect: str) -> list[Option]:
     return [
-        {"value": item.key, "label": item.label, "meta": "", "desc": ""}
+        Option(value=item.key, label=item.label)
         for item in comparisons_for(subject_kind(subject), bool(aspect))
     ]
 
@@ -812,28 +834,28 @@ def table_fields(surface: Surface, row: Row) -> list[dict[str, str]]:
     ]
 
 
-def action_options(surface: Surface, resource_type: str) -> list[dict[str, str]]:
+def action_options(surface: Surface, resource_type: str) -> list[Option]:
     """Everything this type says can be done to one of its resources, and what ATF can always do."""
     spec = surface.catalog.spec(resource_type)
     if spec is None:
         return []
     declared = set(spec.declared_actions)
     return [
-        {
-            "value": action,
-            "label": action,
-            "meta": "" if action in declared else "always",
-            "desc": (
+        Option(
+            value=action,
+            label=action,
+            meta="" if action in declared else "always",
+            desc=(
                 f"declared on the {resource_type} type"
                 if action in declared
                 else "ATF's own — every adapter can remove a resource"
             ),
-        }
+        )
         for action in spec.actions
     ]
 
 
-def field_options(surface: Surface, resource_type: str, name: str) -> list[dict[str, str]]:
+def field_options(surface: Surface, resource_type: str, name: str) -> list[Option]:
     """The fields of one resource, each carrying what it holds right now.
 
     Choosing a field from a list of bare names is guessing. Choosing `done` while the interface
@@ -884,7 +906,7 @@ def describe(surface: Surface, feature: str = "") -> dict[str, Any]:
     return {
         "environment": surface.env,
         "specs": str(surface.specs_dir),
-        "features": feature_options(surface.found),
+        "features": [option.as_dict() for option in feature_options(surface.found)],
         "resource_types": _types_described(surface),
         "resources": _resources_described(surface),
         "steps": steps,

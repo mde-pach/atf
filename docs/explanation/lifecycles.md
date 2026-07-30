@@ -14,6 +14,22 @@ An **ephemeral** resource is built fresh every time and deleted when the scenari
 ATF never looks for an existing one — the adapter's `find` returns `None` by definition — so every
 run creates a new instance, and the plugin's teardown removes it afterwards.
 
+## It is chosen per node, not per suite {#per-node}
+
+A suite is normally forced to choose one lifecycle for everything; in ATF every
+[resource type](glossary.md#resource-type) chooses its own, so the tenant, the account and the API
+key can be seeded once while the data hanging off them is built per scenario. The choice a *type*
+makes is still only the default, though: a scenario that needs its own instance of something the
+catalog calls persistent asks for one with
+[`Given a fresh <type> "<name>"`](../reference/provisioning.md#fresh), and nothing in the catalog
+changes for it.
+
+That is deliberate, and it is why `lifecycle` stays a single word rather than growing a per-scenario
+override. Isolation is a property of a *scenario*, not of a resource: the same type is usually one
+another scenario is happy to share, so saying it in the catalog would make every reader of that type
+pay for one scenario's need. A node the catalog calls `ephemeral` is one nobody can ever share —
+that is a genuine fact about the resource, and it is what belongs there.
+
 ## Why persistence is the default
 
 The instinct from unit testing is that every test should build its own world and destroy it
@@ -47,7 +63,7 @@ own — one task the assertions read, a second the completion spec closes. Two n
 and the coupling is gone.
 
 Or one node and a line in the spec:
-[`Given a fresh task "laundry"`](../reference/specs-and-fixtures.md#fresh) says the same
+[`Given a fresh task "laundry"`](../reference/provisioning.md#fresh) says the same
 thing where only one scenario needs it, without the catalog carrying a node that exists for a
 single test.
 
@@ -67,7 +83,7 @@ Then the task "laundry" field "done" is "true"
 
 That instance is created rather than found, belongs to this scenario, and is deleted with it — the
 ephemeral behaviour, borrowed for one scenario, without the type giving it up for everyone else. See
-[one to yourself](../reference/specs-and-fixtures.md#fresh).
+[one to yourself](../reference/provisioning.md#fresh).
 
 The general rule: **read-only scenarios can share a resource; a scenario that changes one needs its
 own.** If you cannot tell whether a scenario mutates something, it does.

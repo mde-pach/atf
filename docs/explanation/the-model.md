@@ -33,6 +33,30 @@ executing anything. That difference is what the rest of this page is about.
 Most test frameworks have fixtures and tests. ATF adds resources and specs, and the value is not in
 having four things instead of two — it is that the edges between them are known to the framework.
 
+```mermaid
+flowchart LR
+    subgraph Catalog["Catalog — data"]
+        Type["Resource type"] -.declares.-> A["Resource A"]
+        A -->|depends_on| B["Resource B"]
+    end
+
+    Adapter["Adapter"] -->|find / create| A
+    Adapter -->|find / create| B
+
+    Scenario["Scenario"] -->|names| A
+    Scenario -->|generates| Test["Test"]
+    Fixture["Fixture"] -->|used by| Test
+
+    Test -->|one execution of| Run["Run"]
+
+    Cockpit(["Cockpit"]) -.renders.-> Catalog
+    Cockpit -.renders.-> Scenario
+    Cockpit -.renders.-> Run
+```
+
+Every arrow above is something ATF can answer a question about, because it is a fact the framework
+holds rather than a habit spread across setup helpers. The rest of this section is what that buys.
+
 Because ATF knows which resources a scenario names, it can answer questions no ordinary suite can:
 
 - Which scenarios depend on this account? (If I break it, what goes red?)
@@ -86,7 +110,7 @@ is discoverable by `pytest --fixtures`, injectable into a plain test, and named 
 the cockpit. It is a real thing a test can depend on; a step is not.
 
 The same argument is why there is a *family* of
-[read-and-compare steps](../reference/specs-and-fixtures.md#read-and-compare-steps) and not one per
+[read-and-compare steps](../reference/assertions.md#read-and-compare-steps) and not one per
 type either. "Does this exist", "is this field that value" and "has this gone" are three behaviours
 parameterised by type, not three behaviours per type. One generic step was the right count for
 provisioning and the wrong count for everything else: every suite went on to write the same
@@ -109,7 +133,7 @@ The line that actually holds is between two different acts:
 > field's name, and interprets no value beyond comparing it with the one you wrote. **What it will do
 > is read a field you named.**
 
-That is why [the read-and-compare steps](../reference/specs-and-fixtures.md#read-and-compare-steps)
+That is why [the read-and-compare steps](../reference/assertions.md#read-and-compare-steps)
 are not a breach of the principle: `Then the task "milk" field "done" is "false"` names the field in
 the scenario, exactly as `natural_key` names one in the catalog. ATF reads `done`, compares it with
 `false`, and knows nothing else about it — not that tasks have a `done`, not that `done` is a
@@ -131,4 +155,4 @@ bug in the seams, not a reason to fork the engine.
 - [Life of a run](life-of-a-run.md) — the sequence the `Given` lines set in motion.
 - [About declarative catalogs](why-declarative-catalogs.md) — why resources are data.
 - [About lifecycles](lifecycles.md) — why some resources persist and others do not.
-- [Specs and fixtures reference](../reference/specs-and-fixtures.md) — the exact surface.
+- [Provisioning reference](../reference/provisioning.md) — the exact surface of a `Given` line.

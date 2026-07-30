@@ -61,7 +61,7 @@ A behaviour written in Gherkin, in the language of the domain rather than the im
 A scenario declares the [resources](#resource) it needs with `Given the <type> "<name>"`; ATF makes
 them exist before the steps run. It says what should be true, not how to check it.
 
-See the [specs and fixtures reference](../reference/specs-and-fixtures.md#the-provisioning-step).
+See the [specs and fixtures reference](../reference/provisioning.md#the-provisioning-step).
 
 ## Test {#test}
 
@@ -225,7 +225,7 @@ It remembers what it is holding. Each attribute set on it gets a description —
 it carries, how many records there are — which is what lets the cockpit say what a scenario had
 available to assert on. Descriptions never carry values, because they are written to run history.
 
-See the [specs and fixtures reference](../reference/specs-and-fixtures.md#context).
+See the [specs and fixtures reference](../reference/fixtures.md#context).
 
 ## Provider {#provider}
 
@@ -249,7 +249,7 @@ ATF generates one per [resource type](#resource-type), so a plain pytest test ca
 resource directly, and provides a handful of its own (`context`, `materializer`, `env`,
 `client_config`). The rest are yours.
 
-See the [specs and fixtures reference](../reference/specs-and-fixtures.md#fixtures).
+See the [specs and fixtures reference](../reference/fixtures.md#fixtures).
 
 ## Run {#run}
 

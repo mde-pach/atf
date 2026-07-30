@@ -279,7 +279,7 @@ def test_what_a_claim_can_be_about_is_offered_resources_first(surface):
     a claim about where bytes fell in a template. The order is decided here.
     """
     row = Row(index=1, keyword="then", held={"result"}, produced={"result"})
-    groups = [option["group"] for option in subject_options(surface, offered_steps(surface, FEATURE)["then"], row)]
+    groups = [option.group for option in subject_options(surface, offered_steps(surface, FEATURE)["then"], row)]
     seen = list(dict.fromkeys(groups))
 
     assert seen[0] == "A resource", f"a resource is not offered first; the order is {seen}"

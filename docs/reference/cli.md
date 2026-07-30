@@ -268,21 +268,12 @@ nothing to waive.**
 
 ### What it does not check, and why {#lint-not}
 
-**The words.** An earlier version reported a spec line naming a field, a status code, a path, a flag
-or a selector, on the grounds that the layer below had leaked into the layer above. That rule is
-real — it is the reason the [phrasebook](phrasebook.md) exists — but it is not checkable, because it
-infers *meaning* from *syntax*.
+**The words.** ATF does not check a spec line for a leaked field name, status code, path, flag or
+selector by *meaning* — only the syntactic shapes below. See
+[About the phrasebook](../explanation/why-the-phrasebook.md#lint-not) for why that stops short of
+checking vocabulary, which is a judgement and belongs to a reviewer.
 
-A quoted `/products/42` is a route escaping an adapter in one suite and the domain's own value in
-another: a redirect target, a CMS slug, a router rule. `503` is an implementation detail here and
-the entire subject matter of a monitoring product. Nothing separates the two but knowing what the
-system under test *is*, which a linter does not. What the rule produced was false positives on
-correct specs, a waiver comment per line, and a check that meant nothing.
-
-Keeping technical vocabulary out of spec text is still the point of the
-[phrasebook](phrasebook.md#why). It is a judgement, and it belongs to a reviewer.
-
-## The rules {#lint-rules}
+### The vocabulary rules {#lint-vocabulary-rules}
 
 | Rule | Catches | Say instead |
 |---|---|---|
@@ -296,7 +287,7 @@ Only **step lines** are checked. The narrative and comments are where an author 
 explaining is allowed to be specific.
 
 A **data table is a deliberate exception.** `Then the task "milk" is:` followed by a table of
-fields is the [whole-shape claim](specs-and-fixtures.md#tables), and the rule exists to stop
+fields is the [whole-shape claim](assertions.md#tables), and the rule exists to stop
 technical detail being embedded in a sentence a reader has to parse. A table reads as data, sits
 apart from the prose, and replaces the field-by-field assertions the rule is really aimed at.
 

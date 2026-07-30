@@ -26,9 +26,12 @@ router = APIRouter(prefix="/authoring")
 SHEET = "partials/resource_form.html"
 CHANGE = "partials/proposed_change.html"
 
-CREATE = "create"
-EDIT = "edit"
-DELETE = "delete"
+class Verb:
+    """What a form is asking to do to the catalog — a verb of the interface, not a resource mode."""
+
+    CREATE = "create"
+    EDIT = "edit"
+    DELETE = "delete"
 
 # Blank rows so the key/value body can be added to without any scripting.
 SPARE_ROWS = 3
@@ -42,7 +45,7 @@ TYPE = Query(default="", alias="type")
 SCOPE = Query(default="")
 IDENTITY = Query(default="")
 
-F_ACTION = Form(default=CREATE)
+F_ACTION = Form(default=Verb.CREATE)
 F_TYPE = Form(default="", alias="type")
 F_NODE = Form(default="")
 F_NAME = Form(default="")
@@ -63,7 +66,7 @@ F_CONFIRM = Form(default="")
 class Draft:
     """A form's worth of intent, before it is turned into YAML. Whole-form, so preview and write agree."""
 
-    action: str = CREATE
+    action: str = Verb.CREATE
     resource_type: str = ""
     node_id: str = ""
     name: str = ""
@@ -161,13 +164,13 @@ def build(draft: Draft, env: str) -> Proposal:
     engine = app().state(env).materializer
     nodes = engine.nodes
 
-    if draft.action == DELETE:
+    if draft.action == Verb.DELETE:
         node = _known(nodes, draft.node_id)
         path = _node_path(node)
         after = remove(path, node.name)
         blocked = _dependents_block(node, nodes)
         return Proposal(
-            action=DELETE,
+            action=Verb.DELETE,
             name=node.name,
             path=path,
             before=path.read_text(encoding="utf-8"),
@@ -176,7 +179,7 @@ def build(draft: Draft, env: str) -> Proposal:
             blocked=blocked,
         )
 
-    if draft.action == EDIT:
+    if draft.action == Verb.EDIT:
         node = _known(nodes, draft.node_id)
         resource_type, name, path = node.resource, node.name, _node_path(node)
     else:
@@ -195,7 +198,7 @@ def build(draft: Draft, env: str) -> Proposal:
     ).as_entry()
 
     before = path.read_text(encoding="utf-8") if path.exists() else ""
-    after = replace(path, name, entry) if draft.action == EDIT else insert(path, name, entry)
+    after = replace(path, name, entry) if draft.action == Verb.EDIT else insert(path, name, entry)
     return Proposal(
         action=draft.action,
         name=name,
@@ -386,7 +389,7 @@ def new(request: Request, resource_type: str = TYPE, identity: str = IDENTITY, s
 
     derived = _from_record(env, resource_type, identity, scope) if identity else None
     draft = Draft(
-        action=CREATE,
+        action=Verb.CREATE,
         resource_type=resource_type,
         name=derived.name if derived else "",
         file=default_file(engine.nodes, resource_type),
@@ -403,7 +406,7 @@ def copy(request: Request, node_id: str) -> Any:
     env = current_env(request)
     node = _known(app().state(env).materializer.nodes, node_id)
     draft = Draft(
-        action=CREATE,
+        action=Verb.CREATE,
         resource_type=node.resource,
         name=_free_name(node, app().state(env).materializer.catalog),
         file=f"{node.collection}.yaml",
@@ -418,7 +421,7 @@ def edit(request: Request, node_id: str) -> Any:
     env = current_env(request)
     node = _known(app().state(env).materializer.nodes, node_id)
     draft = Draft(
-        action=EDIT,
+        action=Verb.EDIT,
         resource_type=node.resource,
         node_id=node.id,
         name=node.name,
@@ -433,7 +436,7 @@ def edit(request: Request, node_id: str) -> Any:
 def confirm_delete(request: Request, node_id: str) -> Any:
     env = current_env(request)
     node = _known(app().state(env).materializer.nodes, node_id)
-    draft = Draft(action=DELETE, resource_type=node.resource, node_id=node.id, name=node.name)
+    draft = Draft(action=Verb.DELETE, resource_type=node.resource, node_id=node.id, name=node.name)
     return _sheet(request, env, draft, dict(node.body), source=node)
 
 
@@ -453,14 +456,14 @@ def write(request: Request, draft: Draft = DRAFT, confirm: str = F_CONFIRM) -> A
     """Create or edit one resource. Gated by confirmation, not by `mutable_envs`."""
     require_confirmation(confirm)
     env = current_env(request)
-    if draft.action not in {CREATE, EDIT}:
+    if draft.action not in {Verb.CREATE, Verb.EDIT}:
         raise HTTPException(status_code=409, detail=f"{draft.action!r} is not a change this route can write")
 
     proposal = _or_refuse(env, draft)
     resource_type = str(proposal.entry.get("resource", ""))
     apply(env, proposal)
 
-    verb = "Added" if proposal.action == CREATE else "Updated"
+    verb = "Added" if proposal.action == Verb.CREATE else "Updated"
     banner = f"{verb} the {resource_type} {proposal.name} in {proposal.label}."
     return _reload(request, env, banner, focus=f"{proposal.path.stem}.{proposal.name}", type_name=resource_type)
 
@@ -473,7 +476,7 @@ def delete(request: Request, node: str = F_NODE, confirm: str = F_CONFIRM) -> An
     known = _known(app().state(env).materializer.nodes, node)
     resource_type = known.resource
 
-    proposal = _or_refuse(env, Draft(action=DELETE, node_id=node))
+    proposal = _or_refuse(env, Draft(action=Verb.DELETE, node_id=node))
     apply(env, proposal)
 
     banner = f"Deleted the {resource_type} {proposal.name} from {proposal.label}."
@@ -538,7 +541,7 @@ def _proposed(env: str, draft: Draft) -> tuple[Proposal | None, list[str]]:
 
     A form with no name yet is unfilled, not wrong, and gets no complaint.
     """
-    if draft.action == CREATE and not draft.name:
+    if draft.action == Verb.CREATE and not draft.name:
         return None, []
     try:
         proposal = build(draft, env)

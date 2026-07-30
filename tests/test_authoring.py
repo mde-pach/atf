@@ -226,7 +226,7 @@ def test_a_record_out_there_becomes_a_node_that_finds_it_again(client, project, 
     assert written.status_code == 200
 
     nodes = catalog(client)
-    assert "accounts.third" in nodes
+    assert "accounts.third" in nodes.nodes
     assert client.session.status.of("dev", refresh=True).state("accounts.third") == "present"
 
 
@@ -343,7 +343,7 @@ def test_an_edit_changes_one_entry_and_leaves_the_rest_of_the_file_alone(client,
     assert "Now on the premium plan." in text and "premium" in text
     assert "secondary@example.test" in text  # the other entry survived
     nodes = catalog(client)
-    assert nodes["accounts.primary"].body["plan"] == "premium"
+    assert nodes.nodes["accounts.primary"].body["plan"] == "premium"
 
 
 def test_a_body_written_as_raw_yaml_keeps_its_structure(client, project):

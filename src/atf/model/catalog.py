@@ -154,6 +154,17 @@ class Catalog:
     def resource_types(self) -> list[str]:
         return sorted(self.types)
 
+    def closure(self, node_id: str, seen: set[str] | None = None) -> list[str]:
+        """A node and everything it depends on, transitively, each listed once, itself first."""
+        seen = seen if seen is not None else set()
+        if node_id in seen or node_id not in self.nodes:
+            return []
+        seen.add(node_id)
+        members = [node_id]
+        for dependency in self.nodes[node_id].depends_on:
+            members.extend(self.closure(dependency, seen))
+        return members
+
     def of_type(self, resource_type: str) -> list[Node]:
         """Every instance of one type, in the order a reader meets them: by name."""
         return sorted(

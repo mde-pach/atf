@@ -53,13 +53,14 @@ def summary(request: Request) -> Any:
 
 def _context(env: str) -> dict[str, Any]:
     cockpit = app()
-    nodes = cockpit.state(env).materializer.nodes
+    catalog = cockpit.state(env).materializer.catalog
+    nodes = catalog.nodes
     status = cockpit.status.of(env)
     found = cockpit.discovery.of(env)
     scenarios = scenario_views(env)
 
     buckets = {state: [view for view in scenarios if view.state == state] for state in STATES}
-    ready = readiness(sorted(nodes), nodes, status)
+    ready = readiness(sorted(nodes), catalog, status)
     targets = cockpit.jobs.provision_targets(env)
     first_run = cockpit.results.last_run(env) is None
 

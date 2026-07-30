@@ -21,7 +21,6 @@ from ...model.text import first_line, plural
 from ..view import (
     TypeView,
     build_graph,
-    closure_of,
     current_env,
     is_htmx,
     lineage_sentence,
@@ -118,7 +117,8 @@ def _context(
     """One context for every catalog response: the page and both fragments read the same keys."""
     cockpit = app()
     engine = cockpit.state(env).materializer
-    nodes = engine.nodes
+    catalog = engine.catalog
+    nodes = catalog.nodes
     status = cockpit.status.of(env)
     types = type_views(env)
 
@@ -160,26 +160,27 @@ def _context(
         "banner": "",
         "banner_tone": "ok",
     }
-    context.update(_node_context(env, node, nodes, status) if node else {})
+    context.update(_node_context(env, node, catalog, status) if node else {})
     context.update(_type_context(env, types.get(selected), status))
     context["rows"] = instance_rows(types.get(selected), status, context["records"]) if not node else []
     context.update(extra)
     return context
 
 
-def _node_context(env: str, node: Node, nodes: dict[str, Node], status: Statuses) -> dict[str, Any]:
+def _node_context(env: str, node: Node, catalog: Catalog, status: Statuses) -> dict[str, Any]:
     cockpit = app()
     found = cockpit.discovery.of(env)
+    nodes = catalog.nodes
     node_id = node.id
     entry = status.of(node_id)
     creatable, why = cockpit.state(env).materializer.provisionable(node_id)
-    closure = closure_of(node_id, nodes)
+    closure = catalog.closure(node_id)
 
     return {
         # Drawn whenever there is something to draw. A standalone resource gets the sentence, which
         # for "nothing has to exist first" is the whole of what there is to say.
-        "graph": build_graph(nodes, node_id, status) if len(closure) > GRAPH_FROM else None,
-        "lineage": lineage_sentence(node, nodes),
+        "graph": build_graph(catalog, node_id, status) if len(closure) > GRAPH_FROM else None,
+        "lineage": lineage_sentence(node, catalog),
         "needs": [nodes[dep] for dep in node.depends_on if dep in nodes],
         "needed_by": [nodes[dep] for dep in node.dependents if dep in nodes],
         "specs": found.specs_for_resource(node_id),

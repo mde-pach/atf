@@ -7,7 +7,7 @@ than an assertion on a substring of HTML ever did.
 
 Three kinds of thing are left here, and none of them is a page:
 
-**Decision procedures over data.** `readiness`, `closure_of`, `lineage_sentence`, `neighbourhood`
+**Decision procedures over data.** `readiness`, `Catalog.closure`, `lineage_sentence`, `neighbourhood`
 and `build_graph` are pure functions — is this blocked, what does it pull in, where do the boxes go.
 A truth table is the right description of those, and running a server to reach one would say less.
 
@@ -33,7 +33,7 @@ from fastapi.testclient import TestClient
 from atf.adapters.control import Page
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import set_session
-from atf.cockpit.view import build_graph, closure_of, lineage_sentence, neighbourhood, readiness, scenario_views
+from atf.cockpit.view import build_graph, lineage_sentence, neighbourhood, readiness, scenario_views
 from atf.engine.status import ABSENT, UNSUPPORTED, ResourceStatus, Statuses
 from atf.session import Session
 from tests.sample_project import write_sample_project
@@ -132,7 +132,7 @@ def test_an_unreachable_system_blocks(client):
 
 def test_readiness_covers_the_whole_dependency_closure(client):
     nodes = catalog(client)
-    assert closure_of("projects.alpha", nodes) == ["projects.alpha", "accounts.primary"]
+    assert nodes.closure("projects.alpha") == ["projects.alpha", "accounts.primary"]
 
 
 # ---- scenario state ---------------------------------------------------------
@@ -398,7 +398,7 @@ def test_a_type_says_nothing_about_settings_that_are_the_default(client):
     assert "never creates it" in reference
 
 
-def catalog(client) -> dict:
+def catalog(client):
     """This project's catalog, as the cockpit loaded it — an *input* to the tests below, not an
     observation.
 
@@ -409,7 +409,7 @@ def catalog(client) -> dict:
     internals — and a test that *checks* something this way is a different and worse thing. Those
     ask the cockpit, and there are none left.
     """
-    return provisioning_engine(client).nodes
+    return provisioning_engine(client).catalog
 
 
 def provisioning_engine(client):
@@ -454,9 +454,9 @@ def test_the_inspector_states_the_closure_the_action_will_create(client):
 
 def test_the_lineage_is_also_stated_in_words(client):
     nodes = catalog(client)
-    sentence = lineage_sentence(nodes["projects.alpha"], nodes)
+    sentence = lineage_sentence(nodes.nodes["projects.alpha"], nodes)
     assert "alpha needs primary" in sentence and "2 resources" in sentence
-    assert "nothing has to exist first" in lineage_sentence(nodes["accounts.primary"], nodes).lower()
+    assert "nothing has to exist first" in lineage_sentence(nodes.nodes["accounts.primary"], nodes).lower()
 
 
 def test_a_resource_that_depends_on_something_gets_a_diagram(client):

@@ -123,6 +123,10 @@ class FieldChoice:
     current: str = ""
     source: str = ""
 
+    def as_option(self) -> dict[str, str]:
+        """This field as a choice: what it is called, and what it holds right now."""
+        return {"value": self.name, "label": self.name, "meta": self.current, "desc": self.source}
+
     @property
     def hint(self) -> str:
         if self.current:
@@ -783,10 +787,7 @@ def aspect_options(surface: Surface, node_id: str) -> list[dict[str, str]]:
     node = surface.nodes.get(node_id)
     if node is None:
         return options
-    return options + [
-        {"value": choice.name, "label": choice.name, "meta": choice.current, "desc": choice.source}
-        for choice in field_choices(node, surface.status.of(node_id))
-    ]
+    return options + [choice.as_option() for choice in field_choices(node, surface.status.of(node_id))]
 
 
 def comparison_options(subject: str, aspect: str) -> list[dict[str, str]]:
@@ -841,10 +842,7 @@ def field_options(surface: Surface, resource_type: str, name: str) -> list[dict[
     node = surface.catalog.find(resource_type, name)
     if node is None:
         return []
-    return [
-        {"value": choice.name, "label": choice.name, "meta": choice.current, "desc": choice.source}
-        for choice in field_choices(node, surface.status.of(node.id))
-    ]
+    return [choice.as_option() for choice in field_choices(node, surface.status.of(node.id))]
 
 
 def current_value(surface: Surface, resource_type: str, name: str, of_field: str) -> str:

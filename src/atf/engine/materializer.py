@@ -178,16 +178,7 @@ class Materializer:
 
     def closure(self, nid: str) -> list[str]:
         """`nid` plus every transitive dependency."""
-        seen: list[str] = []
-        stack = [nid]
-        while stack:
-            current = stack.pop()
-            if current in seen:
-                continue
-            node = self.node(current)
-            seen.append(current)
-            stack.extend(node.depends_on)
-        return seen
+        return self.catalog.closure(nid)
 
     def topo(self, subset: Iterable[str]) -> list[str]:
         """Dependency-first order within `subset`."""

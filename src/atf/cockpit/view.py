@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 
 from ..engine.status import ABSENT, ERROR, PRESENT, UNSUPPORTED, Statuses
 from ..engine.status import TONES as STATUS_TONES
-from ..model.catalog import Node
+from ..model.catalog import Catalog, Node
 from ..model.text import plural
 from ..model.typespec import DATA, REFERENCE, TypeSpec
 from ..run.runner import FAILED, PASSED, SKIPPED, StepResult, TestResult
@@ -167,18 +167,18 @@ class Readiness:
         return bool(self.blockers)
 
 
-def readiness(node_ids: list[str], nodes: dict[str, Node], status: Statuses) -> Readiness:
+def readiness(node_ids: list[str], catalog: Catalog, status: Statuses) -> Readiness:
     out = Readiness()
     seen: set[str] = set()
     for node_id in node_ids:
-        for member in closure_of(node_id, nodes, seen):
+        for member in catalog.closure(node_id, seen):
             entry = status.of(member)
             reason = _BLOCKING.get(entry.state)
             if reason:
                 out.blockers.append((member, reason))
-            elif entry.state == ABSENT and nodes[member].mode == REFERENCE:
+            elif entry.state == ABSENT and catalog.nodes[member].mode == REFERENCE:
                 out.blockers.append((member, "must already exist here — ATF never creates a reference resource"))
-            elif nodes[member].mode == DATA:
+            elif catalog.nodes[member].mode == DATA:
                 # An observation is not a precondition. Absent means only "not there yet", which is
                 # frequently the very thing the scenario is about to claim.
                 continue
@@ -186,17 +186,6 @@ def readiness(node_ids: list[str], nodes: dict[str, Node], status: Statuses) -> 
                 out.will_create.append(member)
     return out
 
-
-def closure_of(node_id: str, nodes: dict[str, Node], seen: set[str] | None = None) -> list[str]:
-    """A node and everything it depends on, transitively, each listed once."""
-    seen = seen if seen is not None else set()
-    if node_id in seen or node_id not in nodes:
-        return []
-    seen.add(node_id)
-    members = [node_id]
-    for dependency in nodes[node_id].depends_on:
-        members.extend(closure_of(dependency, nodes, seen))
-    return members
 
 
 @dataclass
@@ -242,7 +231,7 @@ _NO_RESULT = TestResult(nodeid="", outcome="not run")
 def scenario_views(env: str) -> list[ScenarioView]:
     app = cockpit()
     found = app.discovery.of(env)
-    nodes = app.state(env).materializer.nodes
+    catalog = app.state(env).materializer.catalog
     status = app.status.of(env)
     results = app.results.of(env)
     flaky = app.results.flaky(env)
@@ -253,7 +242,7 @@ def scenario_views(env: str) -> list[ScenarioView]:
         mine = [results[test.nodeid] for test in tests if test.nodeid in results]
         outcomes = [result.outcome for result in mine]
         failed = next((result for result in mine if result.outcome in {FAILED, ERROR}), None)
-        ready = readiness(spec.resources, nodes, status)
+        ready = readiness(spec.resources, catalog, status)
 
         views.append(
             ScenarioView(
@@ -433,15 +422,15 @@ class Graph:
     focus: str
 
 
-def neighbourhood(nodes: dict[str, Node], focus: str) -> dict[str, int]:
+def neighbourhood(catalog: Catalog, focus: str) -> dict[str, int]:
     """Every node in the focus node's lineage, mapped to its column (0 = focus)."""
     layers: dict[str, int] = {focus: 0}
 
     def walk(current: str, depth: int, upstream: bool) -> None:
-        node = nodes[current]
+        node = catalog.nodes[current]
         neighbours = node.depends_on if upstream else node.dependents
         for neighbour in neighbours:
-            if neighbour not in nodes:
+            if neighbour not in catalog.nodes:
                 continue
             column = depth + (-1 if upstream else 1)
             if neighbour not in layers or abs(column) < abs(layers[neighbour]):
@@ -453,8 +442,8 @@ def neighbourhood(nodes: dict[str, Node], focus: str) -> dict[str, int]:
     return layers
 
 
-def build_graph(nodes: dict[str, Node], focus: str, status: Statuses) -> Graph:
-    layers = neighbourhood(nodes, focus)
+def build_graph(catalog: Catalog, focus: str, status: Statuses) -> Graph:
+    layers = neighbourhood(catalog, focus)
     columns: dict[int, list[str]] = {}
     for node_id, column in sorted(layers.items()):
         columns.setdefault(column, []).append(node_id)
@@ -474,7 +463,7 @@ def build_graph(nodes: dict[str, Node], focus: str, status: Statuses) -> Graph:
             x = PAD + index * COL_GAP
             y = top + row * (NODE_H + ROW_GAP)
             positions[node_id] = (x, y)
-            node = nodes[node_id]
+            node = catalog.nodes[node_id]
             boxes.append(
                 GraphBox(
                     id=node_id,
@@ -491,7 +480,7 @@ def build_graph(nodes: dict[str, Node], focus: str, status: Statuses) -> Graph:
 
     edges: list[GraphEdge] = []
     for node_id in layers:
-        for dependency in nodes[node_id].depends_on:
+        for dependency in catalog.nodes[node_id].depends_on:
             if dependency not in positions or node_id not in positions:
                 continue
             start = positions[dependency]
@@ -506,12 +495,12 @@ def build_graph(nodes: dict[str, Node], focus: str, status: Statuses) -> Graph:
     return Graph(boxes=boxes, edges=edges, width=width, height=height, focus=focus)
 
 
-def lineage_sentence(node: Node, nodes: dict[str, Node]) -> str:
+def lineage_sentence(node: Node, catalog: Catalog) -> str:
     """The graph in words, which is what someone new to the suite actually reads."""
-    chain = [member for member in closure_of(node.id, nodes) if member != node.id]
+    chain = [member for member in catalog.closure(node.id) if member != node.id]
     if not chain:
         return f"Nothing has to exist first — provisioning {node.name} is a single create."
-    names = ", ".join(nodes[member].name for member in chain)
+    names = ", ".join(catalog.nodes[member].name for member in chain)
     return (
         f"{node.name} needs {names}. Provisioning it provisions "
         f"{plural(len(chain) + 1, 'resource')} in all, dependencies first."

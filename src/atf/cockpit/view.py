@@ -13,11 +13,12 @@ from urllib.parse import urlencode
 from fastapi import HTTPException, Request
 from fastapi.templating import Jinja2Templates
 
+from ..engine.materializer import Materializer
 from ..engine.status import ABSENT, ERROR, PRESENT, UNSUPPORTED, Statuses
 from ..engine.status import TONES as STATUS_TONES
 from ..model.catalog import Catalog, Node
 from ..model.text import plural
-from ..model.typespec import DATA, REFERENCE, TypeSpec
+from ..model.typespec import TypeSpec
 from ..run.runner import FAILED, PASSED, SKIPPED, StepResult, TestResult
 from ..run.verdict import FAILING, NEVER_RUN, PASSING, SKIPPED_STATE, fold, state_of
 from ..session import Session
@@ -167,23 +168,26 @@ class Readiness:
         return bool(self.blockers)
 
 
-def readiness(node_ids: list[str], catalog: Catalog, status: Statuses) -> Readiness:
+def readiness(node_ids: list[str], engine: Materializer, status: Statuses) -> Readiness:
+    """What stands between these resources and a run that reaches its first `When`.
+
+    Why a resource cannot be created is the engine's answer, not this module's: the banner here and
+    the button on the catalog page are the same question asked by two surfaces.
+    """
     out = Readiness()
     seen: set[str] = set()
     for node_id in node_ids:
-        for member in catalog.closure(node_id, seen):
+        for member in engine.catalog.closure(node_id, seen):
             entry = status.of(member)
             reason = _BLOCKING.get(entry.state)
             if reason:
                 out.blockers.append((member, reason))
-            elif entry.state == ABSENT and catalog.nodes[member].mode == REFERENCE:
-                out.blockers.append((member, "must already exist here — ATF never creates a reference resource"))
-            elif catalog.nodes[member].mode == DATA:
-                # An observation is not a precondition. Absent means only "not there yet", which is
-                # frequently the very thing the scenario is about to claim.
-                continue
             elif entry.state == ABSENT:
-                out.will_create.append(member)
+                refusal = engine.provisionable(member)
+                if refusal.blocks:
+                    out.blockers.append((member, refusal.why))
+                elif refusal.creatable:
+                    out.will_create.append(member)
     return out
 
 
@@ -231,7 +235,7 @@ _NO_RESULT = TestResult(nodeid="", outcome="not run")
 def scenario_views(env: str) -> list[ScenarioView]:
     app = cockpit()
     found = app.discovery.of(env)
-    catalog = app.state(env).materializer.catalog
+    engine = app.state(env).materializer
     status = app.status.of(env)
     results = app.results.of(env)
     flaky = app.results.flaky(env)
@@ -242,7 +246,7 @@ def scenario_views(env: str) -> list[ScenarioView]:
         mine = [results[test.nodeid] for test in tests if test.nodeid in results]
         outcomes = [result.outcome for result in mine]
         failed = next((result for result in mine if result.outcome in {FAILED, ERROR}), None)
-        ready = readiness(spec.resources, catalog, status)
+        ready = readiness(spec.resources, engine, status)
 
         views.append(
             ScenarioView(

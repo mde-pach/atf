@@ -173,7 +173,7 @@ def _node_context(env: str, node: Node, catalog: Catalog, status: Statuses) -> d
     nodes = catalog.nodes
     node_id = node.id
     entry = status.of(node_id)
-    creatable, why = cockpit.state(env).materializer.provisionable(node_id)
+    refusal = cockpit.state(env).materializer.provisionable(node_id)
     closure = catalog.closure(node_id)
 
     return {
@@ -189,7 +189,7 @@ def _node_context(env: str, node: Node, catalog: Catalog, status: Statuses) -> d
         "state": entry.state,
         "detail": entry.detail,
         "node_label": _node_label(node, closure),
-        "node_blocked": "" if creatable else why,
+        "node_blocked": refusal.why,
     }
 
 
@@ -205,7 +205,7 @@ def _type_context(env: str, view: TypeView | None, status: Statuses) -> dict[str
     targets = [
         node.id
         for node in view.nodes
-        if status.of(node.id).missing and engine.provisionable(node.id)[0]
+        if status.of(node.id).missing and engine.provisionable(node.id).creatable
     ]
     return {
         "type_targets": targets,
@@ -220,7 +220,7 @@ def _type_blocked(env: str, view: TypeView, targets: list[str]) -> str:
         return ""
     if not view.nodes:
         return f"no {view.name} is declared in the catalog yet"
-    refusals = {app().state(env).materializer.provisionable(node.id)[1] for node in view.nodes}
+    refusals = {app().state(env).materializer.provisionable(node.id).why for node in view.nodes}
     refusals.discard("")
     if refusals:
         return sorted(refusals)[0]

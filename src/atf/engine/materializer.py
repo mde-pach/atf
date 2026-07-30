@@ -25,6 +25,7 @@ from ..model.typespec import BUILT_IN_ACTIONS, DATA, EPHEMERAL, REFERENCE, TypeS
 from .status import (
     ABSENT,
     BLOCKED,
+    CREATABLE,
     CREATED,
     ERROR,
     EXISTS,
@@ -33,6 +34,7 @@ from .status import (
     UNSUPPORTED,
     ProvisionOutcome,
     ProvisionResult,
+    Refusal,
     ResourceStatus,
     Statuses,
 )
@@ -267,20 +269,24 @@ class Materializer:
 
     # ---- writes -----------------------------------------------------------
 
-    def provisionable(self, node_id: str) -> tuple[bool, str]:
+    def provisionable(self, node_id: str) -> Refusal:
         """Whether provisioning this node can create it, and why not when it cannot.
 
-        Callers offering a "create it" action ask first: attempting either of these can only
-        report the same refusal back, so the honest UI never offers the button.
+        The one place that decides. Callers offering a "create it" action ask first, so the honest
+        UI never offers the button; a surface saying what stands between a scenario and its first
+        `When` asks the same question and shows the same sentence.
         """
         node = self.node(node_id)
         if node.mode == REFERENCE:
-            return False, "reference resources must already exist in the environment — ATF never creates them"
+            return Refusal(
+                "must already exist in this environment — ATF never creates a reference resource",
+                blocks=True,
+            )
         if node.mode == DATA:
-            return False, "an observation, not a resource ATF makes — there is nothing here to create"
+            return Refusal("an observation, not a resource ATF makes — there is nothing here to create")
         if node.ephemeral:
-            return False, "built fresh for every run by the test that needs it"
-        return True, ""
+            return Refusal("built fresh for every run by the test that needs it")
+        return CREATABLE
 
     def materialize(
         self,

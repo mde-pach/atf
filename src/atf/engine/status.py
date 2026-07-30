@@ -138,6 +138,26 @@ class Statuses(Mapping[str, ResourceStatus]):
 
 
 @dataclass(frozen=True)
+class Refusal:
+    """Why ATF will not create a resource, and whether a run is stuck without it.
+
+    A reference resource that is absent stops a scenario reaching its first `When`; an observation
+    or an ephemeral one is simply not a precondition, and running is what deals with it.
+    """
+
+    why: str
+    blocks: bool = False
+
+    @property
+    def creatable(self) -> bool:
+        return not self.why
+
+
+# What a resource ATF can make says when asked why not.
+CREATABLE = Refusal(why="")
+
+
+@dataclass(frozen=True)
 class ProvisionResult:
     """What one node's turn in a provisioning pass did.
 

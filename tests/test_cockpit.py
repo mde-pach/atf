@@ -101,21 +101,21 @@ def test_an_absent_resource_is_not_a_blocker(client):
     Only states running cannot fix — no adapter, an adapter that raised, or a missing reference
     resource — actually stand between a scenario and its first `When`.
     """
-    nodes = catalog(client)
+    engine = provisioning_engine(client)
     status = client.session.status.of("dev")
     assert status.state("accounts.primary") == "absent"
 
-    ready = readiness(["projects.alpha"], nodes, status)
+    ready = readiness(["projects.alpha"], engine, status)
     assert ready.blocked is False
     assert set(ready.will_create) == {"projects.alpha", "accounts.primary"}
 
 
 def test_a_missing_reference_resource_does_block(client):
-    nodes = catalog(client)
+    engine = provisioning_engine(client)
     # The sample project's conftest seeds the widget, so state it absent to reach the other case.
     status = Statuses({**client.session.status.of("dev"), "widgets.imported": ResourceStatus(ABSENT)})
 
-    ready = readiness(["widgets.imported"], nodes, status)
+    ready = readiness(["widgets.imported"], engine, status)
     assert ready.blocked is True
     assert ready.blockers[0][0] == "widgets.imported"
     assert "never creates" in ready.blockers[0][1]
@@ -123,16 +123,15 @@ def test_a_missing_reference_resource_does_block(client):
 
 
 def test_an_unreachable_system_blocks(client):
-    nodes = catalog(client)
+    engine = provisioning_engine(client)
     status = Statuses({**client.session.status.of("dev"), "accounts.primary": ResourceStatus(UNSUPPORTED)})
 
-    ready = readiness(["projects.alpha"], nodes, status)
+    ready = readiness(["projects.alpha"], engine, status)
     assert [node_id for node_id, _ in ready.blockers] == ["accounts.primary"]
 
 
 def test_readiness_covers_the_whole_dependency_closure(client):
-    nodes = catalog(client)
-    assert nodes.closure("projects.alpha") == ["projects.alpha", "accounts.primary"]
+    assert catalog(client).closure("projects.alpha") == ["projects.alpha", "accounts.primary"]
 
 
 # ---- scenario state ---------------------------------------------------------

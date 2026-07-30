@@ -297,10 +297,12 @@ def test_data_mode_reads_back_what_is_there(engine, fake):
 
 
 def test_data_mode_is_never_offered_as_something_to_create(engine):
-    can, why = engine.provisionable("sightings.watched")
-    assert can is False
-    assert "an observation" in why
+    observation = engine.provisionable("sightings.watched")
+    assert observation.creatable is False
+    assert "an observation" in observation.why
+    assert observation.blocks is False, "an observation is not a precondition, so it stops nothing"
 
-    can, why = engine.provisionable("widgets.imported")
-    assert can is False
-    assert "must already exist" in why, "reference keeps its own reason, and its own behaviour"
+    reference = engine.provisionable("widgets.imported")
+    assert reference.creatable is False
+    assert "must already exist" in reference.why
+    assert reference.blocks is True, "a reference resource that is absent stops the scenario"

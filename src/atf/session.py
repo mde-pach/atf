@@ -206,7 +206,9 @@ class JobGateway:
         """The nodes a seed would actually touch, so the label and the button cannot disagree."""
         engine = self._environments.materializer(env)
         return [
-            nid for nid, entry in self._status.of(env).items() if entry.missing and engine.provisionable(nid)[0]
+            nid
+            for nid, entry in self._status.of(env).items()
+            if entry.missing and engine.provisionable(nid).creatable
         ]
 
     def start_run(

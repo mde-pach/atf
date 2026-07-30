@@ -197,13 +197,13 @@ def _make_fresh(
         pytest.fail(f"no resource type {resource_type!r} in the catalog (known types: {known})")
 
     node_id = engine.resolve_id(resource_type, name)
-    can, why = engine.provisionable(node_id)
-    if not can:
+    refusal = engine.provisionable(node_id)
+    if not refusal.creatable:
         # The three nodes nothing can provision are exactly the three there can be no fresh instance
         # of, and `provisionable` is where ATF already decides that — including for the cockpit's
         # "create it" button, which is the same question asked by a different surface.
         pytest.fail(
-            f"{_said(PROVISION_FRESH, resource_type, name)}: {why}. "
+            f"{_said(PROVISION_FRESH, resource_type, name)}: {refusal.why}. "
             f"Say `Given {_said(PROVISION, resource_type, name)}`, which is how this one is asked for."
         )
 

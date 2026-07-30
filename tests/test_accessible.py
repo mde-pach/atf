@@ -10,6 +10,8 @@ page uses, and that where it stops it stops predictably.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from atf.adapters.control import Page
@@ -206,19 +208,31 @@ def test_this_reading_and_a_browser_s_agree_on_what_a_name_matches():
     Nothing caught it, because nothing asked them the same question.
 
     Skipped where there is no browser, like every other scenario that needs one.
+
+    Playwright is asked in a thread of its own. Its sync API refuses to start inside a running
+    asyncio loop, and this suite runs in the same process as scenarios that drive a browser through
+    ATF — which holds one open until the session ends, by design.
     """
-    playwright = pytest.importorskip("playwright.sync_api")
+    pytest.importorskip("playwright.sync_api")
     markup = '<a href="/s"><span>Scenarios</span><span class="count">7</span></a><button>Save changes</button>'
     asked = [("link", "Scenarios"), ("link", "scenarios"), ("button", "Save"), ("button", "Discard")]
 
-    with playwright.sync_playwright() as play:
+    with ThreadPoolExecutor(max_workers=1) as alone:
+        theirs = alone.submit(_a_browser_reading, markup, asked).result()
+
+    ours = {(role, name): len(Page(markup).controls(role, name)) for role, name in asked}
+    assert ours == theirs
+
+
+def _a_browser_reading(markup: str, asked: list[tuple[str, str]]) -> dict[tuple[str, str], int]:
+    """What Playwright counts for each role and name, in a page it has rendered."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as play:
         browser = play.chromium.launch(headless=True)
         try:
             page = browser.new_page()
             page.set_content(markup)
-            theirs = {(role, name): page.get_by_role(role, name=name).count() for role, name in asked}
+            return {(role, name): page.get_by_role(role, name=name).count() for role, name in asked}
         finally:
             browser.close()
-
-    ours = {(role, name): len(Page(markup).controls(role, name)) for role, name in asked}
-    assert ours == theirs

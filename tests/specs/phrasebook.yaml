@@ -247,7 +247,7 @@
   - the result field "output" contains "built fresh for every run"
 
 'it says this one is never made here':
-  - the result field "output" contains "ATF never creates them"
+  - the result field "output" contains "never creates a reference resource"
 
 'it says to ask for it the ordinary way':
   - the result field "output" contains "which is how this one is asked for"

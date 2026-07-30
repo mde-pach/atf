@@ -56,9 +56,13 @@ Feature: The cockpit
     Then the cell "primary" is showing
     And the cell "The owner the list hangs off." is showing
 
-  Scenario: The list that duplicated the nav and the table is gone
+  Scenario: The instances are listed once, in the table, not again under a heading
+    # Said as a pair on purpose. On its own, "the heading is not showing" is also true of a page
+    # that failed to render, of a 404, and of a typo in the page's own name — so the positive half
+    # is what makes the negative half mean anything.
     Given the page "owner_type"
-    Then the heading "Declared in the catalog" is not showing
+    Then the cell "primary" is showing
+    And the heading "Declared in the catalog" is not showing
 
   Scenario: A resource that depends on something is drawn as well as described
     Given the page "groceries_node"
@@ -67,7 +71,8 @@ Feature: The cockpit
 
   Scenario: A resource that depends on nothing has no lineage to draw
     Given the page "primary_node"
-    Then the heading "Lineage" is not showing
+    Then the heading "Payload" is showing
+    And the heading "Lineage" is not showing
 
   Scenario: A payload shows the reference it will resolve at provisioning time
     Given the page "groceries_node"

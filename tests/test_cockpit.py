@@ -30,6 +30,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from atf.accessible import Page
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import Cockpit, set_cockpit
 from atf.cockpit.view import build_graph, closure_of, lineage_sentence, neighbourhood, readiness, scenario_views
@@ -365,12 +366,21 @@ def test_a_type_page_teaches_how_to_use_the_type(client):
 
 
 def test_a_type_shows_its_instances_and_what_the_environment_holds_in_one_table(client):
-    """They were two tables and a nav entry for the same resources. Declared-or-not is a column."""
-    body = client.get("/catalog/type/account").text
-    assert body.count("Declared in the catalog") == 0
-    assert "primary" in body and "secondary" in body
-    assert "The account every other resource hangs off." in body
-    assert body.index("INSTANCE") if "INSTANCE" in body else True  # the one table's first column
+    """They were two tables and a nav entry for the same resources. Declared-or-not is a column.
+
+    Read as a table rather than as a string. The line this replaces was
+    `assert body.index("INSTANCE") if "INSTANCE" in body else True`, which cannot fail: absent, it
+    asserts `True`; present, it asserts a truthy offset.
+    """
+    page = Page(client.get("/catalog/type/account").text)
+    rows = page.controls("row")
+    assert rows, "the type page shows no table at all"
+    assert [cell.name for cell in page.controls("columnheader")][:1] == ["instance"]
+
+    listed = {cell.name for cell in page.controls("cell")}
+    assert {"primary", "secondary"} <= listed
+    assert "The account every other resource hangs off." in listed
+    assert not page.controls("heading", "Declared in the catalog")
 
 
 def test_a_type_says_nothing_about_settings_that_are_the_default(client):
@@ -386,14 +396,35 @@ def test_a_type_says_nothing_about_settings_that_are_the_default(client):
     assert "never creates it" in reference
 
 
+def reading_order(page: Page) -> list[str]:
+    """Everything on a page with a name, in the order a reader meets it.
+
+    What "comes before" means, said about controls rather than about byte offsets. The assertions
+    this replaces compared `body.index(...)` of one substring with another, which is a claim about
+    where bytes landed and breaks when a template moves a wrapper.
+    """
+    return [control.name for control in page.controls() if control.name]
+
+
+def first(order: list[str], starting: str) -> int:
+    """Where the first thing whose name starts this way appears. Fails saying what was there."""
+    for position, name in enumerate(order):
+        if name.startswith(starting):
+            return position
+    raise AssertionError(f"nothing on this page is called {starting!r}. It carries: {order}")
+
+
 def test_the_inspector_puts_the_payload_beside_the_action(client):
     body = client.get("/catalog/node/projects.alpha").text
     assert "A project under the primary account." in body
     assert "${accounts.primary.id}" in body
     # One card: what it is, what would be sent, and the button that sends it. The button leads
     # because it is the reason the page was opened; the payload is the next thing read.
-    assert body.index("Provision alpha") < body.index("Payload")
-    assert body.index("Payload") < body.index("catalog/projects.yaml")
+    order = reading_order(Page(body))
+    assert first(order, "Provision alpha") < first(order, "Payload")
+    # There used to be a third line here, `body.index("Payload") < body.index("catalog/projects.yaml")`,
+    # and reading the page by control is what exposed it: that string is an `href`, not anything a
+    # person sees. It asserted where a URL fell in the bytes and read as a claim about the layout.
 
 
 def test_the_inspector_states_the_closure_the_action_will_create(client):

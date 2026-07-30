@@ -22,6 +22,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from atf.accessible import Page
 from atf.catalog import load_catalog
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import Cockpit, set_cockpit
@@ -133,13 +134,16 @@ def test_the_type_page_lists_what_the_environment_already_has(client, project, b
     """One table: what the catalog declares, a divider, then what only the environment has."""
     seed(project, "accounts", {"id": "account-9", "email": "third@example.test", "plan": "trial"})
 
-    body = client.get("/catalog/type/account").text
-    assert "not declared in the catalog" in body
-    assert "third@example.test" in body  # the record, labelled by its natural key
-    assert "plan trial" in body  # and the rest of what it carries
-    assert "Add to catalog" in body
-    # The declared instances are rows of the same table rather than a second list of them.
-    assert body.index("primary") < body.index("third@example.test")
+    page = Page(client.get("/catalog/type/account").text)
+    assert page.says("not declared in the catalog")
+    assert page.says("third@example.test")  # the record, labelled by its natural key
+    assert page.says("plan trial")  # and the rest of what it carries
+    assert page.controls("button", "Add to catalog") or page.says("Add to catalog")
+    # The declared instances are rows of the *same* table rather than a second list of them, so the
+    # one this suite declares is read before the one only the environment has. Said about the cells
+    # in document order rather than about where their bytes fell.
+    cells = [cell.name for cell in page.controls("cell")]
+    assert cells.index("primary") < cells.index("third@example.test")
 
 
 def test_a_record_the_catalog_already_declares_is_marked_not_offered(client, project, browsable):

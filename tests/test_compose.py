@@ -100,6 +100,20 @@ def fresh_feature(**overrides) -> dict[str, str]:
     return {key: value for key, value in data.items() if value is not None}
 
 
+def compare_options(client, data: dict[str, str]) -> set[str]:
+    """Which comparisons the Then row's picker was offered, read as values rather than as bytes.
+
+    The picker is one `<ul role="listbox">` among several on the page, and which one is decided by
+    the hidden input named for the row — so it is found by that name and read to the end of its list.
+    A slice from the input to the end of the *document* was what this replaced, and it happened to
+    work only because the compare picker is the last one rendered.
+    """
+    body = client.post("/compose/preview", data=data).text
+    after = body[body.index('name="compare_2"') :]
+    listbox = after[: after.index("</ul>")]
+    return set(re.findall(r'data-value="([^"]*)"', listbox))
+
+
 def esc(text: str) -> str:
     """Exactly as Jinja would have written it into the page."""
     return str(escape(text))
@@ -191,17 +205,29 @@ def test_a_parameterised_step_of_this_suites_own_still_gets_an_input_per_capture
 
 def test_the_page_says_what_is_yours_to_write_by_grouping_it(client):
     """Said by the shape of the list rather than by a paragraph above it: explaining what someone
-    is looking at is what you do when it is not clear enough on its own."""
+    is looking at is what you do when it is not clear enough on its own.
+
+    That the groups are *there* is this page's business, and that they come in a useful order is
+    `subject_options`' — see `test_introspect.py`. This used to slice the body from
+    `name="subject_2"` and compare `.index()` of one label against another, which is a claim about
+    where bytes fell.
+    """
     body = client.post("/compose/preview", data=draft()).text
-    subject_picker = body[body.index('name="subject_2"'):]
-    assert subject_picker.index("A resource") < subject_picker.index("A step this suite defines")
+    assert "A resource" in body and "A step this suite defines" in body
     assert "How a scenario is put together" not in body
 
 
-def test_a_suite_with_no_when_or_then_steps_is_told_how_to_write_one(client):
-    """With nothing to pick, the empty picker has to teach rather than just sit there."""
+def test_a_suite_with_no_when_or_then_steps_is_told_how_to_write_one(client, monkeypatch):
+    """With nothing to pick, the empty picker has to teach rather than just sit there.
+
+    The narrowing is undone afterwards. This used to assign to `discovery("dev").steps` in place,
+    and a `Discovery` is cached for the session — so every test that ran after it in this module saw
+    a suite with no `When` steps in it. Nothing failed, because `pytest-randomly` reshuffles and the
+    victims changed run to run, which is worse than a break: a test that poisons its neighbours
+    intermittently is a flake nobody can reproduce.
+    """
     found = client.cockpit.discovery("dev")
-    found.steps = [step for step in found.steps if step.keyword == "given"]
+    monkeypatch.setattr(found, "steps", [step for step in found.steps if step.keyword == "given"])
 
     body = client.get("/compose").text
     assert "defines no <code>When</code> or <code>Then</code> steps yet" in body
@@ -881,15 +907,17 @@ def test_a_written_scenario_reads_back_into_the_same_four_choices(client):
 
 
 def test_what_can_be_claimed_depends_on_whether_a_field_was_named(client):
-    about_itself = client.post("/compose/preview", data=claim(aspect="", compare="exists")).text
-    picker = about_itself[about_itself.index('name="compare_2"'):]
-    assert 'data-value="exists"' in picker and 'data-value="gone"' in picker
-    assert 'data-value="is"' not in picker
+    """A claim about the resource itself can only be that it is there or gone; one about a field can
+    compare. Read from the options the picker was given rather than from a slice of the page: the
+    comparison list is data, and slicing bytes from `name="compare_2"` onwards said so by accident.
+    """
+    about_itself = compare_options(client, claim(aspect="", compare="exists"))
+    assert {"exists", "gone"} <= about_itself
+    assert "is" not in about_itself
 
-    about_a_field = client.post("/compose/preview", data=claim()).text
-    picker = about_a_field[about_a_field.index('name="compare_2"'):]
-    assert 'data-value="is"' in picker and 'data-value="is-not"' in picker
-    assert 'data-value="exists"' not in picker
+    about_a_field = compare_options(client, claim())
+    assert {"is", "is-not"} <= about_a_field
+    assert "exists" not in about_a_field
 
 
 def test_a_field_can_be_chosen_by_what_it_currently_holds(client):

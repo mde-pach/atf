@@ -40,6 +40,7 @@ from atf.introspect import (
     make_row,
     offered_steps,
     reachable,
+    subject_options,
     usable,
 )
 from atf.steps import GENERIC_STEPS
@@ -261,6 +262,33 @@ def test_a_step_is_offered_only_where_the_rows_above_it_have_fed_it(needs, needs
     step = StepDef(keyword="then", pattern="whatever", needs=needs, needs_slot=needs_slot)
     row = Row(index=1, keyword="then", held=held, produced=produced)
     assert usable(step, row) is offered
+
+
+def test_what_a_claim_can_be_about_is_offered_resources_first(surface):
+    """The order the groups come in is the order somebody reads them, so it is worth pinning.
+
+    An author looking for "check this field" takes the first plausible thing they see. If that is a
+    step the project had to write, they conclude that assertions are something you write — and they
+    are not, for anything in the catalog.
+
+    Asserted on the options rather than on the page. `test_compose.py` used to slice the rendered
+    HTML from `name="subject_2"` and compare `.index()` of one group label against another, which is
+    a claim about where bytes fell in a template. The order is decided here.
+    """
+    row = Row(index=1, keyword="then", held={"result"}, produced={"result"})
+    groups = [option["group"] for option in subject_options(surface, offered_steps(surface, FEATURE)["then"], row)]
+    seen = list(dict.fromkeys(groups))
+
+    assert seen[0] == "A resource", f"a resource is not offered first; the order is {seen}"
+    # Whatever the suite had to write for itself — a step, or a phrase over steps that needed none —
+    # comes after everything the catalog already knows. Named as the category rather than as one
+    # label, because which of the two a suite has is a fact about that suite.
+    written = [group for group in seen if "suite" in group]
+    assert written, f"nothing the suite wrote is offered at all; the order is {seen}"
+    assert seen.index("A resource") < min(seen.index(group) for group in written)
+    # Every group is contiguous: the template only prints a heading when the group changes, so a
+    # group appearing twice would render as two headings with the same name.
+    assert len(seen) == len({*seen}), f"a group is split in two: {groups}"
 
 
 # ---- these choices, and the Gherkin they mean --------------------------------

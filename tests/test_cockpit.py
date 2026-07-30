@@ -516,7 +516,9 @@ def test_htmx_requests_return_fragments_not_whole_pages(client, path):
     response = client.get(path, headers={"HX-Request": "true"})
     assert response.status_code == 200
     assert "<!doctype html>" not in response.text.lower()
-    assert 'class="rail"' not in response.text
+    # No page furniture, said as what a reader would look for rather than as a CSS class: a fragment
+    # that carried the rail would put a second navigation inside the page it was swapped into.
+    assert not Page(response.text).controls("navigation", "Sections")
 
 
 def test_an_error_never_replaces_the_content_it_was_triggered_from(client):

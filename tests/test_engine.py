@@ -25,6 +25,8 @@ Everything here uses the fake adapter from `conftest.py`, so it is fast and touc
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from atf.adapters import build, register, registered_systems, unregister
@@ -110,15 +112,25 @@ def test_status_reports_adapter_errors(engine, fake):
     assert "backend down" in entry["detail"]
 
 
-def test_teardown_never_raises(engine, fake):
-    """A scenario that passed must not be turned red by the cleanup after it."""
+def test_teardown_reports_what_it_swallowed_rather_than_raising(engine, fake, caplog):
+    """A scenario that passed must not be turned red by the cleanup after it — and a failure that is
+    swallowed silently is a resource nobody knows was left behind.
+
+    The assertion used to be the absence of an exception, which is invisible: the body ended and the
+    test passed, and a reader could not see what was being claimed. Swallowing is only defensible if
+    it says so, so that is what is checked.
+    """
     outcome = engine.materialize(["leads.walkin"])
 
     def explode(node, record, ctx):
         raise RuntimeError("backend down")
 
-    fake.delete = explode  # type: ignore[method-assign]
-    engine.teardown(outcome["records"])
+    fake.delete = explode  # ty: ignore[invalid-assignment]
+    with caplog.at_level(logging.WARNING, logger="atf.materializer"):
+        engine.teardown(outcome["records"])
+
+    assert "teardown of leads.walkin failed" in caplog.text
+    assert "backend down" in caplog.text
 
 
 # ---- provisioning for a scenario is not provisioning for a seed --------------

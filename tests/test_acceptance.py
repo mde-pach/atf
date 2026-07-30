@@ -257,4 +257,9 @@ def test_loading_a_catalog_touches_nothing_but_the_filesystem(good_catalog, monk
 
     monkeypatch.setattr(socket, "socket", explode)
     monkeypatch.setattr(socket, "create_connection", explode)
-    load_catalog(good_catalog, {"fake"})
+
+    # The assertion is `explode`: the loader reaching for the network fails the test from inside it.
+    # Said out loud because a test body that just calls something and ends reads like an oversight,
+    # and what it is worth checking is also that the loader still did its job.
+    types, nodes = load_catalog(good_catalog, {"fake"})
+    assert types and nodes, "the loader read nothing, so it proved nothing about not connecting"

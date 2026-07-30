@@ -34,6 +34,7 @@ from atf.accessible import Page
 from atf.cockpit.app import create_app
 from atf.cockpit.deps import Cockpit, set_cockpit
 from atf.cockpit.view import build_graph, closure_of, lineage_sentence, neighbourhood, readiness, scenario_views
+from atf.engine.status import ABSENT, UNSUPPORTED, ResourceStatus, Statuses
 from tests.sample_project import write_sample_project
 
 REPO_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
@@ -101,7 +102,7 @@ def test_an_absent_resource_is_not_a_blocker(client):
     """
     nodes = catalog(client)
     status = client.cockpit.status("dev")
-    assert status["accounts.primary"]["status"] == "absent"
+    assert status.state("accounts.primary") == "absent"
 
     ready = readiness(["projects.alpha"], nodes, status)
     assert ready.blocked is False
@@ -111,7 +112,7 @@ def test_an_absent_resource_is_not_a_blocker(client):
 def test_a_missing_reference_resource_does_block(client):
     nodes = catalog(client)
     # The sample project's conftest seeds the widget, so state it absent to reach the other case.
-    status = {**client.cockpit.status("dev"), "widgets.imported": {"status": "absent"}}
+    status = Statuses({**client.cockpit.status("dev"), "widgets.imported": ResourceStatus(ABSENT)})
 
     ready = readiness(["widgets.imported"], nodes, status)
     assert ready.blocked is True
@@ -122,7 +123,7 @@ def test_a_missing_reference_resource_does_block(client):
 
 def test_an_unreachable_system_blocks(client):
     nodes = catalog(client)
-    status = {**client.cockpit.status("dev"), "accounts.primary": {"status": "unsupported"}}
+    status = Statuses({**client.cockpit.status("dev"), "accounts.primary": ResourceStatus(UNSUPPORTED)})
 
     ready = readiness(["projects.alpha"], nodes, status)
     assert [node_id for node_id, _ in ready.blockers] == ["accounts.primary"]
@@ -250,7 +251,7 @@ def test_provisioning_runs_as_a_job_with_per_node_progress(client):
     assert "accounts.primary" in job.items
 
     wait_for_job(client)
-    assert client.cockpit.status("dev")["accounts.primary"]["status"] == "present"
+    assert client.cockpit.status("dev").state("accounts.primary") == "present"
 
 
 def test_a_run_is_the_same_shape_of_job(client):
@@ -289,8 +290,8 @@ def test_provisioning_one_node_pulls_in_its_dependencies(client):
     wait_for_job(client)
 
     status = client.cockpit.status("dev")
-    assert status["projects.alpha"]["status"] == "present"
-    assert status["accounts.primary"]["status"] == "present"
+    assert status.state("projects.alpha") == "present"
+    assert status.state("accounts.primary") == "present"
 
 
 def test_an_environment_never_has_two_jobs_at_once(client):
@@ -563,7 +564,7 @@ def test_the_graph_places_columns_by_depth_with_bezier_edges(client):
 
 def test_an_isolated_node_is_a_single_box(client):
     nodes = catalog(client)
-    graph = build_graph(nodes, "widgets.imported", {})
+    graph = build_graph(nodes, "widgets.imported", Statuses())
     assert [box.id for box in graph.boxes] == ["widgets.imported"]
     assert graph.edges == []
 

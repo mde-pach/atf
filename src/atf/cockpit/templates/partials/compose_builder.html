@@ -293,7 +293,7 @@
                               empty='No ' ~ row.resource_type ~ ' by that name. Declare one first.') }}
                 {% endif %}
                 {% if row.node_id %}
-                  {% set state = status.get(row.node_id, {}).get('status', '') %}
+                  {% set state = status.state(row.node_id) %}
                   {{ ui.ref('resource', u('/catalog/node/' ~ row.node_id), row.node_id, status=state) }}
                 {% endif %}
               </div>
@@ -333,7 +333,7 @@
               {% if row.takes_table %}{{ table_rows(row) }}{% endif %}
 
               {% if row.node_id %}
-                {% set state = status.get(row.node_id, {}).get('status', '') %}
+                {% set state = status.state(row.node_id) %}
                 <div class="drop">
                   {{ ui.ref('resource', u('/catalog/node/' ~ row.node_id), row.node_id, status=state) }}
                 </div>

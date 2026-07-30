@@ -22,7 +22,8 @@ from markupsafe import Markup
 
 from ...adapters import can_browse
 from ...catalog import TYPES_FILE, Node, natural_keys
-from ...materializer import ABSENT, ERROR, ScopeRequired
+from ...engine.status import Statuses
+from ...materializer import Materializer, ScopeRequired
 from ...placeholders import Unresolved, references
 from ..view import (
     TypeView,
@@ -174,11 +175,11 @@ def _context(
     return context
 
 
-def _node_context(env: str, node: Node, nodes: dict[str, Node], status: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _node_context(env: str, node: Node, nodes: dict[str, Node], status: Statuses) -> dict[str, Any]:
     cockpit = app()
     found = cockpit.discovery(env)
     node_id = node["id"]
-    entry = status.get(node_id, {})
+    entry = status.of(node_id)
     creatable, why = cockpit.state(env).materializer.provisionable(node_id)
     closure = closure_of(node_id, nodes)
 
@@ -191,15 +192,15 @@ def _node_context(env: str, node: Node, nodes: dict[str, Node], status: dict[str
         "needed_by": [nodes[dep] for dep in node["dependents"] if dep in nodes],
         "specs": found.specs_for_resource(node_id),
         "payload": _payload(node["body"]),
-        "identity": entry.get("identity", ""),
-        "state": entry.get("status", ""),
-        "detail": entry.get("detail", ""),
+        "identity": entry.identity or "",
+        "state": entry.state,
+        "detail": entry.detail,
         "node_label": _node_label(node, closure),
         "node_blocked": "" if creatable else why,
     }
 
 
-def _type_context(env: str, view: TypeView | None, status: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _type_context(env: str, view: TypeView | None, status: Statuses) -> dict[str, Any]:
     if view is None:
         return {
             "type_targets": [],
@@ -211,7 +212,7 @@ def _type_context(env: str, view: TypeView | None, status: dict[str, dict[str, A
     targets = [
         node["id"]
         for node in view.nodes
-        if status.get(node["id"], {}).get("status") in {ABSENT, ERROR} and engine.provisionable(node["id"])[0]
+        if status.of(node["id"]).missing and engine.provisionable(node["id"])[0]
     ]
     return {
         "type_targets": targets,
@@ -366,19 +367,17 @@ class InstanceRow:
         return self.node is not None
 
 
-def instance_rows(
-    view: TypeView | None, status: dict[str, dict[str, Any]], records: EnvRecords | None
-) -> list[InstanceRow]:
+def instance_rows(view: TypeView | None, status: Statuses, records: EnvRecords | None) -> list[InstanceRow]:
     """Everything of this type: what the catalog declares first, then what only the environment has."""
     if view is None:
         return []
     rows = [
         InstanceRow(
             label=node["name"],
-            status=str(status.get(node["id"], {}).get("status", "unknown")),
+            status=status.state(node["id"]),
             detail=node["represents"],
             node=node,
-            identity=str(status.get(node["id"], {}).get("identity", "") or ""),
+            identity=str(status.identity(node["id"]) or ""),
         )
         for node in view.nodes
     ]
@@ -418,16 +417,12 @@ def instance_files() -> list[str]:
 
 def _identities(env: str) -> dict[str, Any]:
     """Every node's identity out there, taken from the status the page has already read."""
-    return {
-        node_id: entry["identity"]
-        for node_id, entry in app().status(env).items()
-        if entry.get("identity") not in (None, "")
-    }
+    return app().status(env).identities()
 
 
 def _declared(
     env: str,
-    engine: Any,
+    engine: Materializer,
     view: TypeView,
     keys: list[str],
 ) -> tuple[dict[str, Node], dict[tuple[str, ...] | None, Node]]:

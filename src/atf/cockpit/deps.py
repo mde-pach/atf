@@ -11,12 +11,12 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any
 
 from ..bootstrap import Boot, bootstrap
 from ..discovery import Discovery, discover
+from ..engine.status import Statuses
 from ..jobs import RUN, Job, JobRunner
-from ..materializer import ABSENT, ERROR, Materializer
+from ..materializer import Materializer
 from ..runner import RunRecord, RunSummary, TestResult
 from ..runner import run as run_tests
 from ..store import RunStore
@@ -32,7 +32,7 @@ class EnvState:
     # FastAPI runs sync endpoints in a threadpool, so a check-then-act would launch duplicate
     # discovery subprocesses against one environment.
     lock: threading.Lock = field(default_factory=threading.Lock)
-    status: dict[str, dict[str, Any]] = field(default_factory=dict)
+    status: Statuses = field(default_factory=Statuses)
     status_at: float = 0.0
     discovery: Discovery | None = None
     discovery_at: float = 0.0
@@ -82,7 +82,7 @@ class Cockpit:
 
     # ---- cached views -----------------------------------------------------
 
-    def status(self, env: str | None = None, refresh: bool = False) -> dict[str, dict[str, Any]]:
+    def status(self, env: str | None = None, refresh: bool = False) -> Statuses:
         state = self.state(env)
         self._fold(state)  # a provision job that has finished since means the cache is stale
         if not (refresh or not state.status):
@@ -135,7 +135,7 @@ class Cockpit:
     @staticmethod
     def _drop(state: EnvState) -> None:
         state.materializer.reload()
-        state.status = {}
+        state.status = Statuses()
         state.status_at = 0.0
         state.discovery = None
         state.discovery_at = 0.0
@@ -174,7 +174,7 @@ class Cockpit:
         return [
             nid
             for nid, entry in self.status(env).items()
-            if entry["status"] in {ABSENT, ERROR} and engine.provisionable(nid)[0]
+            if entry.missing and engine.provisionable(nid)[0]
         ]
 
     def start_run(self, nodeids: list[str], env: str | None = None) -> Job:
@@ -225,7 +225,7 @@ class Cockpit:
             # Either kind moves the environment on, so the cached status is now a claim about a
             # world that no longer exists. A run provisions too — naming a resource in a scenario
             # is what creates it — so it invalidates exactly as provisioning does.
-            state.status = {}
+            state.status = Statuses()
             state.status_at = 0.0
             state.results_at = max(state.results_at, job.finished_at)
 

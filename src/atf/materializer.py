@@ -26,29 +26,32 @@ from .adapters import (
 from .catalog import (
     BUILT_IN_ACTIONS,
     DATA,
+    EPHEMERAL,
+    REFERENCE,
     UNIVERSAL_TYPE_KEYS,
     Node,
     find_node,
     load_catalog,
     natural_keys,
 )
-from .catalog import REFERENCE as REFERENCE_MODE
+from .engine.status import (
+    ABSENT,
+    BLOCKED,
+    CREATED,
+    ERROR,
+    EXISTS,
+    OBSERVED,
+    PRESENT,
+    UNSUPPORTED,
+    ProvisionOutcome,
+    ProvisionResult,
+    ResourceStatus,
+    Statuses,
+)
 from .placeholders import Unresolved, references
 from .placeholders import resolve as resolve_placeholders
 
 log = logging.getLogger("atf.materializer")
-
-PRESENT = "present"
-ABSENT = "absent"
-EPHEMERAL = "ephemeral"
-UNSUPPORTED = "unsupported"
-ERROR = "error"
-BLOCKED = "blocked"
-
-CREATED = "created"
-EXISTS = "exists"
-REFERENCE = "reference"
-OBSERVED = "observed"
 
 # ---- an instance of one scenario's own --------------------------------------
 #
@@ -286,33 +289,30 @@ class Materializer:
         except Unresolved:
             return None
 
-    def status(self, collection: str | None = None) -> dict[str, dict[str, Any]]:
+    def status(self, collection: str | None = None) -> Statuses:
         self._ids.clear()
         self.invalidate_cache()
-        out: dict[str, dict[str, Any]] = {}
+        out: dict[str, ResourceStatus] = {}
         for nid, node in sorted(self.nodes.items()):
             if collection is not None and node["collection"] != collection:
                 continue
             out[nid] = self._status_of(node)
-        return out
+        return Statuses(out)
 
-    def _status_of(self, node: Node) -> dict[str, Any]:
+    def _status_of(self, node: Node) -> ResourceStatus:
         if node["system"] not in self.adapters:
-            return {"status": UNSUPPORTED, "detail": f"no adapter for system {node['system']!r} in env {self.env}"}
+            return ResourceStatus(UNSUPPORTED, f"no adapter for system {node['system']!r} in env {self.env}")
         if node["lifecycle"] == EPHEMERAL:
-            return {"status": EPHEMERAL, "detail": "built per run"}
+            return ResourceStatus(EPHEMERAL, "built per run")
         try:
             record = self.find_existing(node)
         except Exception as exc:
-            return {"status": ERROR, "detail": _short(exc)}
+            return ResourceStatus(ERROR, _short(exc))
         if record is None:
-            return {"status": ABSENT, "detail": ""}
+            return ResourceStatus(ABSENT)
         identity = record.get(node["id_field"])
         self._ids[node["id"]] = identity
-        # The record travels with the status because a caller offering an assertion on one of its
-        # fields needs to know which fields there are, and what each holds right now. Reading it a
-        # second time would ask the backend the same question twice per page.
-        return {"status": PRESENT, "detail": "", "identity": identity, "record": record}
+        return ResourceStatus(PRESENT, identity=identity, record=record)
 
     # ---- writes -----------------------------------------------------------
 
@@ -323,7 +323,7 @@ class Materializer:
         report the same refusal back, so the honest UI never offers the button.
         """
         node = self.node(node_id)
-        if node["mode"] == REFERENCE_MODE:
+        if node["mode"] == REFERENCE:
             return False, "reference resources must already exist in the environment — ATF never creates them"
         if node["mode"] == DATA:
             return False, "an observation, not a resource ATF makes — there is nothing here to create"
@@ -336,10 +336,10 @@ class Materializer:
         subset: Iterable[str],
         keep_going: bool = False,
         on_start: Callable[[str], None] | None = None,
-        on_result: Callable[[dict[str, Any]], None] | None = None,
+        on_result: Callable[[ProvisionResult], None] | None = None,
         overrides: Mapping[str, Record] | None = None,
         fresh: str = "",
-    ) -> dict[str, Any]:
+    ) -> ProvisionOutcome:
         """Provision `subset` and everything it depends on, dependency-first.
 
         Stops at the first failure by default: provisioning failures are usually correlated (a bad
@@ -363,7 +363,7 @@ class Materializer:
         # session-scoped, and the system under test mutates the same backend between passes.
         self._ids.clear()
         self.invalidate_cache()
-        results: list[dict[str, Any]] = []
+        results: list[ProvisionResult] = []
         records: dict[str, Record] = {}
 
         # Provision the closure of what was asked for, not just the listed nodes: a dependency
@@ -380,12 +380,9 @@ class Materializer:
             # Dependencies come first in topo order, so checking the direct ones is transitive.
             blocker = next((dep for dep in node["depends_on"] if dep in stalled), None)
             if blocker is not None:
-                blocked = {
-                    "id": nid,
-                    "action": BLOCKED,
-                    "ok": False,
-                    "detail": f"depends on {blocker}, which did not provision",
-                }
+                blocked = ProvisionResult(
+                    nid, BLOCKED, ok=False, detail=f"depends on {blocker}, which did not provision"
+                )
                 results.append(blocked)
                 stalled.add(nid)
                 _notify(on_result, blocked)
@@ -393,16 +390,15 @@ class Materializer:
 
             _notify(on_start, nid)
             held = None if nid == fresh else self._fresh.get(nid)
-            outcome: dict[str, Any]
             if held is not None:
                 # This scenario already has one of these of its own, and a dependent asking for the
                 # shared one behind its back would be the isolation quietly not happening.
-                outcome = {"id": nid, "action": EXISTS, "ok": True, "record": held[1]}
+                outcome = ProvisionResult(nid, EXISTS, ok=True, record=held[1])
             else:
                 outcome = self._attempt(node, (overrides or {}).get(nid), fresh=nid == fresh)
             results.append(outcome)
-            if outcome["ok"]:
-                record = outcome.pop("record")
+            if outcome.ok:
+                record = outcome.record or {}
                 self._ids[nid] = record.get(node["id_field"])
                 records[nid] = record
                 _notify(on_result, outcome)
@@ -413,33 +409,33 @@ class Materializer:
             if not keep_going:
                 break
 
-        return {"results": results, "records": records}
+        return ProvisionOutcome(results=results, records=records)
 
-    def _attempt(self, node: Node, overrides: Record | None = None, fresh: bool = False) -> dict[str, Any]:
-        """Provision one node. Returns a result entry, carrying `record` when it succeeded."""
+    def _attempt(self, node: Node, overrides: Record | None = None, fresh: bool = False) -> ProvisionResult:
+        """Provision one node. Returns a result carrying `record` when it succeeded."""
         nid = node["id"]
         adapter = self.adapters.get(node["system"])
         if adapter is None:
             detail = f"no adapter for system {node['system']!r} in env {self.env}"
-            return {"id": nid, "action": UNSUPPORTED, "ok": False, "detail": detail}
+            return ProvisionResult(nid, UNSUPPORTED, ok=False, detail=detail)
 
         try:
             record, action = self._provision(_varied(node, overrides), adapter, fresh)
         except Exception as exc:  # noqa: BLE001 - reported, not raised: callers read `results`
-            return {"id": nid, "action": ERROR, "ok": False, "detail": _short(exc)}
+            return ProvisionResult(nid, ERROR, ok=False, detail=_short(exc))
 
         if record is None:
             # An absent observation is an answer, not a failure: `data` says "look at this", and
             # "it is not there" is one of the things a scenario may want to claim about it.
             if node["mode"] == DATA:
-                return {"id": nid, "action": OBSERVED, "ok": True, "record": {}}
-            return {"id": nid, "action": action, "ok": False, "detail": "reference resource not found"}
-        return {"id": nid, "action": action, "ok": True, "record": record}
+                return ProvisionResult(nid, OBSERVED, ok=True, record={})
+            return ProvisionResult(nid, action, ok=False, detail="reference resource not found")
+        return ProvisionResult(nid, action, ok=True, record=record)
 
     def _provision(self, node: Node, adapter: Adapter, fresh: bool = False) -> tuple[Record | None, str]:
         if node["mode"] == DATA:
             return adapter.find(node, self), OBSERVED
-        if node["mode"] == REFERENCE_MODE:
+        if node["mode"] == REFERENCE:
             return adapter.find(node, self), REFERENCE
 
         # An isolated instance is not looked up, for the same reason an ephemeral one is not: the
@@ -489,10 +485,10 @@ class Materializer:
 
     def create_closure(
         self, nid: str, keep_going: bool = False, overrides: Mapping[str, Record] | None = None
-    ) -> dict[str, Any]:
+    ) -> ProvisionOutcome:
         return self.materialize(self.closure(nid), keep_going=keep_going, overrides=overrides)
 
-    def create_all(self, keep_going: bool = False) -> dict[str, Any]:
+    def create_all(self, keep_going: bool = False) -> ProvisionOutcome:
         return self.materialize(list(self.nodes), keep_going=keep_going)
 
     def ensure(self, resource_type: str, name: str, overrides: Record | None = None) -> Record:
@@ -514,11 +510,11 @@ class Materializer:
         outcome = self.create_closure(nid, overrides={nid: overrides} if overrides else None)
         return self._ensured(nid, outcome)
 
-    def _ensured(self, nid: str, outcome: dict[str, Any]) -> tuple[Record, dict[str, Record]]:
-        for result in outcome["results"]:
-            if not result["ok"]:
-                raise ProvisioningError(str(result["id"]), str(result.get("detail", "")))
-        records: dict[str, Record] = outcome["records"]
+    def _ensured(self, nid: str, outcome: ProvisionOutcome) -> tuple[Record, dict[str, Record]]:
+        failure = next(iter(outcome.failures), None)
+        if failure is not None:
+            raise ProvisioningError(failure.node_id, failure.detail)
+        records = outcome.records
         record = records.get(nid)
         if record is None:
             raise ProvisioningError(nid, "adapter returned no record")

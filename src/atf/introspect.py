@@ -41,6 +41,7 @@ from .catalog import Node, find_node, natural_keys
 from .compare import MARKERS
 from .context import RESULT
 from .discovery import GIVEN, THEN, WHEN, Discovery, StepDef, fill
+from .engine.status import ResourceStatus, Statuses
 from .materializer import Materializer
 from .runner import ERROR, PASSED, TestResult
 from .runner import run as run_tests
@@ -110,7 +111,7 @@ class Surface:
     specs_dir: Path
     engine: Materializer
     found: Discovery
-    status: dict[str, dict[str, Any]] = field(default_factory=dict)
+    status: Statuses = field(default_factory=Statuses)
 
     @property
     def nodes(self) -> dict[str, Node]:
@@ -135,7 +136,7 @@ class FieldChoice:
         return self.source
 
 
-def field_choices(node: Node, entry: dict[str, Any] | None) -> list[FieldChoice]:
+def field_choices(node: Node, entry: ResourceStatus) -> list[FieldChoice]:
     """The fields of one resource, best-known first.
 
     Three sources, in decreasing authority: what the environment's record actually carries, what
@@ -143,7 +144,7 @@ def field_choices(node: Node, entry: dict[str, Any] | None) -> list[FieldChoice]
     it is recognised by. A field is only ever *offered*; nothing here requires one to exist, which
     is the line the framework holds on record shape.
     """
-    record = (entry or {}).get("record") or {}
+    record = entry.fields
     declared = node["body"]
     named = [node["id_field"], *natural_keys(node["config"])]
 
@@ -640,7 +641,7 @@ def type_options(surface: Surface) -> list[dict[str, str]]:
     options: list[dict[str, str]] = []
     for name in sorted(engine.types):
         members = instances.get(name, [])
-        present = sum(1 for node in members if status.get(node["id"], {}).get("status") == "present")
+        present = sum(1 for node in members if status.of(node["id"]).present)
         entry = engine.types[name]
         lifecycle = str(entry.get("lifecycle", "persistent"))
         mode = str(entry.get("mode", "create"))
@@ -658,7 +659,7 @@ def type_options(surface: Surface) -> list[dict[str, str]]:
     return options
 
 
-def instance_options(members: list[Node], status: dict[str, Any]) -> list[dict[str, str]]:
+def instance_options(members: list[Node], status: Statuses) -> list[dict[str, str]]:
     """The resources of one type, each with where it stands and what it is for.
 
     Choosing between `primary` and `secondary` is impossible from the names alone, which is exactly
@@ -668,7 +669,7 @@ def instance_options(members: list[Node], status: dict[str, Any]) -> list[dict[s
         {
             "value": node["name"],
             "label": node["name"],
-            "meta": str(status.get(node["id"], {}).get("status", "unknown")),
+            "meta": status.state(node["id"]),
             "desc": node["represents"] or node["id"],
         }
         for node in members
@@ -682,7 +683,7 @@ def resource_options(surface: Surface, group: str = "") -> list[dict[str, str]]:
             "value": f"{NODE_SUBJECT}{node['id']}",
             "label": node["name"],
             "meta": node["resource"],
-            "desc": node["represents"] or str(status.get(node["id"], {}).get("status", "")),
+            "desc": node["represents"] or status.state(node["id"]),
             "group": group,
         }
         for node in sorted(surface.nodes.values(), key=lambda item: (item["resource"], item["name"]))
@@ -806,7 +807,7 @@ def aspect_options(surface: Surface, node_id: str) -> list[dict[str, str]]:
         return options
     return options + [
         {"value": choice.name, "label": choice.name, "meta": choice.current, "desc": choice.source}
-        for choice in field_choices(node, surface.status.get(node_id))
+        for choice in field_choices(node, surface.status.of(node_id))
     ]
 
 
@@ -828,7 +829,7 @@ def table_fields(surface: Surface, row: Row) -> list[dict[str, str]]:
         return []
     return [
         {"name": choice.name, "current": choice.current, "source": choice.source}
-        for choice in field_choices(node, surface.status.get(row.node_id))
+        for choice in field_choices(node, surface.status.of(row.node_id))
     ]
 
 
@@ -862,7 +863,7 @@ def field_options(surface: Surface, resource_type: str, name: str) -> list[dict[
         return []
     return [
         {"value": choice.name, "label": choice.name, "meta": choice.current, "desc": choice.source}
-        for choice in field_choices(node, surface.status.get(node["id"]))
+        for choice in field_choices(node, surface.status.of(node["id"]))
     ]
 
 
@@ -873,7 +874,7 @@ def current_value(surface: Surface, resource_type: str, name: str, of_field: str
     return next(
         (
             choice.current
-            for choice in field_choices(node, surface.status.get(node["id"]))
+            for choice in field_choices(node, surface.status.of(node["id"]))
             if choice.name == of_field
         ),
         "",
@@ -982,19 +983,19 @@ def _types_described(surface: Surface) -> list[dict[str, Any]]:
 def _resources_described(surface: Surface) -> list[dict[str, Any]]:
     described: list[dict[str, Any]] = []
     for node in sorted(surface.nodes.values(), key=lambda item: (item["resource"], item["name"])):
-        entry = surface.status.get(node["id"], {})
+        entry = surface.status.of(node["id"])
         described.append(
             {
                 "id": node["id"],
                 "type": node["resource"],
                 "name": node["name"],
                 "represents": node["represents"],
-                "status": str(entry.get("status", "unknown")),
-                "detail": str(entry.get("detail", "")),
+                "status": entry.state,
+                "detail": entry.detail,
                 "depends_on": list(node["depends_on"]),
                 "fields": [
                     {"name": choice.name, "current": choice.current, "source": choice.source}
-                    for choice in field_choices(node, entry or None)
+                    for choice in field_choices(node, entry)
                 ],
             }
         )

@@ -18,9 +18,10 @@ from urllib.parse import urlencode
 from fastapi import HTTPException, Request
 from fastapi.templating import Jinja2Templates
 
-from ..catalog import Node
+from ..catalog import DATA, EPHEMERAL, REFERENCE, Node
 from ..discovery import Spec, Step, Test
-from ..materializer import ABSENT, EPHEMERAL, ERROR, PRESENT, UNSUPPORTED
+from ..engine.status import ABSENT, ERROR, PRESENT, UNSUPPORTED, Statuses
+from ..engine.status import TONES as STATUS_TONES
 from ..runner import FAILED, PASSED, SKIPPED, StepResult, TestResult
 from .deps import Cockpit, get_cockpit
 from .glossary import TERMS, Term, docs_url
@@ -164,22 +165,22 @@ class Readiness:
         return bool(self.blockers)
 
 
-def readiness(node_ids: list[str], nodes: dict[str, Node], status: dict[str, dict[str, Any]]) -> Readiness:
+def readiness(node_ids: list[str], nodes: dict[str, Node], status: Statuses) -> Readiness:
     out = Readiness()
     seen: set[str] = set()
     for node_id in node_ids:
         for member in closure_of(node_id, nodes, seen):
-            state = status.get(member, {}).get("status", "")
-            reason = _BLOCKING.get(state)
+            entry = status.of(member)
+            reason = _BLOCKING.get(entry.state)
             if reason:
                 out.blockers.append((member, reason))
-            elif state == ABSENT and nodes[member]["mode"] == "reference":
+            elif entry.state == ABSENT and nodes[member]["mode"] == REFERENCE:
                 out.blockers.append((member, "must already exist here — ATF never creates a reference resource"))
-            elif nodes[member]["mode"] == "data":
+            elif nodes[member]["mode"] == DATA:
                 # An observation is not a precondition. Absent means only "not there yet", which is
                 # frequently the very thing the scenario is about to claim.
                 continue
-            elif state == ABSENT:
+            elif entry.state == ABSENT:
                 out.will_create.append(member)
     return out
 
@@ -354,7 +355,7 @@ def type_views(env: str) -> dict[str, TypeView]:
         if view is None:
             continue
         view.nodes.append(node)
-        state = status.get(node["id"], {}).get("status", "")
+        state = status.state(node["id"])
         view.counts[state] = view.counts.get(state, 0) + 1
 
     for spec in found.specs:
@@ -458,7 +459,7 @@ def neighbourhood(nodes: dict[str, Node], focus: str) -> dict[str, int]:
     return layers
 
 
-def build_graph(nodes: dict[str, Node], focus: str, status: dict[str, dict[str, Any]]) -> Graph:
+def build_graph(nodes: dict[str, Node], focus: str, status: Statuses) -> Graph:
     layers = neighbourhood(nodes, focus)
     columns: dict[int, list[str]] = {}
     for node_id, column in sorted(layers.items()):
@@ -488,7 +489,7 @@ def build_graph(nodes: dict[str, Node], focus: str, status: dict[str, dict[str, 
                     x=x,
                     y=y,
                     focus=node_id == focus,
-                    status=status.get(node_id, {}).get("status", ""),
+                    status=status.state(node_id),
                     system=node["system"],
                     represents=node["represents"],
                 )
@@ -526,25 +527,16 @@ def lineage_sentence(node: Node, nodes: dict[str, Node]) -> str:
 # ---- status vocabulary ------------------------------------------------------
 
 TONES = {
-    PRESENT: "ok",
+    **STATUS_TONES,
     PASSED: "ok",
     PASSING: "ok",
-    "created": "ok",
-    "exists": "ok",
-    ABSENT: "idle",
     "pending": "idle",
     "not run": "idle",
     NEVER_RUN: "idle",
-    EPHEMERAL: "accent",
-    "reference": "accent",
-    "observed": "accent",
     "running": "running",
     FAILED: "bad",
     FAILING: "bad",
-    ERROR: "bad",
-    UNSUPPORTED: "warn",
     SKIPPED: "warn",
-    BLOCKED: "warn",
     "flaky": "warn",
     "mixed": "warn",
 }

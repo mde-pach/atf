@@ -27,6 +27,7 @@ import pytest
 from atf.adapters import build, registered_systems
 from atf.adapters.reference import ReferenceAdapter
 from atf.adapters.rest import RestAdapter
+from atf.engine.status import ResourceStatus
 from atf.materializer import Materializer, ProvisioningError
 from tests.stub_api import StubAPI
 
@@ -203,7 +204,7 @@ def test_header_auth(catalog):
     stub.base_url = stub.start()  # type: ignore[attr-defined]
     try:
         blocked = engine(catalog, stub)
-        assert blocked.status("accounts")["accounts.primary"]["status"] == "error"
+        assert blocked.status("accounts").state("accounts.primary") == "error"
 
         allowed = engine(catalog, stub, auth={"header": "X-Actor", "value": "actor-1"})
         assert allowed.ensure("account", "primary")["id"] == "account-1"
@@ -284,24 +285,21 @@ def test_missing_path_or_natural_key_is_reported(write_catalog, api):
     )
     materializer = engine(catalog, api)
     entry = materializer.status()["things.one"]
-    assert entry["status"] == "error"
-    assert "natural_key" in entry["detail"]
+    assert entry.state == "error"
+    assert "natural_key" in entry.detail
 
 
 def test_status_reports_present_and_absent(catalog, api):
     api.seed("accounts", {"id": "a-1", "email": "primary@example.test"})
     materializer = engine(catalog, api)
     status = materializer.status()
-    assert status["accounts.primary"] == {
-        "status": "present",
-        "detail": "",
-        "identity": "a-1",
-        # The record travels with the status: a caller offering an assertion on one of its fields
-        # needs to know which fields there are without asking the backend a second time.
-        "record": {"id": "a-1", "email": "primary@example.test"},
-    }
+    # The record travels with the status: a caller offering an assertion on one of its fields
+    # needs to know which fields there are without asking the backend a second time.
+    assert status["accounts.primary"] == ResourceStatus(
+        state="present", identity="a-1", record={"id": "a-1", "email": "primary@example.test"}
+    )
     # alpha's natural key needs the account id, which resolves live
-    assert status["projects.alpha"]["status"] == "absent"
+    assert status.state("projects.alpha") == "absent"
 
 
 def test_pagination_stops_on_a_short_page(catalog):
@@ -340,8 +338,8 @@ def test_pagination_gives_up_on_a_backend_that_ignores_the_offset(catalog, api):
     try:
         materializer = engine(catalog, api, pagination={"page_size": 50, "max_pages": 5})
         entry = materializer.status("accounts")["accounts.primary"]
-        assert entry["status"] == "error"
-        assert "still paginating after 5 pages" in entry["detail"]
+        assert entry.state == "error"
+        assert "still paginating after 5 pages" in entry.detail
     finally:
         http_module.request = original  # type: ignore[assignment]
 
@@ -398,8 +396,8 @@ def test_delete_path_template_is_used(catalog, api):
 def test_success_codes_reject_an_unexpected_status(catalog, api):
     materializer = engine(catalog, api, success_codes=[200])  # the stub answers 201
     outcome = materializer.create_closure("accounts.primary")
-    assert outcome["results"][0]["ok"] is False
-    assert "201" in outcome["results"][0]["detail"]
+    assert outcome.results[0].ok is False
+    assert "201" in outcome.results[0].detail
 
 
 def test_custom_headers_are_sent(catalog):
@@ -456,7 +454,7 @@ def test_a_create_is_never_retried(catalog, api):
     try:
         materializer = engine(catalog, api, retries=3)
         outcome = materializer.create_closure("accounts.primary")
-        assert outcome["results"][0]["ok"] is False
+        assert outcome.results[0].ok is False
     finally:
         http_module.request = original  # type: ignore[assignment]
 

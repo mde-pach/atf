@@ -25,7 +25,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .materializer import BLOCKED, CREATED, EXISTS, REFERENCE, Materializer
+from .catalog import REFERENCE
+from .engine.status import BLOCKED, CREATED, EXISTS, ProvisionResult
+from .materializer import Materializer
 from .runner import (
     ERROR,
     FAILED,
@@ -357,21 +359,19 @@ class JobRunner:
             item = _item(job, nid)
             item.state = RUNNING
 
-        def on_result(result: dict[str, Any]) -> None:
-            nid = str(result["id"])
-            item = _item(job, nid)
-            item.state = _provision_state(result)
-            item.detail = str(result.get("detail", ""))
-            item.duration = time.time() - started.get(nid, job.started_at)
+        def on_result(result: ProvisionResult) -> None:
+            item = _item(job, result.node_id)
+            item.state = result.state
+            item.detail = result.detail
+            item.duration = time.time() - started.get(result.node_id, job.started_at)
 
         outcome = engine.materialize(node_ids, keep_going=keep_going, on_start=on_start, on_result=on_result)
-        failures = [entry for entry in outcome["results"] if not entry["ok"]]
-        job.returncode = 1 if failures else 0
-        if failures:
-            first = failures[0]
+        job.returncode = 1 if outcome.failures else 0
+        first = next(iter(outcome.failures), None)
+        if first is not None:
             job.output = (
-                f"{len(failures)} of {len(outcome['results'])} did not provision — "
-                f"{first['id']}: {first.get('detail') or first['action']}"
+                f"{len(outcome.failures)} of {len(outcome.results)} did not provision — "
+                f"{first.node_id}: {first.detail or first.action}"
             )
 
 
@@ -395,11 +395,3 @@ def _item(job: Job, item_id: str) -> ItemState:
         item = ItemState(id=item_id, label=humanize(item_id) if job.kind == RUN else item_id, state=PENDING)
         job.items[item_id] = item
     return item
-
-
-def _provision_state(result: dict[str, Any]) -> str:
-    """A node's action is its state only when it worked: a `reference` that was not found failed."""
-    action = str(result["action"])
-    if result["ok"]:
-        return action
-    return BLOCKED if action == BLOCKED else ERROR

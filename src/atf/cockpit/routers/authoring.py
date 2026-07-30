@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from ...adapters import registered_systems
 from ...authoring import AuthoringError, Derived, check_name, derive, diff, insert, remove, replace
 from ...catalog import TYPES_FILE, CatalogError, Node, load_catalog
-from ...materializer import ScopeRequired
+from ...materializer import Materializer, ScopeRequired
 from ..view import cockpit as app
 from ..view import current_env, page, partial, require_confirmation, type_views
 from .catalog import BROWSE_LIMIT, context, instance_files, natural_keys
@@ -623,13 +623,13 @@ def _from_record(env: str, resource_type: str, identity: str, scope_id: str) -> 
             detail=f"{env} has no {resource_type} with {id_field} {identity!r} any more — rescan and try again",
         )
 
-    identities = {node_id: status.get("identity") for node_id, status in app().status(env).items()}
+    identities = app().status(env).identities()
     return derive(record, resource_type, entry, id_field, engine.nodes, identities)
 
 
-def _scope_of(env: str, engine: Any, resource_type: str, scope: Node | None) -> dict[str, Any] | None:
+def _scope_of(env: str, engine: Materializer, resource_type: str, scope: Node | None) -> dict[str, Any] | None:
     fields = engine.browse_fields(resource_type)
     if not fields or scope is None:
         return None
-    identity = app().status(env).get(scope["id"], {}).get("identity")
+    identity = app().status(env).identity(scope["id"])
     return None if identity in (None, "") else {fields[0]: identity}

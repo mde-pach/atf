@@ -10,8 +10,7 @@ from typing import Any, Protocol
 
 from ..accessible import Control
 from ..catalog import Node
-
-Record = dict[str, Any]
+from ..records import Record
 
 
 class Context(Protocol):

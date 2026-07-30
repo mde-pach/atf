@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from ...discovery import Discovery
-from ...materializer import PRESENT
+from ...engine.status import PRESENT
 from ..view import (
     BLOCKED,
     FAILING,
@@ -79,7 +79,7 @@ def _context(env: str) -> dict[str, Any]:
         "steps": _steps(first_run, targets, scenarios),
         "run_label": f"Run all {plural(len(scenarios), 'scenario')}",
         "run_blocked": "" if scenarios else "this suite has no scenarios yet",
-        "present": sum(1 for entry in status.values() if entry.get("status") == PRESENT),
+        "present": status.count(PRESENT),
         "resources": len(nodes),
         "absent": ready.will_create,
         "broken": ready.blockers,

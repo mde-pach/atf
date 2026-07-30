@@ -28,7 +28,8 @@ BUILT_IN_ACTIONS = frozenset({"delete"})
 
 CREATE, REFERENCE, DATA = "create", "reference", "data"
 MODES = frozenset({CREATE, REFERENCE, DATA})
-LIFECYCLES = frozenset({"persistent", "ephemeral"})
+PERSISTENT, EPHEMERAL = "persistent", "ephemeral"
+LIFECYCLES = frozenset({PERSISTENT, EPHEMERAL})
 
 # The plugin generates one fixture per resource type, named after the type. These names are
 # already taken, so a type using one would shadow it silently.

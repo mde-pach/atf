@@ -69,8 +69,8 @@
             {%- for node_id in step.resources %}
               {# Named by the name the scenario used. The type is one word to the left of it. #}
               {{ ui.ref('resource', u('/catalog/node/' ~ node_id), nodes[node_id].name if node_id in nodes else node_id,
-                        status=status.get(node_id, {}).get("status"),
-                        title=node_id ~ " — " ~ (status.get(node_id, {}).get("status") or "unknown") ~ " in " ~ env) }}
+                        status=status.state(node_id),
+                        title=node_id ~ " — " ~ status.state(node_id) ~ " in " ~ env) }}
             {%- endfor %}
           </span>
         </div>
@@ -93,7 +93,7 @@
         <dl class="kv small">
           {% for node_id, reason in view.ready.blockers %}
             <dt>{{ ui.ref('resource', u('/catalog/node/' ~ node_id), node_id,
-                          status=status.get(node_id, {}).get("status")) }}</dt>
+                          status=status.state(node_id)) }}</dt>
             <dd>{{ reason }}</dd>
           {% endfor %}
         </dl>
@@ -105,7 +105,7 @@
         {{ env }} does not have yet, dependencies first:
         {% for node_id in view.ready.will_create %}
           {{ ui.ref('resource', u('/catalog/node/' ~ node_id), node_id,
-                    status=status.get(node_id, {}).get("status")) }}
+                    status=status.state(node_id)) }}
         {% endfor %}
       </p>
     {% endif %}

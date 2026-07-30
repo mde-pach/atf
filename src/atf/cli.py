@@ -11,11 +11,11 @@ from typing import Any
 
 from . import openapi
 from .bootstrap import bootstrap
-from .catalog import DATA, CatalogError
+from .catalog import DATA, EPHEMERAL, REFERENCE, CatalogError
 from .config import ConfigError, load_manifest, resolve_env, resolve_env_refs, resolve_manifest
+from .engine.status import BLOCKED, CREATED, PRESENT, ProvisionResult
 from .lint import check as lint_specs
 from .lint import report as lint_report
-from .materializer import BLOCKED, CREATED, EPHEMERAL, PRESENT, REFERENCE
 from .report import as_ctrf
 from .runner import ERROR, FAILED, RunRecord, failed_ids
 from .runner import run as run_tests
@@ -223,19 +223,18 @@ def cmd_seed(args: argparse.Namespace) -> int:
 
     outcome = engine.materialize(subset, keep_going=args.keep_going)
 
-    for result in outcome["results"]:
-        action = str(result["action"])
-        mark = "ok" if result["ok"] else ("skip" if action == BLOCKED else "FAIL")
-        detail = f" — {result['detail']}" if result.get("detail") else ""
-        print(f"  [{mark:>4}] {result['id']:<40} {action}{detail}")
+    for result in outcome.results:
+        mark = "ok" if result.ok else ("skip" if result.action == BLOCKED else "FAIL")
+        detail = f" — {result.detail}" if result.detail else ""
+        print(f"  [{mark:>4}] {result.node_id:<40} {result.action}{detail}")
 
-    print("\n" + _tally(outcome["results"]) + f" in {boot.env}.")
-    if not args.keep_going and any(not result["ok"] for result in outcome["results"]):
-        remaining = len(subset) - len(outcome["results"])
+    print("\n" + _tally(outcome.results) + f" in {boot.env}.")
+    if not args.keep_going and outcome.failures:
+        remaining = len(subset) - len(outcome.results)
         if remaining > 0:
             print(f"Stopped at the first failure; {remaining} resource(s) not attempted. "
                   "Re-run with --keep-going to attempt independent ones.")
-    return 1 if any(not result["ok"] for result in outcome["results"]) else 0
+    return 1 if outcome.failures else 0
 
 
 def _reason(detail: str) -> str:
@@ -254,16 +253,15 @@ def _reason(detail: str) -> str:
     return (said[0] if said else lines[-1]).strip()
 
 
-def _tally(results: list[dict[str, Any]]) -> str:
+def _tally(results: list[ProvisionResult]) -> str:
     """A failure counts as failed whatever it was attempting."""
     counts = {"created": 0, "already present": 0, "found": 0, "failed": 0, "blocked": 0}
     for result in results:
-        action = str(result["action"])
-        if not result["ok"]:
-            counts["blocked" if action == BLOCKED else "failed"] += 1
-        elif action == CREATED:
+        if not result.ok:
+            counts["blocked" if result.action == BLOCKED else "failed"] += 1
+        elif result.action == CREATED:
             counts["created"] += 1
-        elif action == REFERENCE:
+        elif result.action == REFERENCE:
             counts["found"] += 1
         else:
             counts["already present"] += 1
@@ -281,11 +279,11 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     width = max(len(nid) for nid in status)
     for nid, entry in status.items():
-        detail = f" — {entry['detail']}" if entry.get("detail") else ""
-        print(f"  {nid:<{width}}  {entry['status']:<12}{detail}")
+        detail = f" — {entry.detail}" if entry.detail else ""
+        print(f"  {nid:<{width}}  {entry.state:<12}{detail}")
 
-    present = sum(1 for entry in status.values() if entry["status"] == PRESENT)
-    ephemeral = sum(1 for entry in status.values() if entry["status"] == EPHEMERAL)
+    present = status.count(PRESENT)
+    ephemeral = status.count(EPHEMERAL)
     total = len(status) - ephemeral
     print(f"\n{present}/{total} present in {boot.env}" + (f" ({ephemeral} built per run)" if ephemeral else ""))
     return 0

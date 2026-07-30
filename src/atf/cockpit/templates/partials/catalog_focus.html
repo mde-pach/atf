@@ -99,16 +99,16 @@
         <span class="muted">needs</span>
         {% for dep in needs %}
           {{ ui.ref('resource', u('/catalog/node/' ~ dep.id), dep.name,
-                    status=status.get(dep.id, {}).get("status", ""),
-                    title=dep.id ~ " — " ~ (status.get(dep.id, {}).get("status") or "unknown") ~ " in " ~ env) }}
+                    status=status.state(dep.id),
+                    title=dep.id ~ " — " ~ status.state(dep.id) ~ " in " ~ env) }}
         {% endfor %}
       {% endif %}
       {% if needed_by %}
         <span class="muted">needed by</span>
         {% for dep in needed_by %}
           {{ ui.ref('resource', u('/catalog/node/' ~ dep.id), dep.name,
-                    status=status.get(dep.id, {}).get("status", ""),
-                    title=dep.id ~ " — " ~ (status.get(dep.id, {}).get("status") or "unknown") ~ " in " ~ env) }}
+                    status=status.state(dep.id),
+                    title=dep.id ~ " — " ~ status.state(dep.id) ~ " in " ~ env) }}
         {% endfor %}
       {% endif %}
       {% if specs %}

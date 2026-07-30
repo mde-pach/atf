@@ -24,6 +24,7 @@ from atf import steps as atf_steps
 # `Test` under another name: pytest tries to collect anything called `Test*` and warns.
 from atf.discovery import Discovery, Spec, StepDef
 from atf.discovery import Test as Collected
+from atf.engine.status import PRESENT, ResourceStatus, Statuses
 from atf.introspect import (
     FROM_ATF,
     FROM_PHRASEBOOK,
@@ -123,12 +124,13 @@ def surface(engine, found, tmp_path) -> Surface:
         specs_dir=tmp_path / "specs",
         engine=engine,
         found=found,
-        status={
-            "accounts.primary": {
-                "status": "present",
-                "record": {"id": 7, "email": "primary@example.test"},
+        status=Statuses(
+            {
+                "accounts.primary": ResourceStatus(
+                    PRESENT, record={"id": 7, "email": "primary@example.test"}
+                )
             }
-        },
+        ),
     )
 
 
@@ -481,11 +483,21 @@ def test_a_claim_reads_back_as_the_choices_that_wrote_it(surface, compare, aspec
 @pytest.mark.parametrize(
     ("entry", "field", "current", "source"),
     [
-        ({"record": {"email": "read@example.test"}}, "email", "read@example.test", "on the record in this environment"),
-        (None, "email", "primary@example.test", "declared in the catalog"),
-        (None, "id", "", "the identity field, assigned when it is created"),
-        ({"record": {"done": False}}, "done", "false", "on the record in this environment"),
-        ({"record": {"tags": ["a", "b"]}}, "tags", '["a", "b"]', "on the record in this environment"),
+        (
+            ResourceStatus(PRESENT, record={"email": "read@example.test"}),
+            "email",
+            "read@example.test",
+            "on the record in this environment",
+        ),
+        (ResourceStatus(), "email", "primary@example.test", "declared in the catalog"),
+        (ResourceStatus(), "id", "", "the identity field, assigned when it is created"),
+        (ResourceStatus(PRESENT, record={"done": False}), "done", "false", "on the record in this environment"),
+        (
+            ResourceStatus(PRESENT, record={"tags": ["a", "b"]}),
+            "tags",
+            '["a", "b"]',
+            "on the record in this environment",
+        ),
     ],
 )
 def test_a_field_is_offered_with_what_it_holds_and_where_that_came_from(engine, entry, field, current, source):

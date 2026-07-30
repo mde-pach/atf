@@ -108,8 +108,8 @@ def test_status_reports_adapter_errors(engine, fake):
 
     fake.find = explode  # type: ignore[method-assign]
     entry = engine.status("accounts")["accounts.primary"]
-    assert entry["status"] == "error"
-    assert "backend down" in entry["detail"]
+    assert entry.state == "error"
+    assert "backend down" in entry.detail
 
 
 def test_teardown_reports_what_it_swallowed_rather_than_raising(engine, fake, caplog):
@@ -127,7 +127,7 @@ def test_teardown_reports_what_it_swallowed_rather_than_raising(engine, fake, ca
 
     fake.delete = explode  # ty: ignore[invalid-assignment]
     with caplog.at_level(logging.WARNING, logger="atf.materializer"):
-        engine.teardown(outcome["records"])
+        engine.teardown(outcome.records)
 
     assert "teardown of leads.walkin failed" in caplog.text
     assert "backend down" in caplog.text
@@ -227,7 +227,7 @@ def test_teardown_accepts_repeated_instances_of_one_ephemeral_node(engine, fake)
 def test_the_listing_cache_does_not_survive_a_pass(engine, fake):
     """The engine is session-scoped; the backend changes underneath it between passes."""
     fake.seed("account", {"email": "primary@example.test", "id": "PRE"})
-    assert engine.status("accounts")["accounts.primary"]["identity"] == "PRE"
+    assert engine.status("accounts").identity("accounts.primary") == "PRE"
 
     loads: list[str] = []
     engine.cached("listing", lambda: loads.append("load") or [])
@@ -241,7 +241,7 @@ def test_a_record_deleted_between_passes_is_seen_as_absent(engine, fake):
     fake.store["account"] = []
 
     outcome = engine.materialize(["accounts.primary"])
-    assert [r["action"] for r in outcome["results"]] == ["created"]
+    assert [result.action for result in outcome.results] == ["created"]
 
 
 # ---- keep_going -----------------------------------------------------------
@@ -273,8 +273,8 @@ def two_chains(write_catalog, fake):
 
 def test_data_mode_is_an_answer_when_absent_rather_than_a_failure(engine):
     outcome = engine.create_closure("sightings.watched")
-    assert outcome["results"][0]["ok"] is True
-    assert outcome["results"][0]["action"] == "observed"
+    assert outcome.results[0].ok is True
+    assert outcome.results[0].action == "observed"
 
 
 def test_data_mode_reads_back_what_is_there(engine, fake):

@@ -9,8 +9,8 @@
      {% if item.id == focus %}aria-current="true"{% endif %}>
     <span class="name">{{ item.name }}</span>
     <span class="sub">
-      <span class="flag {{ tone(status.get(item.id, {}).get('status', '')) }}"></span>
-      {{ status.get(item.id, {}).get("status", "unknown") }}
+      <span class="flag {{ status.of(item.id).tone }}"></span>
+      {{ status.state(item.id) }}
       {%- if with_type %} · {{ item.resource }}{% endif %}
     </span>
   </a>

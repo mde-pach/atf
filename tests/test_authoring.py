@@ -187,7 +187,7 @@ def test_browsing_inside_a_chosen_parent_lists_what_is_in_it(client, project, br
     )
     client.cockpit.invalidate("dev")
     provision(client, "accounts.primary")
-    identity = client.cockpit.status("dev")["accounts.primary"]["identity"]
+    identity = client.cockpit.status("dev").identity("accounts.primary")
     seed(project, "notes", {"id": "note-1", "account_id": identity, "slug": "kept"})
 
     body = client.get("/catalog/type/note?scope=accounts.primary").text
@@ -226,13 +226,13 @@ def test_a_record_out_there_becomes_a_node_that_finds_it_again(client, project, 
 
     nodes = catalog(client)
     assert "accounts.third" in nodes
-    assert client.cockpit.status("dev", refresh=True)["accounts.third"]["status"] == "present"
+    assert client.cockpit.status("dev", refresh=True).state("accounts.third") == "present"
 
 
 def test_a_derived_node_points_at_the_catalog_rather_than_at_this_environment(client, project, browsable):
     """A foreign key becomes a `${...}` placeholder, which is what makes the node re-creatable."""
     provision(client, "accounts.primary")
-    identity = client.cockpit.status("dev")["accounts.primary"]["identity"]
+    identity = client.cockpit.status("dev").identity("accounts.primary")
     seed(project, "projects", {"id": "project-9", "slug": "imported", "account_id": identity})
 
     sheet = client.get("/authoring/new?type=project&identity=project-9").text

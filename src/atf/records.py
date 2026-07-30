@@ -32,7 +32,7 @@ import dataclasses
 from collections.abc import Mapping
 from typing import Any
 
-from .adapters import Record
+Record = dict[str, Any]
 
 # Methods an object can offer to say "here I am as a dict". `_asdict` is what `NamedTuple`
 # generates; `model_dump` is pydantic's; `to_dict` is the convention everywhere else.

@@ -327,7 +327,7 @@ def test_a_scenario_of_nothing_but_generic_steps_can_be_written(client, project)
     written = feature_file(project).read_text()
     assert 'Then the account "primary" field "plan" is "standard"' in written
 
-    specs = parse_feature(feature_file(project), {}, set())
+    specs = parse_feature(feature_file(project))
     assert "An account carries the plan it declares" in [spec.scenario for spec in specs]
     assert "have no definition yet" not in response.text, "a step ATF provides is already defined"
 
@@ -424,7 +424,7 @@ def test_the_composed_gherkin_is_read_back_by_the_same_parser(client, project):
     candidate = project / "specs" / "features" / "candidate.feature"
     candidate.write_text("Feature: Accounts\n\n" + preview_of(body), encoding="utf-8")
 
-    specs = parse_feature(candidate, engine.nodes, set(engine.types))
+    specs = parse_feature(candidate, engine.catalog)
     assert [spec.scenario for spec in specs] == ["A brand new behaviour"]
     assert [(step.keyword, step.text) for step in specs[0].steps] == [
         ("Given", 'the account "primary"'),
@@ -607,7 +607,7 @@ def test_appending_to_a_feature_leaves_every_other_byte_alone(client, project):
     assert after.endswith('    Then the plan is "standard"\n')
 
     engine = provisioning_engine(client)
-    titles = [spec.scenario for spec in parse_feature(path, engine.nodes, set(engine.types))]
+    titles = [spec.scenario for spec in parse_feature(path, engine.catalog)]
     assert "A standard account reports its plan" in titles  # the file's original scenarios survive
     assert "A brand new behaviour" in titles
 
@@ -637,10 +637,10 @@ def test_a_write_that_would_not_parse_is_rolled_back(client, project, monkeypatc
     original = path.read_bytes()
     real = compose.parse_feature
 
-    def blind(candidate, nodes, types):
+    def blind(candidate, catalog=None):
         # Only the real file reads back as unparseable: validation against a temp copy still works,
         # so the request gets all the way to the write and has to undo it.
-        return [] if candidate == path else real(candidate, nodes, types)
+        return [] if candidate == path else real(candidate, catalog)
 
     monkeypatch.setattr(compose, "parse_feature", blind)
 
@@ -656,7 +656,7 @@ def test_a_new_file_that_would_not_parse_is_not_left_behind(client, project, mon
     written = project / "specs" / "features" / "billing.feature"
     real = compose.parse_feature
     monkeypatch.setattr(
-        compose, "parse_feature", lambda p, n, t: [] if p == written else real(p, n, t)
+        compose, "parse_feature", lambda path, catalog=None: [] if path == written else real(path, catalog)
     )
 
     response = client.post(

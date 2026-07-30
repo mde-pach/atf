@@ -259,7 +259,7 @@ def test_delete_tolerates_a_backend_without_deletion(catalog, api):
     materializer = engine(catalog, api)
     record = materializer.ensure("account", "primary")
     node = materializer.node("accounts.primary")
-    node["config"]["deletable"] = False
+    node.config["deletable"] = False
 
     materializer.adapters["rest"].delete(node, record, materializer)
     assert api.paths("DELETE") == []
@@ -387,7 +387,7 @@ def test_delete_path_template_is_used(catalog, api):
     materializer = engine(catalog, api)
     record = materializer.ensure("account", "primary")
     node = materializer.node("accounts.primary")
-    node["config"]["delete_path"] = "/accounts/{id}"
+    node.config["delete_path"] = "/accounts/{id}"
 
     materializer.adapters["rest"].delete(node, record, materializer)
     assert f"/accounts/{record['id']}" in api.paths("DELETE")

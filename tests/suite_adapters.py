@@ -71,15 +71,15 @@ class WorkspaceAdapter:
         cockpit is kept alive over, read by pages that only ever GET, and copying it per scenario was
         paying for isolation nothing needed.
         """
-        if node["lifecycle"] == "ephemeral":
+        if node.lifecycle == "ephemeral":
             return None
         held = self._kept.get(_key(node))
-        return {"id": str(held), "suite": str(node["body"]["suite"])} if held and held.is_dir() else None
+        return {"id": str(held), "suite": str(node.body["suite"])} if held and held.is_dir() else None
 
     def create(self, node: Node, body: Record, ctx: Context) -> Record:
         template = self.suites / str(body["suite"])
         if not template.is_dir():
-            raise ValueError(f"{node['id']}: no suite template at {template}")
+            raise ValueError(f"{node.id}: no suite template at {template}")
 
         root = Path(tempfile.mkdtemp(prefix=f"atf-tests-{body['suite']}-"))
         shutil.copytree(template, root, dirs_exist_ok=True)
@@ -87,7 +87,7 @@ class WorkspaceAdapter:
             if where != "suite":
                 _vary(node, root, str(where), content)
         aim_the_command_at(root, ctx)
-        if node["lifecycle"] != "ephemeral":
+        if node.lifecycle != "ephemeral":
             self._kept[_key(node)] = root
         return {"id": str(root), "suite": str(body["suite"])}
 
@@ -103,7 +103,7 @@ class WorkspaceAdapter:
 
 def _key(node: Node) -> str:
     """What makes two shared suites the same suite: everything the node says to write."""
-    return repr(sorted((str(field), str(value)) for field, value in node["body"].items()))
+    return repr(sorted((str(field), str(value)) for field, value in node.body.items()))
 
 
 def aim_the_command_at(root: Path | None, ctx: Any) -> None:
@@ -147,7 +147,7 @@ def _vary(node: Node, root: Path, where: str, content: Any) -> None:
     root = root.resolve()
     target = (root / where).resolve()
     if root not in target.parents:
-        raise ValueError(f"{node['id']}: {where!r} points outside the workspace")
+        raise ValueError(f"{node.id}: {where!r} points outside the workspace")
 
     if str(content).strip() == ABSENT:
         shutil.rmtree(target, ignore_errors=True)

@@ -11,7 +11,7 @@ from typing import Any
 
 from . import openapi
 from .bootstrap import bootstrap
-from .catalog import DATA, EPHEMERAL, REFERENCE, CatalogError
+from .catalog import CatalogError
 from .config import ConfigError, load_manifest, resolve_env, resolve_env_refs, resolve_manifest
 from .engine.status import BLOCKED, CREATED, PRESENT, ProvisionResult
 from .lint import check as lint_specs
@@ -21,6 +21,7 @@ from .runner import ERROR, FAILED, RunRecord, failed_ids
 from .runner import run as run_tests
 from .scaffold import MANIFEST_FILE, scaffold
 from .store import ReportError, RunStore
+from .typespec import DATA, EPHEMERAL, REFERENCE
 
 # `atf docs` is the only command that needs [discovery](discovery.py), and discovery is the most
 # expensive module in the framework to import. So it is imported inside the handler that uses it,
@@ -589,7 +590,7 @@ def _subset(engine, resource_type: str | None, name: str | None) -> list[str] | 
         return [
             nid
             for nid, node in engine.nodes.items()
-            if node["lifecycle"] != EPHEMERAL and node["mode"] != DATA
+            if not node.ephemeral and node.mode != DATA
         ]
 
     if resource_type is None:
@@ -603,7 +604,7 @@ def _subset(engine, resource_type: str | None, name: str | None) -> list[str] | 
     matching = [
         nid
         for nid, node in engine.nodes.items()
-        if node["resource"] == resource_type and (name is None or node["name"] == name)
+        if node.resource == resource_type and (name is None or node.name == name)
     ]
     if not matching:
         print(f"atf: no {resource_type} named {name!r} in the catalog", file=sys.stderr)

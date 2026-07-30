@@ -21,7 +21,7 @@ class QueueAdapter:
         self.client = QueueClient(settings["broker_url"], token=settings["token"])
 
     def find(self, node, ctx):
-        found = self.client.describe(node["body"]["name"])
+        found = self.client.describe(node.body["name"])
         return found or None
 
     def create(self, node, body, ctx):
@@ -89,7 +89,7 @@ work_queue:
 ```
 
 Every key in the type except `system`, `mode`, `lifecycle` and `id_field` arrives on the node as
-`node["config"]`, so `node["config"]["name_prefix"]` is how your adapter reads per-type options.
+`node.config`, so `node.config["name_prefix"]` is how your adapter reads per-type options.
 
 ## Check it
 
@@ -135,7 +135,7 @@ fetch it ten times. The `ctx` argument gives you the cache:
 ```python
     def find(self, node, ctx):
         records = ctx.cached("queues", self.client.list_queues)
-        return next((r for r in records if r["name"] == node["body"]["name"]), None)
+        return next((r for r in records if r["name"] == node.body["name"]), None)
 ```
 
 ATF invalidates the cache after every create, so you cannot serve a stale listing to the next

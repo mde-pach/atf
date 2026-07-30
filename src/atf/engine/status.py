@@ -13,8 +13,8 @@ from typing import Any
 
 from typing_extensions import override
 
-from ..catalog import EPHEMERAL, REFERENCE
 from ..records import Record
+from ..typespec import EPHEMERAL, REFERENCE
 
 PRESENT = "present"
 ABSENT = "absent"

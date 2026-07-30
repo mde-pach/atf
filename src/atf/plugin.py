@@ -19,7 +19,6 @@ from pytest_bdd import step as register_step
 from . import collect, phrasebook
 from .adapters import Record, can_show, why_unavailable
 from .bootstrap import Boot, bootstrap
-from .catalog import natural_keys
 from .context import EPHEMERAL_ATTR, Context, Recogniser
 from .materializer import Materializer
 from .placeholders import PLACEHOLDER_RE, Unresolved
@@ -69,20 +68,10 @@ def recogniser(engine: Materializer) -> Recogniser:
     """
 
     def recognise(record: Record) -> str:
-        fits = [name for name, entry in sorted(engine.types.items()) if _fits(entry, record)]
+        fits = [name for name, spec in sorted(engine.types.items()) if spec.fits(record)]
         return fits[0] if len(fits) == 1 else ""
 
     return recognise
-
-
-def _fits(entry: dict[str, Any], record: Record) -> bool:
-    """A record fits a type when it carries the type's identity and everything it is known by."""
-    keys = natural_keys(entry)
-    if not keys:
-        return False
-    ref_field = entry.get("ref_field")
-    remote = [str(ref_field)] if (ref_field and len(keys) == 1) else keys
-    return str(entry.get("id_field", "id")) in record and all(key in record for key in remote)
 
 
 def _make_factory(resource_type: str) -> Any:
@@ -257,8 +246,8 @@ def _note_what_is_showing(context: Context, engine: Materializer, resource_type:
 
     Underscored, so it is ATF's bookkeeping rather than a slot a scenario can make a claim about.
     """
-    system = str(engine.types.get(resource_type, {}).get("system", ""))
-    adapter = engine.adapters.get(system)
+    spec = engine.catalog.spec(resource_type)
+    adapter = None if spec is None else engine.adapters.get(spec.system)
     if adapter is not None and can_show(adapter):
         context._showing = adapter  # noqa: SLF001 - `context` is ATF's own object, and this is ATF
 

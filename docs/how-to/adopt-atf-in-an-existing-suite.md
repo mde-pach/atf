@@ -115,7 +115,7 @@ from atf.adapters import register
 
 class AccountAdapter:
     def find(self, node, ctx):
-        return existing_helpers.find_account(node["body"]["email"])
+        return existing_helpers.find_account(node.body["email"])
 
     def create(self, node, body, ctx):
         return existing_helpers.create_account(**body)

@@ -470,10 +470,9 @@ def test_a_claim_reads_back_as_the_choices_that_wrote_it(surface, compare, aspec
     """A scenario written by hand has to arrive at the same four choices, or the two surfaces
     disagree about a file they both claim to describe."""
     offered = offered_steps(surface, FEATURE)
-    forward = make_row(
-        0, "then", {"subject": subject, "aspect": aspect, "compare": compare, "target": target}, offered, surface.nodes
-    )
-    back = make_row(0, "then", {"pattern": forward.pattern, "params": forward.values}, offered, surface.nodes)
+    chosen = {"subject": subject, "aspect": aspect, "compare": compare, "target": target}
+    forward = make_row(0, "then", chosen, offered, surface.catalog)
+    back = make_row(0, "then", {"pattern": forward.pattern, "params": forward.values}, offered, surface.catalog)
     assert (back.subject, back.aspect, back.compare, back.target) == (subject, aspect, compare, target)
 
 

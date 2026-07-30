@@ -25,7 +25,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .catalog import REFERENCE
 from .engine.status import BLOCKED, CREATED, EXISTS, ProvisionResult
 from .materializer import Materializer
 from .runner import (
@@ -44,6 +43,7 @@ from .runner import (
     step_from,
 )
 from .store import RunStore
+from .typespec import REFERENCE
 
 DEFAULT_JOB_TIMEOUT = 1800
 MAX_HISTORY = 50

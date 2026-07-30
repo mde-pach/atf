@@ -157,20 +157,14 @@ class Store:
         self.path.write_text(json.dumps(data, indent=2))
 
     def collection(self, node):
-        return node["config"].get("collection", node["resource"] + "s")
+        return node.config.get("collection", node.resource + "s")
 
 
 class StoreAdapter(Store):
     def find(self, node, ctx):
-        keys = node["config"]["natural_key"]
-        keys = [keys] if isinstance(keys, str) else keys
-        ref_field = node["config"].get("ref_field")
-        criteria = {}
-        for key in keys:
-            if key not in node["body"]:
-                return None
-            remote = ref_field if (ref_field and len(keys) == 1) else key
-            criteria[remote] = ctx.resolve(node["body"][key])
+        criteria = node.key_criteria(ctx.resolve)
+        if criteria is None:
+            return None
         for record in self.read().get(self.collection(node), []):
             if all(str(record.get(k)) == str(v) for k, v in criteria.items()):
                 return record
@@ -180,7 +174,7 @@ class StoreAdapter(Store):
         data = self.read()
         bucket = data.setdefault(self.collection(node), [])
         record = dict(body)
-        record[node["id_field"]] = f"{node['resource']}-{len(bucket) + 1}"
+        record[node.id_field] = f"{node.resource}-{len(bucket) + 1}"
         bucket.append(record)
         self.write(data)
         return record
@@ -191,9 +185,9 @@ class StoreAdapter(Store):
         This backend is a JSON file, so an action is a patch: whatever the declaration holds is
         written onto the record. A real adapter would send it somewhere.
         """
-        declared = (node["config"].get("actions") or {}).get(action) or {}
+        declared = (node.config.get("actions") or {}).get(action) or {}
         data = self.read()
-        key = node["id_field"]
+        key = node.id_field
         for item in data.get(self.collection(node), []):
             if item.get(key) == record.get(key):
                 item.update(ctx.resolve(declared))
@@ -203,7 +197,7 @@ class StoreAdapter(Store):
 
     def delete(self, node, record, ctx):
         data = self.read()
-        key = node["id_field"]
+        key = node.id_field
         bucket = data.get(self.collection(node), [])
         data[self.collection(node)] = [r for r in bucket if r.get(key) != record.get(key)]
         self.write(data)
@@ -231,7 +225,7 @@ class EphemeralAdapter(StoreAdapter):
         record = super().create(node, body, ctx)
         data = self.read()
         for item in data[self.collection(node)]:
-            if item[node["id_field"]] == record[node["id_field"]]:
+            if item[node.id_field] == record[node.id_field]:
                 item["state"] = "ready"
                 record = item
         self.write(data)

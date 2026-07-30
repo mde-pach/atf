@@ -91,7 +91,7 @@ class Browsing:
 
     def browse(self, node: dict[str, Any], ctx: Any, limit: int = 200) -> list[dict[str, Any]]:
         data = json.loads(self.path.read_text()) if self.path.exists() else {}
-        collection = node["config"].get("collection", node["resource"] + "s")
+        collection = node.config.get("collection", node.resource + "s")
         return list(data.get(collection, []))[:limit]
 
 
@@ -342,7 +342,7 @@ def test_an_edit_changes_one_entry_and_leaves_the_rest_of_the_file_alone(client,
     assert "Now on the premium plan." in text and "premium" in text
     assert "secondary@example.test" in text  # the other entry survived
     nodes = catalog(client)
-    assert nodes["accounts.primary"]["body"]["plan"] == "premium"
+    assert nodes["accounts.primary"].body["plan"] == "premium"
 
 
 def test_a_body_written_as_raw_yaml_keeps_its_structure(client, project):

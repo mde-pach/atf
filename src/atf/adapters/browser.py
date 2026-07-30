@@ -84,15 +84,15 @@ class BrowserAdapter(NoopDelete):
         deliberately thin — where it is and what it is called — because everything else worth
         claiming is a control, and a control is named in the scenario rather than in the catalog.
         """
-        where = node["body"].get(AT)
+        where = node.body.get(AT)
         if where is None:
-            raise ValueError(f"{node['id']}: a page needs `{AT}` — where to go")
+            raise ValueError(f"{node.id}: a page needs `{AT}` — where to go")
         page = self.open(str(ctx.resolve(where)))
         return {AT: where, "url": page.url, "title": page.title()}
 
     def create(self, node: Node, body: Record, ctx: Context) -> Record:
         raise ValueError(
-            f"{node['id']}: a page is somewhere to look, not something ATF makes. "
+            f"{node.id}: a page is somewhere to look, not something ATF makes. "
             "Declare its type `mode: data`."
         )
 

@@ -29,7 +29,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from ...catalog import Node, find_node
+from ...catalog import Catalog
 from ...compare import MARKERS
 from ...discovery import (
     CAPTURE_RE,
@@ -247,9 +247,9 @@ def _rows(env: str, fields: dict[str, str]) -> list[Row]:
     indices = sorted(
         int(key[len(prefix) :]) for key in fields if key.startswith(prefix) and key[len(prefix) :].isdigit()
     )
-    nodes = app().state(env).materializer.nodes
+    catalog = app().state(env).materializer.catalog
     kept = [
-        make_row(index, keyword, _chosen(index, fields), found, nodes)
+        make_row(index, keyword, _chosen(index, fields), found, catalog)
         for index in indices
         if str(index) != fields.get("remove", "")
         if (keyword := fields.get(f"kw_{index}", "")) in KEYWORDS
@@ -298,7 +298,7 @@ def _table(index: int, fields: dict[str, str]) -> list[list[str]]:
 def _build(env: str, fields: dict[str, str], rows: list[Row]) -> Draft:
     where = surface(env)
     found = where.found
-    nodes, types = where.nodes, set(where.engine.types)
+    catalog = where.catalog
 
     draft = Draft(
         env=env,
@@ -332,8 +332,8 @@ def _build(env: str, fields: dict[str, str], rows: list[Row]) -> Draft:
 
     draft.path, draft.before, draft.after = _target(draft, where)
     if draft.mode == TEXT:
-        _check_text(draft, nodes, types, found)
-    _check(draft, nodes, types, found)
+        _check_text(draft, catalog, found)
+    _check(draft, catalog, found)
     if draft.path is not None:
         draft.diff = _diff(draft.before, draft.after, str(draft.path))
     return draft
@@ -407,7 +407,7 @@ def _inside(path: Path) -> Path:
 # ---- validation ------------------------------------------------------------
 
 
-def _check(draft: Draft, nodes: dict[str, Node], types: set[str], found: Discovery) -> None:
+def _check(draft: Draft, catalog: Catalog, found: Discovery) -> None:
     """Everything standing between this draft and a file that reads, said in words."""
     if not draft.title:
         draft.bad["title"] = "a scenario is named after the behaviour it describes"
@@ -428,20 +428,20 @@ def _check(draft: Draft, nodes: dict[str, Node], types: set[str], found: Discove
     if draft.title:
         draft.spec_id = f"{slug(feature_name)}::{slug(draft.title)}"
 
-    if not _added_specs(draft, nodes, types):
+    if not _added_specs(draft, catalog):
         draft.problems.append(
             "What would be written does not read back as a new scenario. A scenario line starts "
             "with `Scenario:` and its steps are indented under it."
         )
 
 
-def _check_text(draft: Draft, nodes: dict[str, Node], types: set[str], found: Discovery) -> None:
+def _check_text(draft: Draft, catalog: Catalog, found: Discovery) -> None:
     """Text the author took over, held to the checks the builder enforced by construction.
 
     It is read with `parse_feature` — the reader every other page uses — so what the composer
     accepts and what the cockpit will show cannot come apart.
     """
-    added = _added_specs(draft, nodes, types)
+    added = _added_specs(draft, catalog)
     if not added:
         return
     # The text is the authority on its own title once it is being edited directly, so the field
@@ -460,7 +460,7 @@ def _check_text(draft: Draft, nodes: dict[str, Node], types: set[str], found: Di
                     "value goes, not part of the wording."
                 )
             elif keyword == GIVEN and PROVISION_RE.search(step.text):
-                _check_named_resources(draft, step.text, spec, nodes, types)
+                _check_named_resources(draft, step.text, spec, catalog)
             elif matching_step(step.text, found.steps_for(keyword)) is None:
                 draft.problems.append(
                     f"No {keyword} step in this suite is worded {step.text!r} — pick an existing "
@@ -468,10 +468,10 @@ def _check_text(draft: Draft, nodes: dict[str, Node], types: set[str], found: Di
                 )
 
 
-def _check_named_resources(draft: Draft, text: str, spec: Spec, nodes: dict[str, Node], types: set[str]) -> None:
+def _check_named_resources(draft: Draft, text: str, spec: Spec, catalog: Catalog) -> None:
     """Every named resource has to be in the catalog. An outline is checked once per Examples row."""
     for resource_type, name in PROVISION_RE.findall(text):
-        if resource_type not in types:
+        if resource_type not in catalog.types:
             draft.problems.append(f"{resource_type!r} is not a resource type in this catalog.")
             continue
         placeholder = name.startswith("<") and name.endswith(">")
@@ -480,25 +480,25 @@ def _check_named_resources(draft: Draft, text: str, spec: Spec, nodes: dict[str,
         if placeholder and not values:
             draft.problems.append(f"No Examples column is called {column!r}, so <{column}> names nothing.")
         for value in values:
-            if find_node(nodes, resource_type, value) is None:
+            if catalog.find(resource_type, value) is None:
                 draft.problems.append(f"The catalog declares no {resource_type} called {value!r}.")
 
 
-def _added_specs(draft: Draft, nodes: dict[str, Node], types: set[str]) -> list[Spec]:
+def _added_specs(draft: Draft, catalog: Catalog) -> list[Spec]:
     """The scenarios the prospective file adds — proof that what will be written parses."""
     if not draft.after.strip():
         return []
-    was = {(spec.feature, spec.scenario) for spec in _parse(draft.before, nodes, types)}
-    return [spec for spec in _parse(draft.after, nodes, types) if (spec.feature, spec.scenario) not in was]
+    was = {(spec.feature, spec.scenario) for spec in _parse(draft.before, catalog)}
+    return [spec for spec in _parse(draft.after, catalog) if (spec.feature, spec.scenario) not in was]
 
 
-def _parse(text: str, nodes: dict[str, Node], types: set[str]) -> list[Spec]:
+def _parse(text: str, catalog: Catalog) -> list[Spec]:
     if not text.strip():
         return []
     with tempfile.TemporaryDirectory() as tmp:
         candidate = Path(tmp) / "candidate.feature"
         candidate.write_text(text, encoding="utf-8")
-        return parse_feature(candidate, nodes, types)
+        return parse_feature(candidate, catalog)
 
 
 # ---- writing ---------------------------------------------------------------
@@ -520,7 +520,7 @@ def _write(draft: Draft) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(draft.after, encoding="utf-8")
     try:
-        specs = parse_feature(path, engine.nodes, set(engine.types))
+        specs = parse_feature(path, engine.catalog)
     except Exception:
         specs = []
 
@@ -644,7 +644,7 @@ def _context(env: str, draft: Draft, validated: bool = True) -> dict[str, Any]:
         "draft": draft,
         "validated": validated,
         "features": _features(where.found),
-        "types": sorted(where.engine.types),
+        "types": where.catalog.resource_types,
         "instances": instances,
         "status": where.status,
         "offered": offered,

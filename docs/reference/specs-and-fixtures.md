@@ -678,23 +678,30 @@ receive as `ctx`.
 
 | Member | Signature | Description |
 |---|---|---|
+| `catalog` | `Catalog` | What the suite declares: `types`, `nodes`, `find(type, name)`, `spec(type)`, `resource_types`, `of_type(type)`. |
 | `nodes` | `dict[str, Node]` | Every catalog node by id. |
-| `types` | `dict[str, dict]` | The type registry. |
+| `types` | `dict[str, TypeSpec]` | The type registry. |
+| `spec` | `(type) -> TypeSpec` | One resource type. Raises `UnknownResource`. |
 | `env` | `str` | The active environment. |
 | `reload` | `() -> None` | Re-reads the catalog and clears caches. |
 | `resolve_id` | `(type, name) -> str` | The node id for a type and instance name. Raises `UnknownResource`. |
 | `ensure` | `(type, name) -> Record` | Provisions the resource and its closure; returns its record. Raises `ProvisioningError` naming the offending node. |
 | `ensure_closure` | `(type, name) -> tuple[Record, dict[str, Record]]` | The same, plus every record provisioned on the way — what the generated fixtures use, so ephemerals reached through a dependency can be torn down. |
 | `find_existing` | `(node) -> Record \| None` | Looks a node up without creating it. Returns `None` for ephemeral nodes. |
-| `status` | `(collection=None) -> dict[str, dict]` | Per-node `{status, detail, identity?}`. Never raises. |
+| `status` | `(collection=None) -> Statuses` | Where every node stands. Never raises. |
 | `closure` | `(node_id) -> list[str]` | That node plus every transitive dependency. |
-| `materialize` | `(subset, keep_going=False) -> dict` | Provisions an iterable of node ids, and their dependencies, in dependency order. Returns `{"results": [...], "records": {...}}`. |
-| `create_closure` | `(node_id, keep_going=False) -> dict` | `materialize` over that node and its dependencies. |
-| `create_all` | `(keep_going=False) -> dict` | `materialize` over the whole catalog. |
+| `materialize` | `(subset, keep_going=False) -> ProvisionOutcome` | Provisions an iterable of node ids, and their dependencies, in dependency order. |
+| `create_closure` | `(node_id, keep_going=False) -> ProvisionOutcome` | `materialize` over that node and its dependencies. |
+| `create_all` | `(keep_going=False) -> ProvisionOutcome` | `materialize` over the whole catalog. |
 | `teardown` | `(records) -> None` | Deletes the ephemeral resources among `records`. Never raises. |
 
-`materialize` results are `{"id", "action", "ok"}` with `"detail"` when `ok` is `False`. `action` is
-one of `created`, `exists`, `reference`, `error`, `unsupported`, `blocked`. It stops at the first
+`Statuses` maps a node id to a `ResourceStatus` — `state`, `detail`, `identity`, `record`, plus
+`present`, `blocking`, `missing` and `tone`. Ask it by id with `of(node_id)`, `state(node_id)` or
+`identity(node_id)`: a node it was not asked about reads as `unknown` rather than raising.
+
+`ProvisionOutcome` carries `results`, `records` and `failures`. Each `ProvisionResult` has
+`node_id`, `action`, `ok`, `detail`, `record` and `state`, where `action` is one of `created`,
+`exists`, `reference`, `observed`, `error`, `unsupported`, `blocked`. A pass stops at the first
 failure unless `keep_going`, which instead reports a failure's dependents as `blocked` and continues
 with independent subtrees.
 

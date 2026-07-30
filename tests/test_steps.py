@@ -523,10 +523,13 @@ def test_counting_says_so_when_the_adapter_cannot_list():
     from types import SimpleNamespace
 
     from atf.steps import _listing
+    from atf.typespec import TypeSpec
 
+    spec = TypeSpec(name="thing", system="flat")
     engine = SimpleNamespace(
         env="dev",
-        types={"thing": {"system": "flat"}},
+        types={"thing": spec},
+        spec=lambda resource_type: spec,
         adapters={"flat": object()},
         resource_types=lambda: ["thing"],
     )

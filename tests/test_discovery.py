@@ -72,16 +72,14 @@ def catalog(project):
 
     for system in ("store", "ephemeral"):
         register(system, lambda settings: Null())
-    types, nodes = load_catalog(project / "catalog", {"store", "ephemeral"})
-    yield types, nodes
+    yield load_catalog(project / "catalog", {"store", "ephemeral"})
     for system in ("store", "ephemeral"):
         unregister(system)
 
 
 @pytest.fixture
 def found(project, catalog):
-    types, nodes = catalog
-    return discover(project / "specs", nodes, set(types), "dev", project)
+    return discover(project / "specs", catalog, "dev", project)
 
 
 def test_slug():
@@ -130,7 +128,6 @@ def test_scenario_outline_placeholders_expand_through_examples(found):
 
 
 def test_non_type_phrases_are_ignored(tmp_path, catalog):
-    types, nodes = catalog
     feature = tmp_path / "noise.feature"
     feature.write_text(
         "Feature: Noise\n"
@@ -140,19 +137,18 @@ def test_non_type_phrases_are_ignored(tmp_path, catalog):
         '    Then the response "message" is shown\n',
         encoding="utf-8",
     )
-    specs = parse_feature(feature, nodes, set(types))
+    specs = parse_feature(feature, catalog)
     assert specs[0].resources == ["accounts.primary"]
     assert specs[0].steps[1].resources == []
     assert specs[0].steps[2].resources == []
 
 
 def test_unknown_instance_name_links_nothing(tmp_path, catalog):
-    types, nodes = catalog
     feature = tmp_path / "typo.feature"
     feature.write_text(
         'Feature: Typo\n  Scenario: Missing\n    Given the account "ghost"\n', encoding="utf-8"
     )
-    assert parse_feature(feature, nodes, set(types))[0].resources == []
+    assert parse_feature(feature, catalog)[0].resources == []
 
 
 def test_tests_are_observed_and_linked_to_their_spec(found):
@@ -205,18 +201,16 @@ def test_resource_back_links(found):
 
 
 def test_discovery_degrades_gracefully_when_the_run_errors(project, catalog):
-    types, nodes = catalog
     (project / "specs" / "steps" / "test_broken.py").write_text("import nonexistent_module\n", encoding="utf-8")
-    found = discover(project / "specs", nodes, set(types), "dev", project)
+    found = discover(project / "specs", catalog, "dev", project)
     assert found.specs  # static parse still works
     assert found.errors
 
 
 def test_discovery_with_no_features(tmp_path, catalog):
-    types, nodes = catalog
     empty = tmp_path / "nothing"
     empty.mkdir()
-    found = discover(empty, nodes, set(types), "dev", tmp_path)
+    found = discover(empty, catalog, "dev", tmp_path)
     assert found.specs == []
 
 
@@ -226,11 +220,10 @@ def test_discovery_never_provisions_anything(project, catalog):
     It must therefore collect the suite, never execute it — otherwise viewing a page mutates
     the environment behind the `mutable_envs` gate.
     """
-    types, nodes = catalog
     store = project / "store.json"
     store.unlink(missing_ok=True)
 
-    found = discover(project / "specs", nodes, set(types), "locked", project)
+    found = discover(project / "specs", catalog, "locked", project)
 
     assert found.tests, "collection still has to find the tests"
     assert not store.exists(), "discovery provisioned resources into a read-only environment"
@@ -371,7 +364,6 @@ def test_a_step_declared_with_a_regex_parser_still_matches():
 
 def test_background_steps_belong_to_every_scenario(tmp_path, catalog):
     """Background runs before each scenario, so its resources are the scenario's resources."""
-    types, nodes = catalog
     feature = tmp_path / "background.feature"
     feature.write_text(
         "Feature: Shared setup\n"
@@ -389,7 +381,7 @@ def test_background_steps_belong_to_every_scenario(tmp_path, catalog):
         encoding="utf-8",
     )
 
-    one, two = parse_feature(feature, nodes, set(types))
+    one, two = parse_feature(feature, catalog)
 
     assert [step.text for step in one.steps] == [
         'the account "primary"',
@@ -471,8 +463,7 @@ PHRASEBOOK = '''
 @pytest.fixture
 def phrased(project, catalog):
     (project / "specs" / "phrasebook.yaml").write_text(PHRASEBOOK, encoding="utf-8")
-    types, nodes = catalog
-    return discover(project / "specs", nodes, set(types), "dev", project)
+    return discover(project / "specs", catalog, "dev", project)
 
 
 def test_a_phrase_is_part_of_the_vocabulary_a_scenario_may_be_written_in(phrased):
@@ -530,7 +521,7 @@ def test_a_rule_groups_the_scenarios_under_it(tmp_path):
     """Gherkin's keyword for Example Mapping's middle card, and it costs the parser one branch."""
     path = tmp_path / "seeding.feature"
     path.write_text(RULED, encoding="utf-8")
-    specs = parse_feature(path, {}, set())
+    specs = parse_feature(path)
 
     assert [spec.rule for spec in specs] == [
         "What is declared is made to exist",
@@ -542,7 +533,7 @@ def test_a_rule_groups_the_scenarios_under_it(tmp_path):
 def test_a_rule_changes_nothing_else_about_a_scenario(tmp_path):
     path = tmp_path / "seeding.feature"
     path.write_text(RULED, encoding="utf-8")
-    specs = parse_feature(path, {}, set())
+    specs = parse_feature(path)
 
     assert [spec.feature for spec in specs] == ["Seeding"] * 3
     assert specs[0].narrative == "Narrative here."

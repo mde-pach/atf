@@ -36,8 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .adapters import actions_of
-from .catalog import Node, find_node, natural_keys
+from .catalog import Catalog, Node
 from .compare import MARKERS
 from .context import RESULT
 from .discovery import GIVEN, THEN, WHEN, Discovery, StepDef, fill
@@ -60,6 +59,7 @@ from .steps import (
     comparisons_for,
     generic,
 )
+from .typespec import DATA, REFERENCE
 
 KEYWORDS = (GIVEN, WHEN, THEN)
 
@@ -114,6 +114,10 @@ class Surface:
     status: Statuses = field(default_factory=Statuses)
 
     @property
+    def catalog(self) -> Catalog:
+        return self.engine.catalog
+
+    @property
     def nodes(self) -> dict[str, Node]:
         return self.engine.nodes
 
@@ -145,8 +149,8 @@ def field_choices(node: Node, entry: ResourceStatus) -> list[FieldChoice]:
     is the line the framework holds on record shape.
     """
     record = entry.fields
-    declared = node["body"]
-    named = [node["id_field"], *natural_keys(node["config"])]
+    declared = node.body
+    named = [node.id_field, *node.natural_keys]
 
     ordered: list[str] = []
     for name in [*named, *sorted(record), *sorted(declared)]:
@@ -159,7 +163,7 @@ def field_choices(node: Node, entry: ResourceStatus) -> list[FieldChoice]:
             choices.append(FieldChoice(name, written(record[name]), "on the record in this environment"))
         elif name in declared:
             choices.append(FieldChoice(name, written(declared[name]), "declared in the catalog"))
-        elif name == node["id_field"]:
+        elif name == node.id_field:
             choices.append(FieldChoice(name, "", "the identity field, assigned when it is created"))
         else:
             choices.append(FieldChoice(name, "", "part of the natural key"))
@@ -226,7 +230,7 @@ def make_row(
     keyword: str,
     chosen: dict[str, Any],
     offered: dict[str, list[StepDef]],
-    nodes: dict[str, Node],
+    catalog: Catalog,
 ) -> Row:
     """The choices somebody made for one row, as the row they describe.
 
@@ -253,7 +257,7 @@ def make_row(
 
     claimed = bool(row.subject) and not row.subject.startswith(STEP_SUBJECT)
     if claimed:
-        write_claim(row, nodes)
+        write_claim(row, catalog)
     row.definition = next((step for step in offered[keyword] if step.pattern == row.pattern), None)
 
     if claimed:
@@ -264,14 +268,14 @@ def make_row(
     # A pattern that arrived without the four choices — from text, or from a scenario written by
     # hand — is read back into them, so the row means one thing rather than two.
     if not row.subject:
-        read_claim(row, nodes)
+        read_claim(row, catalog)
     return row
 
 
 # ---- a claim, both ways round -----------------------------------------------
 
 
-def write_claim(row: Row, nodes: dict[str, Node]) -> None:
+def write_claim(row: Row, catalog: Catalog) -> None:
     """Four choices, turned into the pattern and values ATF will actually write."""
     claimed = comparison(row.compare)
     if claimed is None:
@@ -291,16 +295,16 @@ def write_claim(row: Row, nodes: dict[str, Node]) -> None:
         row.values[TYPE] = row.subject.removeprefix(TYPE_SUBJECT)
     else:
         about = row.subject.removeprefix(NODE_SUBJECT)
-    node = nodes.get(about)
+    node = catalog.nodes.get(about)
     if node is not None:
-        row.values.update({TYPE: node["resource"], NAME: node["name"]})
+        row.values.update({TYPE: node.resource, NAME: node.name})
     if claimed.field:
         row.values[FIELD] = row.aspect
     if claimed.target == "value":
         row.values[claimed.value_capture] = row.target
 
 
-def read_claim(row: Row, nodes: dict[str, Node]) -> None:
+def read_claim(row: Row, catalog: Catalog) -> None:
     """The reverse: a pattern and its values, read back as what they claim."""
     claimed = claim_of(row.pattern)
     if claimed is None:
@@ -309,19 +313,19 @@ def read_claim(row: Row, nodes: dict[str, Node]) -> None:
 
     row.compare = claimed.key
     row.aspect = row.values.get(FIELD, "")
-    named = find_node(nodes, row.values.get(TYPE, ""), row.values.get(NAME, ""))
+    named = catalog.find(row.values.get(TYPE, ""), row.values.get(NAME, ""))
     if claimed.subject == TYPE_OF:
         row.subject = f"{TYPE_SUBJECT}{row.values.get(TYPE, '')}"
         row.target = row.values.get(claimed.value_capture, "")
     elif claimed.subject == SLOT_OF:
         row.subject = f"{SLOT_SUBJECT}{row.values.get(SLOT, '')}"
         row.target = (
-            (named["id"] if named else "")
+            (named.id if named else "")
             if claimed.target == "resource"
             else row.values.get(claimed.value_capture, "")
         )
     else:
-        row.subject = f"{NODE_SUBJECT}{named['id']}" if named else ""
+        row.subject = f"{NODE_SUBJECT}{named.id}" if named else ""
         row.target = row.values.get(claimed.value_capture, "")
 
 
@@ -468,14 +472,14 @@ def usable(step: StepDef, row: Row) -> bool:
 
 def resolve(rows: list[Row], surface: Surface) -> None:
     """Turn every row into the words it will write, and say plainly where it cannot yet."""
-    nodes, found = surface.nodes, surface.found
+    catalog, found = surface.catalog, surface.found
     for row in rows:
         row.held = held_before(rows, row.index)
         row.produced = produced_before(rows, row.index)
         if row.given:
-            _resolve_given(row, nodes)
+            _resolve_given(row, catalog)
         else:
-            _resolve_step(row, found, nodes)
+            _resolve_step(row, found, catalog)
 
     # Only a row that produced a line counts as something for the next one to continue, so an
     # unfinished row in the middle can never leave an `And` with no keyword above it.
@@ -486,19 +490,19 @@ def resolve(rows: list[Row], surface: Surface) -> None:
             previous = row.keyword
 
 
-def _resolve_given(row: Row, nodes: dict[str, Node]) -> None:
+def _resolve_given(row: Row, catalog: Catalog) -> None:
     if not row.resource_type or not row.resource_name:
         row.problem = "pick a resource type and one of its instances"
         return
     row.text = f'the {row.resource_type} "{row.resource_name}"'
-    node = find_node(nodes, row.resource_type, row.resource_name)
+    node = catalog.find(row.resource_type, row.resource_name)
     if node is None:
         row.problem = f"the catalog declares no {row.resource_type} called {row.resource_name!r}"
         return
-    row.node_id = node["id"]
+    row.node_id = node.id
 
 
-def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
+def _resolve_step(row: Row, found: Discovery, catalog: Catalog) -> None:
     if not row.pattern:
         # A Then is chosen by what it is about; a When by what it does. Say the one that applies.
         row.problem = (
@@ -543,7 +547,7 @@ def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
     # Given row is — rather than writing a line that only fails when it runs.
     if generic(row.definition.pattern) is not None and NAME in row.definition.params:
         resource_type, name = row.values.get(TYPE, ""), row.values.get(NAME, "")
-        node = find_node(nodes, resource_type, name)
+        node = catalog.find(resource_type, name)
         if node is None:
             row.problem = (
                 f"the catalog declares no {resource_type} called {name!r}"
@@ -551,7 +555,7 @@ def _resolve_step(row: Row, found: Discovery, nodes: dict[str, Node]) -> None:
                 else "pick what this is about"
             )
             return
-        row.node_id = node["id"]
+        row.node_id = node.id
 
 
 def row_problems(rows: list[Row]) -> list[str]:
@@ -630,29 +634,27 @@ def feature_options(found: Discovery) -> list[dict[str, str]]:
 
 def instances_by_type(surface: Surface) -> dict[str, list[Node]]:
     grouped: dict[str, list[Node]] = {}
-    for node in sorted(surface.nodes.values(), key=lambda item: item["name"]):
-        grouped.setdefault(node["resource"], []).append(node)
+    for node in sorted(surface.nodes.values(), key=lambda item: item.name):
+        grouped.setdefault(node.resource, []).append(node)
     return grouped
 
 
 def type_options(surface: Surface) -> list[dict[str, str]]:
-    engine, status = surface.engine, surface.status
+    status = surface.status
     instances = instances_by_type(surface)
     options: list[dict[str, str]] = []
-    for name in sorted(engine.types):
+    for name in surface.catalog.resource_types:
+        spec = surface.catalog.types[name]
         members = instances.get(name, [])
-        present = sum(1 for node in members if status.of(node["id"]).present)
-        entry = engine.types[name]
-        lifecycle = str(entry.get("lifecycle", "persistent"))
-        mode = str(entry.get("mode", "create"))
-        note = " · built fresh per run" if lifecycle == "ephemeral" else ""
-        note += " · must already exist here" if mode == "reference" else ""
-        note += " · observed, never created" if mode == "data" else ""
+        present = sum(1 for node in members if status.of(node.id).present)
+        note = " · built fresh per run" if spec.ephemeral else ""
+        note += " · must already exist here" if spec.mode == REFERENCE else ""
+        note += " · observed, never created" if spec.mode == DATA else ""
         options.append(
             {
                 "value": name,
                 "label": name,
-                "meta": str(entry.get("system", "")),
+                "meta": spec.system,
                 "desc": f"{len(members)} in the catalog, {present} present in this environment{note}",
             }
         )
@@ -667,10 +669,10 @@ def instance_options(members: list[Node], status: Statuses) -> list[dict[str, st
     """
     return [
         {
-            "value": node["name"],
-            "label": node["name"],
-            "meta": status.state(node["id"]),
-            "desc": node["represents"] or node["id"],
+            "value": node.name,
+            "label": node.name,
+            "meta": status.state(node.id),
+            "desc": node.represents or node.id,
         }
         for node in members
     ]
@@ -680,13 +682,13 @@ def resource_options(surface: Surface, group: str = "") -> list[dict[str, str]]:
     status = surface.status
     return [
         {
-            "value": f"{NODE_SUBJECT}{node['id']}",
-            "label": node["name"],
-            "meta": node["resource"],
-            "desc": node["represents"] or status.state(node["id"]),
+            "value": f"{NODE_SUBJECT}{node.id}",
+            "label": node.name,
+            "meta": node.resource,
+            "desc": node.represents or status.state(node.id),
             "group": group,
         }
-        for node in sorted(surface.nodes.values(), key=lambda item: (item["resource"], item["name"]))
+        for node in sorted(surface.nodes.values(), key=lambda item: (item.resource, item.name))
     ]
 
 
@@ -835,8 +837,10 @@ def table_fields(surface: Surface, row: Row) -> list[dict[str, str]]:
 
 def action_options(surface: Surface, resource_type: str) -> list[dict[str, str]]:
     """Everything this type says can be done to one of its resources, and what ATF can always do."""
-    engine = surface.engine
-    declared = set(actions_of(engine.types.get(resource_type) or {}))
+    spec = surface.catalog.spec(resource_type)
+    if spec is None:
+        return []
+    declared = set(spec.declared_actions)
     return [
         {
             "value": action,
@@ -848,7 +852,7 @@ def action_options(surface: Surface, resource_type: str) -> list[dict[str, str]]
                 else "ATF's own — every adapter can remove a resource"
             ),
         }
-        for action in engine.actions(resource_type)
+        for action in spec.actions
     ]
 
 
@@ -858,23 +862,23 @@ def field_options(surface: Surface, resource_type: str, name: str) -> list[dict[
     Choosing a field from a list of bare names is guessing. Choosing `done` while the interface
     says it is currently `false` is writing an assertion with the answer in front of you.
     """
-    node = find_node(surface.nodes, resource_type, name)
+    node = surface.catalog.find(resource_type, name)
     if node is None:
         return []
     return [
         {"value": choice.name, "label": choice.name, "meta": choice.current, "desc": choice.source}
-        for choice in field_choices(node, surface.status.of(node["id"]))
+        for choice in field_choices(node, surface.status.of(node.id))
     ]
 
 
 def current_value(surface: Surface, resource_type: str, name: str, of_field: str) -> str:
-    node = find_node(surface.nodes, resource_type, name)
+    node = surface.catalog.find(resource_type, name)
     if node is None:
         return ""
     return next(
         (
             choice.current
-            for choice in field_choices(node, surface.status.of(node["id"]))
+            for choice in field_choices(node, surface.status.of(node.id))
             if choice.name == of_field
         ),
         "",
@@ -962,19 +966,18 @@ def _comparison_entry(item: Comparison) -> dict[str, Any]:
 
 
 def _types_described(surface: Surface) -> list[dict[str, Any]]:
-    engine = surface.engine
     instances = instances_by_type(surface)
     described: list[dict[str, Any]] = []
-    for name in sorted(engine.types):
-        entry = engine.types[name]
+    for name in surface.catalog.resource_types:
+        spec = surface.catalog.types[name]
         described.append(
             {
                 "name": name,
-                "system": str(entry.get("system", "")),
-                "mode": str(entry.get("mode", "create")),
-                "lifecycle": str(entry.get("lifecycle", "persistent")),
-                "actions": list(engine.actions(name)),
-                "instances": [node["name"] for node in instances.get(name, [])],
+                "system": spec.system,
+                "mode": spec.mode,
+                "lifecycle": spec.lifecycle,
+                "actions": spec.actions,
+                "instances": [node.name for node in instances.get(name, [])],
             }
         )
     return described
@@ -982,17 +985,17 @@ def _types_described(surface: Surface) -> list[dict[str, Any]]:
 
 def _resources_described(surface: Surface) -> list[dict[str, Any]]:
     described: list[dict[str, Any]] = []
-    for node in sorted(surface.nodes.values(), key=lambda item: (item["resource"], item["name"])):
-        entry = surface.status.of(node["id"])
+    for node in sorted(surface.nodes.values(), key=lambda item: (item.resource, item.name)):
+        entry = surface.status.of(node.id)
         described.append(
             {
-                "id": node["id"],
-                "type": node["resource"],
-                "name": node["name"],
-                "represents": node["represents"],
+                "id": node.id,
+                "type": node.resource,
+                "name": node.name,
+                "represents": node.represents,
                 "status": entry.state,
                 "detail": entry.detail,
-                "depends_on": list(node["depends_on"]),
+                "depends_on": list(node.depends_on),
                 "fields": [
                     {"name": choice.name, "current": choice.current, "source": choice.source}
                     for choice in field_choices(node, entry)
@@ -1040,7 +1043,7 @@ def compose(
                 f"{', '.join(KEYWORDS)}."
             )
             continue
-        rows.append(make_row(index, keyword, entry, offered, surface.nodes))
+        rows.append(make_row(index, keyword, entry, offered, surface.catalog))
 
     resolve(rows, surface)
     if not title:

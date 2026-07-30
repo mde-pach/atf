@@ -89,7 +89,7 @@ def read(specs_dir: Path) -> list[Spec]:
     The catalog is deliberately not passed, so no resource is linked and nothing here can fail on a
     catalog it was never asked about.
     """
-    return parse_specs(Path(specs_dir), {}, set())
+    return parse_specs(Path(specs_dir))
 
 
 def read_questions(specs_dir: Path) -> list[Question]:

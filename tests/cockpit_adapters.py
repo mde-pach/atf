@@ -76,16 +76,16 @@ class CockpitAdapter:
         run must not be reading that. Every other cockpit is read through pages that only GET, so
         one server does for all of them — and starting one costs the better part of a second.
         """
-        if node["lifecycle"] == EPHEMERAL:
+        if node.lifecycle == EPHEMERAL:
             return None
-        workspace = str(ctx.resolve(node["body"]["workspace"]))
+        workspace = str(ctx.resolve(node.body["workspace"]))
         url = self._serving.get(workspace)
         return {"url": url, "workspace": workspace} if url and self._alive(url) else None
 
     def create(self, node: Node, body: Record, ctx: Context) -> Record:
         workspace = Path(str(body["workspace"]))
         if not (workspace / "atf.yaml").is_file():
-            raise ValueError(f"{node['id']}: no suite at {workspace}")
+            raise ValueError(f"{node.id}: no suite at {workspace}")
 
         port = _free_port()
         url = f"http://127.0.0.1:{port}"
@@ -102,7 +102,7 @@ class CockpitAdapter:
         )
         self._running[url] = process
         _wait_until_answering(url, process)
-        if node["lifecycle"] != EPHEMERAL:
+        if node.lifecycle != EPHEMERAL:
             self._serving[str(workspace)] = url
         return {"url": url, "workspace": str(workspace)}
 

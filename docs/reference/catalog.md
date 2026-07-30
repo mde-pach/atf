@@ -21,7 +21,7 @@ may have instances in several files, and one file may hold instances of several 
 ## Resource types {#resource-types}
 
 Each top-level key of `resources.yaml` is a type name. Four keys are interpreted by ATF; **every
-other key is passed to the type's adapter** as `node["config"]`.
+other key is passed to the type's adapter** as `node.config`.
 
 ```yaml
 account:
@@ -289,7 +289,7 @@ run time almost always means the dependency itself failed to provision — look 
 
 ## Type keys for the built-in adapters {#type-keys-for-the-built-in-adapters}
 
-Keys read from `node["config"]` by the `rest` and `reference` adapters. A custom adapter reads
+Keys read from `node.config` by the `rest` and `reference` adapters. A custom adapter reads
 whatever keys it likes from the same place.
 
 ### `path` {#path}
@@ -389,10 +389,10 @@ Every command exits `2` on a rejected catalog, and that list of problems is the 
 
 ## Node fields {#node-fields}
 
-The structure adapters receive. `system`, `mode`, `lifecycle`, `id_field` and `config` come from the
-type; `represents`, `depends_on` and `body` from the instance.
+The object adapters receive, read as attributes. `system`, `mode`, `lifecycle`, `id_field`, `config`
+and `natural_keys` come from the type; `represents`, `depends_on` and `body` from the instance.
 
-| Field | Type | Description |
+| Attribute | Type | Description |
 |---|---|---|
 | `id` | string | `<collection>.<name>`. |
 | `collection` | string | The file stem. |
@@ -401,12 +401,19 @@ type; `represents`, `depends_on` and `body` from the instance.
 | `system` | string | The adapter that handles it. |
 | `mode` | string | `create`, `reference` or `data`. |
 | `lifecycle` | string | `persistent` or `ephemeral`. |
+| `ephemeral` | bool | Whether the lifecycle is `ephemeral`. |
 | `id_field` | string | Field carrying the identity. |
 | `config` | mapping | Type keys other than the four universal ones. |
+| `natural_keys` | list | The body fields one of these is recognised by. |
 | `represents` | string | The instance description. |
 | `depends_on` | list | Node ids this resource requires. |
 | `dependents` | list | Node ids requiring this resource. Computed. |
 | `body` | mapping | The instance body, **unresolved**. |
+| `spec` | `TypeSpec` | The type, for anything the node does not forward. |
+
+`key_criteria(resolve)` answers "which record out there is this node" — `{the field the backend
+spells it as: the value expected there}`, or `None` when the type names no natural key, the body
+omits one of its fields, or a `${...}` in one cannot be resolved yet.
 
 ## Where to go next
 

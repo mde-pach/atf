@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .catalog import Node, find_node
+from .catalog import Catalog, Node
 
 # A resource named in a step. Both articles, because both name the same catalog node: `the todo_list
 # "groceries"` is the shared one and `a fresh todo_list "groceries"` is an instance of it — and a
@@ -202,19 +202,18 @@ def slug(text: str) -> str:
 
 def discover(
     specs_dir: Path,
-    nodes: dict[str, Node],
-    resource_types: set[str],
+    catalog: Catalog,
     env: str,
     project_root: Path | None = None,
 ) -> Discovery:
-    specs = parse_specs(specs_dir, nodes, resource_types)
+    specs = parse_specs(specs_dir, catalog)
     result = Discovery(specs=specs, questions=parse_questions(specs_dir))
 
     root = project_root or specs_dir.parent
     observed, errors = observe_pytest(root, specs_dir, env)
     result.errors = errors
-    _attach_tests(result, observed, nodes)
-    result.fixtures = _fixtures(root, env, observed, resource_types, errors, result.tests)
+    _attach_tests(result, observed, catalog.nodes)
+    result.fixtures = _fixtures(root, env, observed, set(catalog.types), errors, result.tests)
     result.steps = _step_defs(observed)
     _attach_context_use(result.steps)
     return result
@@ -434,12 +433,12 @@ def _step_defs(observed: dict[str, Any]) -> list[StepDef]:
 # ---- specs (static parse) -------------------------------------------------
 
 
-def parse_specs(specs_dir: Path, nodes: dict[str, Node], resource_types: set[str]) -> list[Spec]:
+def parse_specs(specs_dir: Path, catalog: Catalog | None = None) -> list[Spec]:
     specs: list[Spec] = []
     if not specs_dir.is_dir():
         return specs
     for path in sorted(specs_dir.rglob("*.feature")):
-        specs.extend(parse_feature(path, nodes, resource_types))
+        specs.extend(parse_feature(path, catalog))
     return specs
 
 
@@ -494,7 +493,8 @@ def questions_in(path: Path) -> list[Question]:
     return found
 
 
-def parse_feature(path: Path, nodes: dict[str, Node], resource_types: set[str]) -> list[Spec]:
+def parse_feature(path: Path, catalog: Catalog | None = None) -> list[Spec]:
+    known = catalog if catalog is not None else Catalog()
     feature = ""
     rule = ""
     narrative_lines: list[str] = []
@@ -591,28 +591,28 @@ def parse_feature(path: Path, nodes: dict[str, Node], resource_types: set[str]) 
     narrative = " ".join(narrative_lines).strip()
     for spec in specs:
         spec.narrative = narrative
-        _link_resources(spec, nodes, resource_types)  # after Examples, so `<placeholders>` expand
+        _link_resources(spec, known)  # after Examples, so `<placeholders>` expand
     return specs
 
 
-def _link_resources(spec: Spec, nodes: dict[str, Node], resource_types: set[str]) -> None:
+def _link_resources(spec: Spec, catalog: Catalog) -> None:
     for step in spec.steps:
-        step.resources = _resources_in(step.text, spec, nodes, resource_types)
+        step.resources = _resources_in(step.text, spec, catalog)
         for node_id in step.resources:
             if node_id not in spec.resources:
                 spec.resources.append(node_id)
 
 
-def _resources_in(text: str, spec: Spec, nodes: dict[str, Node], resource_types: set[str]) -> list[str]:
+def _resources_in(text: str, spec: Spec, catalog: Catalog) -> list[str]:
     """Node ids named by provisioning phrases. Words that aren't resource types are ignored."""
     found: list[str] = []
     for resource_type, name in PROVISION_RE.findall(text):
-        if resource_type not in resource_types:
+        if resource_type not in catalog.types:
             continue
         for concrete in _example_values(name, spec):
-            node = find_node(nodes, resource_type, concrete)
-            if node is not None and node["id"] not in found:
-                found.append(node["id"])
+            node = catalog.find(resource_type, concrete)
+            if node is not None and node.id not in found:
+                found.append(node.id)
     return found
 
 
@@ -864,7 +864,7 @@ def _attach_tests(discovery: Discovery, observed: dict[str, Any], nodes: dict[st
         # the dependency is invisible to collection. The catalog link supplies it instead.
         if spec is not None:
             observed_fixtures += [
-                nodes[node_id]["resource"] for node_id in spec.resources if node_id in nodes
+                nodes[node_id].resource for node_id in spec.resources if node_id in nodes
             ]
 
         test = Test(

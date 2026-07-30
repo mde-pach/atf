@@ -42,17 +42,17 @@ def _hits(env: str, query: str) -> list[Hit]:
     for name in engine.types:
         score = _score(query, name)
         if score:
-            count = sum(1 for node in engine.nodes.values() if node["resource"] == name)
+            count = len(engine.catalog.of_type(name))
             hits.append(Hit("type", name, f"{count} in the catalog", f"/catalog/type/{name}?env={env}", score))
 
     for node_id, node in engine.nodes.items():
-        score = _score(query, node["name"], node_id, node["resource"], node["represents"])
+        score = _score(query, node.name, node_id, node.resource, node.represents)
         if score:
             state = status.state(node_id)
             # What it is beats what it is called: a hit on the description has to show the
             # description, or the row gives no reason for having matched.
             hits.append(
-                Hit("resource", node["name"], _sub(state or node["resource"], node["represents"]),
+                Hit("resource", node.name, _sub(state or node.resource, node.represents),
                     f"/catalog/node/{node_id}?env={env}", score)
             )
 

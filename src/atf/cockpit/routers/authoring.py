@@ -26,11 +26,11 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 
 from ...adapters import registered_systems
 from ...authoring import AuthoringError, Derived, check_name, derive, diff, insert, remove, replace
-from ...catalog import TYPES_FILE, CatalogError, Node, load_catalog
+from ...catalog import TYPES_FILE, Catalog, CatalogError, Node, load_catalog
 from ...materializer import Materializer, ScopeRequired
 from ..view import cockpit as app
 from ..view import current_env, page, partial, require_confirmation, type_views
-from .catalog import BROWSE_LIMIT, context, instance_files, natural_keys
+from .catalog import BROWSE_LIMIT, context, instance_files
 
 router = APIRouter(prefix="/authoring")
 
@@ -175,11 +175,11 @@ def build(draft: Draft, env: str) -> Proposal:
     if draft.action == DELETE:
         node = _known(nodes, draft.node_id)
         path = _node_path(node)
-        after = remove(path, node["name"])
+        after = remove(path, node.name)
         blocked = _dependents_block(node, nodes)
         return Proposal(
             action=DELETE,
-            name=node["name"],
+            name=node.name,
             path=path,
             before=path.read_text(encoding="utf-8"),
             after=after,
@@ -189,7 +189,7 @@ def build(draft: Draft, env: str) -> Proposal:
 
     if draft.action == EDIT:
         node = _known(nodes, draft.node_id)
-        resource_type, name, path = node["resource"], node["name"], _node_path(node)
+        resource_type, name, path = node.resource, node.name, _node_path(node)
     else:
         resource_type, name = draft.resource_type, draft.name
         if resource_type not in engine.types:
@@ -285,11 +285,11 @@ def _known(nodes: dict[str, Node], node_id: str) -> Node:
 
 def _dependents_block(node: Node, nodes: dict[str, Node]) -> str:
     """Why this node cannot go: something else lists it in `depends_on`, which would be left dangling."""
-    dependents = [nodes[dep]["id"] for dep in node["dependents"] if dep in nodes]
+    dependents = [nodes[dep].id for dep in node.dependents if dep in nodes]
     if not dependents:
         return ""
     return (
-        f"{', '.join(dependents)} depend{'s' if len(dependents) == 1 else ''} on {node['id']}. "
+        f"{', '.join(dependents)} depend{'s' if len(dependents) == 1 else ''} on {node.id}. "
         "Deleting it would leave that depends_on pointing at nothing, so the catalog would stop loading. "
         "Delete or repoint them first."
     )
@@ -300,9 +300,9 @@ def _dependents_block(node: Node, nodes: dict[str, Node]) -> str:
 
 def default_file(nodes: dict[str, Node], resource_type: str) -> str:
     """Where a new instance lands: beside an existing one of its type, else a file named for the type."""
-    for node in sorted(nodes.values(), key=lambda item: item["name"]):
-        if node["resource"] == resource_type:
-            return f"{node['collection']}.yaml"
+    for node in sorted(nodes.values(), key=lambda item: item.name):
+        if node.resource == resource_type:
+            return f"{node.collection}.yaml"
     return f"{resource_type}s.yaml"
 
 
@@ -333,7 +333,7 @@ def _instance_path(name: str) -> Path:
 
 def _node_path(node: Node) -> Path:
     """The file a node is already declared in — read from the catalog, never from the form."""
-    return (app().manifest.catalog_dir / f"{node['collection']}.yaml").resolve()
+    return (app().manifest.catalog_dir / f"{node.collection}.yaml").resolve()
 
 
 # ---- validation and the one write path -------------------------------------
@@ -405,7 +405,7 @@ def new(request: Request, resource_type: str = TYPE, identity: str = IDENTITY, s
         represents=derived.represents if derived else "",
         depends_on=list(derived.depends_on) if derived else [],
     )
-    body = derived.body if derived else dict.fromkeys(natural_keys(engine.types[resource_type]), "")
+    body = derived.body if derived else dict.fromkeys(engine.spec(resource_type).natural_keys, "")
     return _sheet(request, env, draft, body, dropped=derived.dropped if derived else [], identity=identity)
 
 
@@ -416,13 +416,13 @@ def copy(request: Request, node_id: str) -> Any:
     node = _known(app().state(env).materializer.nodes, node_id)
     draft = Draft(
         action=CREATE,
-        resource_type=node["resource"],
-        name=_free_name(node, app().state(env).materializer.nodes),
-        file=f"{node['collection']}.yaml",
-        represents=node["represents"],
-        depends_on=list(node["depends_on"]),
+        resource_type=node.resource,
+        name=_free_name(node, app().state(env).materializer.catalog),
+        file=f"{node.collection}.yaml",
+        represents=node.represents,
+        depends_on=list(node.depends_on),
     )
-    return _sheet(request, env, draft, dict(node["body"]), source=node)
+    return _sheet(request, env, draft, dict(node.body), source=node)
 
 
 @router.get("/edit/{node_id}")
@@ -431,22 +431,22 @@ def edit(request: Request, node_id: str) -> Any:
     node = _known(app().state(env).materializer.nodes, node_id)
     draft = Draft(
         action=EDIT,
-        resource_type=node["resource"],
-        node_id=node["id"],
-        name=node["name"],
-        file=f"{node['collection']}.yaml",
-        represents=node["represents"],
-        depends_on=list(node["depends_on"]),
+        resource_type=node.resource,
+        node_id=node.id,
+        name=node.name,
+        file=f"{node.collection}.yaml",
+        represents=node.represents,
+        depends_on=list(node.depends_on),
     )
-    return _sheet(request, env, draft, dict(node["body"]), source=node)
+    return _sheet(request, env, draft, dict(node.body), source=node)
 
 
 @router.get("/delete/{node_id}")
 def confirm_delete(request: Request, node_id: str) -> Any:
     env = current_env(request)
     node = _known(app().state(env).materializer.nodes, node_id)
-    draft = Draft(action=DELETE, resource_type=node["resource"], node_id=node["id"], name=node["name"])
-    return _sheet(request, env, draft, dict(node["body"]), source=node)
+    draft = Draft(action=DELETE, resource_type=node.resource, node_id=node.id, name=node.name)
+    return _sheet(request, env, draft, dict(node.body), source=node)
 
 
 # ---- routes: propose, then write -------------------------------------------
@@ -483,7 +483,7 @@ def delete(request: Request, node: str = F_NODE, confirm: str = F_CONFIRM) -> An
     require_confirmation(confirm)
     env = current_env(request)
     known = _known(app().state(env).materializer.nodes, node)
-    resource_type = known["resource"]
+    resource_type = known.resource
 
     proposal = _or_refuse(env, Draft(action=DELETE, node_id=node))
     apply(env, proposal)
@@ -580,16 +580,16 @@ def _view(env: str, resource_type: str) -> Any:
 def _choices(nodes: dict[str, Node], exclude: str = "") -> dict[str, list[Node]]:
     """Every node a resource could depend on, grouped by type so a long list stays navigable."""
     grouped: dict[str, list[Node]] = {}
-    for node in sorted(nodes.values(), key=lambda item: item["name"]):
-        if node["id"] != exclude:
-            grouped.setdefault(node["resource"], []).append(node)
+    for node in sorted(nodes.values(), key=lambda item: item.name):
+        if node.id != exclude:
+            grouped.setdefault(node.resource, []).append(node)
     return dict(sorted(grouped.items()))
 
 
-def _free_name(node: Node, nodes: dict[str, Node]) -> str:
+def _free_name(node: Node, catalog: Catalog) -> str:
     """A suggestion that says what the copy is for: `groceries_copy`, then `_copy_2` if that is taken."""
-    taken = {item["name"] for item in nodes.values() if item["resource"] == node["resource"]}
-    stem = f"{node['name']}_copy"
+    taken = {one.name for one in catalog.of_type(node.resource)}
+    stem = f"{node.name}_copy"
     if stem not in taken:
         return stem
     suffix = 2
@@ -605,8 +605,7 @@ def _from_record(env: str, resource_type: str, identity: str, scope_id: str) -> 
     come from the environment, not from whatever a page happened to post back.
     """
     engine = app().state(env).materializer
-    entry = engine.types[resource_type]
-    id_field = str(entry.get("id_field", "id"))
+    spec = engine.spec(resource_type)
     scope = _scope_of(env, engine, resource_type, engine.nodes.get(scope_id))
     try:
         records = engine.browse(resource_type, limit=BROWSE_LIMIT, scope=scope)
@@ -616,20 +615,20 @@ def _from_record(env: str, resource_type: str, identity: str, scope_id: str) -> 
             detail=f"listing {resource_type} needs {', '.join(exc.fields)} — choose a parent on the type page first",
         ) from exc
 
-    record = next((item for item in records if str(item.get(id_field)) == identity), None)
+    record = next((item for item in records if str(item.get(spec.id_field)) == identity), None)
     if record is None:
         raise HTTPException(
             status_code=404,
-            detail=f"{env} has no {resource_type} with {id_field} {identity!r} any more — rescan and try again",
+            detail=f"{env} has no {resource_type} with {spec.id_field} {identity!r} any more — rescan and try again",
         )
 
     identities = app().status(env).identities()
-    return derive(record, resource_type, entry, id_field, engine.nodes, identities)
+    return derive(record, spec, engine.nodes, identities)
 
 
 def _scope_of(env: str, engine: Materializer, resource_type: str, scope: Node | None) -> dict[str, Any] | None:
-    fields = engine.browse_fields(resource_type)
+    fields = engine.spec(resource_type).browse_fields
     if not fields or scope is None:
         return None
-    identity = app().status(env).identity(scope["id"])
+    identity = app().status(env).identity(scope.id)
     return None if identity in (None, "") else {fields[0]: identity}

@@ -103,11 +103,9 @@ class Cockpit:
             return state.discovery
         with state.lock:
             if refresh or state.discovery is None:
-                engine = state.materializer
                 state.discovery = discover(
                     self.manifest.specs_dir,
-                    engine.nodes,
-                    set(engine.types),
+                    state.materializer.catalog,
                     state.boot.env,
                     self.manifest.root,
                 )

@@ -3,33 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 
 import yaml
 
 from . import providers
 from .placeholders import PLACEHOLDER_RE, Unresolved, references
 from .placeholders import generated as is_generated
+from .records import Record
+from .typespec import BUILT_IN_ACTIONS, CREATE, LIFECYCLES, MODES, PERSISTENT, TypeSpec
 
 TYPES_FILE = "resources.yaml"
-UNIVERSAL_TYPE_KEYS = frozenset({"system", "mode", "lifecycle", "id_field"})
-# What ATF is being asked to do about a resource.
-#
-# `create` makes it exist. `reference` is a precondition ATF *cannot* create — an account someone
-# else provisioned — so an absent one blocks, and that blocking is the whole point of the mode.
-# `data` is neither: it is an observation, something to look at and make claims about, and an
-# absent one means only that it is not there yet. Conflating the last two would make every page a
-# scenario reads into a precondition the environment has to satisfy first.
-# Verbs ATF has of its own, which a type may not redefine. `delete` is in the required SPI, so
-# every adapter has one and `When I delete the …` needs no declaration; declaring one under that
-# name could only mean two different things by the same word.
-BUILT_IN_ACTIONS = frozenset({"delete"})
-
-CREATE, REFERENCE, DATA = "create", "reference", "data"
-MODES = frozenset({CREATE, REFERENCE, DATA})
-PERSISTENT, EPHEMERAL = "persistent", "ephemeral"
-LIFECYCLES = frozenset({PERSISTENT, EPHEMERAL})
 
 # The plugin generates one fixture per resource type, named after the type. These names are
 # already taken, so a type using one would shadow it silently.
@@ -58,20 +44,122 @@ ATF_FIXTURES = frozenset({"api", "client_config", "context", "env", "materialize
 RESERVED_FIXTURE_NAMES = PYTEST_BUILTIN_FIXTURES | ATF_FIXTURES
 
 
-class Node(TypedDict):
+@dataclass(frozen=True)
+class Node:
+    """One resource a suite declares: an instance of a type, with the body it is declared with.
+
+    Every question about the *kind* of thing it is, it answers through its type — so a caller never
+    has to know whether what it wants is a property of this instance or of its type.
+    """
+
     id: str
     collection: str
     name: str
-    resource: str
-    system: str
-    mode: str
-    lifecycle: str
-    id_field: str
-    config: dict[str, Any]
-    represents: str
-    depends_on: list[str]
-    dependents: list[str]
-    body: dict[str, Any]
+    spec: TypeSpec
+    represents: str = ""
+    depends_on: list[str] = field(default_factory=list)
+    dependents: list[str] = field(default_factory=list)
+    body: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def resource(self) -> str:
+        return self.spec.name
+
+    @property
+    def system(self) -> str:
+        return self.spec.system
+
+    @property
+    def mode(self) -> str:
+        return self.spec.mode
+
+    @property
+    def lifecycle(self) -> str:
+        return self.spec.lifecycle
+
+    @property
+    def ephemeral(self) -> bool:
+        return self.spec.ephemeral
+
+    @property
+    def id_field(self) -> str:
+        return self.spec.id_field
+
+    @property
+    def config(self) -> dict[str, Any]:
+        return self.spec.config
+
+    @property
+    def natural_keys(self) -> list[str]:
+        return self.spec.natural_keys
+
+    def key_criteria(self, resolve: Callable[[Any], Any]) -> dict[str, Any] | None:
+        """`{the field the backend spells it as: the value expected there}` for the natural key.
+
+        The one definition of "which record out there is this node", shared by the adapter deciding
+        whether to create one and by a step deciding whether a record it was handed is that resource.
+
+        `None` when the question cannot be asked yet: the type names no natural key, the body omits
+        one of its fields, or a field holds a `${...}` whose dependency has no identity so far.
+        """
+        keys = self.natural_keys
+        if not keys:
+            return None
+
+        criteria: dict[str, Any] = {}
+        for key in keys:
+            if key not in self.body:
+                return None
+            try:
+                value = resolve(self.body[key])
+            except Unresolved:
+                return None
+            if value is None:
+                return None
+            criteria[self.spec.remote_field(key)] = value
+        return criteria
+
+    def varied_with(self, overrides: Record | None) -> Node:
+        """This node with some of its body written differently, for one pass.
+
+        A copy, never the node itself: the catalog is session state that every other scenario reads.
+
+        The varied body is what `find` matches on as well as what `create` sends, so overriding a
+        field of the natural key genuinely selects a different resource, and overriding anything else
+        changes what a newly created one holds.
+        """
+        if not overrides:
+            return self
+        return replace(self, body={**self.body, **overrides})
+
+
+@dataclass(frozen=True)
+class Catalog:
+    """Everything a suite declares: its resource types, and the instances of them."""
+
+    types: dict[str, TypeSpec] = field(default_factory=dict)
+    nodes: dict[str, Node] = field(default_factory=dict)
+
+    def find(self, resource_type: str, name: str) -> Node | None:
+        """The instance a scenario names by type and name, or nothing."""
+        for node in self.nodes.values():
+            if node.resource == resource_type and node.name == name:
+                return node
+        return None
+
+    def spec(self, resource_type: str) -> TypeSpec | None:
+        return self.types.get(resource_type)
+
+    @property
+    def resource_types(self) -> list[str]:
+        return sorted(self.types)
+
+    def of_type(self, resource_type: str) -> list[Node]:
+        """Every instance of one type, in the order a reader meets them: by name."""
+        return sorted(
+            (node for node in self.nodes.values() if node.resource == resource_type),
+            key=lambda node: node.name,
+        )
 
 
 class CatalogError(Exception):
@@ -87,7 +175,7 @@ def load_catalog(
     root: Path,
     registered_systems: set[str] | None = None,
     reserved_names: set[str] | None = None,
-) -> tuple[dict[str, dict[str, Any]], dict[str, Node]]:
+) -> Catalog:
     root = Path(root)
     reserved = RESERVED_FIXTURE_NAMES if reserved_names is None else frozenset(reserved_names)
     problems: list[str] = []
@@ -107,7 +195,7 @@ def load_catalog(
 
     if problems:
         raise CatalogError(problems, root)
-    return types, nodes
+    return Catalog(types=types, nodes=nodes)
 
 
 def _read_yaml_mapping(path: Path, problems: list[str]) -> dict[str, Any]:
@@ -124,14 +212,14 @@ def _read_yaml_mapping(path: Path, problems: list[str]) -> dict[str, Any]:
     return raw
 
 
-def _load_types(root: Path, reserved: frozenset[str], problems: list[str]) -> dict[str, dict[str, Any]]:
+def _load_types(root: Path, reserved: frozenset[str], problems: list[str]) -> dict[str, TypeSpec]:
     path = root / TYPES_FILE
     if not path.is_file():
         problems.append(f"{TYPES_FILE} is missing (the resource-type registry)")
         return {}
 
     raw = _read_yaml_mapping(path, problems)
-    types: dict[str, dict[str, Any]] = {}
+    types: dict[str, TypeSpec] = {}
     for key, entry in raw.items():
         name = str(key)
         if not isinstance(entry, dict):
@@ -144,16 +232,16 @@ def _load_types(root: Path, reserved: frozenset[str], problems: list[str]) -> di
             )
         if not isinstance(entry.get("system"), str) or not entry.get("system"):
             problems.append(f"{TYPES_FILE}: type {name!r} needs a `system` string")
-        mode = entry.get("mode", "create")
+        mode = entry.get("mode", CREATE)
         if mode not in MODES:
             problems.append(f"{TYPES_FILE}: type {name!r} has mode {mode!r}, expected one of {sorted(MODES)}")
-        lifecycle = entry.get("lifecycle", "persistent")
+        lifecycle = entry.get("lifecycle", PERSISTENT)
         if lifecycle not in LIFECYCLES:
             problems.append(
                 f"{TYPES_FILE}: type {name!r} has lifecycle {lifecycle!r}, expected one of {sorted(LIFECYCLES)}"
             )
         _check_actions(name, entry.get("actions"), problems)
-        types[name] = entry
+        types[name] = TypeSpec.from_entry(name, entry)
     return types
 
 
@@ -185,7 +273,7 @@ def _check_actions(name: str, actions: Any, problems: list[str]) -> None:
             )
 
 
-def _load_nodes(root: Path, types: dict[str, dict[str, Any]], problems: list[str]) -> dict[str, Node]:
+def _load_nodes(root: Path, types: dict[str, TypeSpec], problems: list[str]) -> dict[str, Node]:
     nodes: dict[str, Node] = {}
     for path in sorted(root.glob("*.yaml")):
         if path.name == TYPES_FILE:
@@ -211,15 +299,15 @@ def _build_node(
     collection: str,
     name: str,
     entry: dict[str, Any],
-    types: dict[str, dict[str, Any]],
+    types: dict[str, TypeSpec],
     problems: list[str],
 ) -> Node | None:
     resource = entry.get("resource")
     if not isinstance(resource, str) or not resource:
         problems.append(f"{nid}: needs a `resource` naming its type")
         return None
-    type_entry = types.get(resource)
-    if type_entry is None:
+    spec = types.get(resource)
+    if spec is None:
         problems.append(f"{nid}: unknown resource type {resource!r} (not in {TYPES_FILE})")
         return None
 
@@ -240,17 +328,11 @@ def _build_node(
         problems.append(f"{nid}: represents must be a string")
         represents = ""
 
-    config = {k: v for k, v in type_entry.items() if k not in UNIVERSAL_TYPE_KEYS}
     return Node(
         id=nid,
         collection=collection,
         name=name,
-        resource=resource,
-        system=str(type_entry.get("system", "")),
-        mode=str(type_entry.get("mode", "create")),
-        lifecycle=str(type_entry.get("lifecycle", "persistent")),
-        id_field=str(type_entry.get("id_field", "id")),
-        config=config,
+        spec=spec,
         represents=represents,
         depends_on=list(depends_on),
         dependents=[],
@@ -260,23 +342,23 @@ def _build_node(
 
 def _link_dependents(nodes: dict[str, Node], problems: list[str]) -> None:
     for nid, node in nodes.items():
-        for dep in node["depends_on"]:
+        for dep in node.depends_on:
             target = nodes.get(dep)
             if target is None:
                 problems.append(f"{nid}: depends_on {dep!r}, which is not a known node")
                 continue
-            target["dependents"].append(nid)
+            target.dependents.append(nid)
     for node in nodes.values():
-        node["dependents"].sort()
+        node.dependents.sort()
 
 
 def _check_placeholders(nodes: dict[str, Node], problems: list[str]) -> None:
     """A `${...}` reference must name a real node, and one it declares a dependency on."""
     for nid, node in sorted(nodes.items()):
-        for referenced in sorted(references(node["body"])):
+        for referenced in sorted(references(node.body)):
             if referenced not in nodes:
                 problems.append(f"{nid}: body references ${{{referenced}.id}}, which is not a known node")
-            elif referenced not in node["depends_on"]:
+            elif referenced not in node.depends_on:
                 problems.append(
                     f"{nid}: body references ${{{referenced}.id}} but does not list it in depends_on, "
                     "so it will not be provisioned first"
@@ -288,9 +370,7 @@ def _check_generated_keys(nodes: dict[str, Node], problems: list[str]) -> None:
 
     `find` resolves the natural key and asks the backend for a match. A value that is new on every
     pass never matches, so every run creates another record and a shared environment fills up with
-    them — quietly, because nothing fails. Refused here rather than seeded around: seeding would
-    make a generated value into an elaborate way of writing a literal, which is not what anyone
-    reaches for a generator to do.
+    them — quietly, because nothing fails.
 
     Which providers are fresh is theirs to say, not this function's to guess — `${now+1d 09:00}`
     in a key gives one record per day, which is exactly what someone writing it there is asking
@@ -298,10 +378,10 @@ def _check_generated_keys(nodes: dict[str, Node], problems: list[str]) -> None:
     outside the natural key is written once, at creation.
     """
     for nid, node in sorted(nodes.items()):
-        if node["lifecycle"] == "ephemeral":
+        if node.ephemeral:
             continue
-        for key in natural_keys(node["config"]):
-            value = node["body"].get(key)
+        for key in node.natural_keys:
+            value = node.body.get(key)
             if not isinstance(value, str):
                 continue
             generated = [
@@ -320,25 +400,24 @@ def _check_generated_keys(nodes: dict[str, Node], problems: list[str]) -> None:
 
 
 def _check_systems(
-    types: dict[str, dict[str, Any]],
+    types: dict[str, TypeSpec],
     registered_systems: set[str] | None,
     problems: list[str],
 ) -> None:
     if registered_systems is None:
         return
-    for name, entry in types.items():
-        system = entry.get("system")
-        if isinstance(system, str) and system and system not in registered_systems:
+    for name, spec in types.items():
+        if spec.system and spec.system not in registered_systems:
             known = ", ".join(sorted(registered_systems)) or "none"
             problems.append(
-                f"{TYPES_FILE}: type {name!r} uses system {system!r} with no registered adapter (have: {known})"
+                f"{TYPES_FILE}: type {name!r} uses system {spec.system!r} with no registered adapter (have: {known})"
             )
 
 
 def _check_unique_names(nodes: dict[str, Node], problems: list[str]) -> None:
     seen: dict[tuple[str, str], list[str]] = {}
     for nid, node in nodes.items():
-        seen.setdefault((node["resource"], node["name"]), []).append(nid)
+        seen.setdefault((node.resource, node.name), []).append(nid)
     for (resource, name), ids in sorted(seen.items()):
         if len(ids) > 1:
             problems.append(f"duplicate name {name!r} for resource type {resource!r}: {', '.join(sorted(ids))}")
@@ -352,7 +431,7 @@ def _check_acyclic(nodes: dict[str, Node], problems: list[str]) -> None:
     def visit(nid: str, path: list[str]) -> None:
         color[nid] = GREY
         path.append(nid)
-        for dep in nodes[nid]["depends_on"]:
+        for dep in nodes[nid].depends_on:
             if dep not in nodes:
                 continue
             if color[dep] == GREY:
@@ -369,54 +448,3 @@ def _check_acyclic(nodes: dict[str, Node], problems: list[str]) -> None:
     for nid in sorted(nodes):
         if color[nid] == WHITE:
             visit(nid, [])
-
-
-def resource_types(nodes: dict[str, Node]) -> set[str]:
-    return {node["resource"] for node in nodes.values()}
-
-
-def natural_keys(config: dict[str, Any]) -> list[str]:
-    """The body fields a resource of this type is recognised by, or `[]` if the type names none."""
-    keys = config.get("natural_key")
-    if isinstance(keys, str):
-        return [keys]
-    if isinstance(keys, list) and keys and all(isinstance(key, str) for key in keys):
-        return [str(key) for key in keys]
-    return []
-
-
-def key_criteria(node: Node, resolve: Callable[[Any], Any]) -> dict[str, Any] | None:
-    """`{the field the backend spells it as: the value expected there}` for a node's natural key.
-
-    The one definition of "which record out there is this node", shared by the adapter deciding
-    whether to create one and by a step deciding whether a record it was handed is that resource.
-
-    `None` when the question cannot be asked yet: the type names no natural key, the body omits one
-    of its fields, or a field holds a `${...}` whose dependency has no identity so far.
-    """
-    keys = natural_keys(node["config"])
-    if not keys:
-        return None
-
-    # A single-key type may name the field differently at the backend — `natural_key: name` matched
-    # against a record's `slug`. With several keys there is no one field to redirect.
-    ref_field = node["config"].get("ref_field")
-    criteria: dict[str, Any] = {}
-    for key in keys:
-        if key not in node["body"]:
-            return None
-        try:
-            value = resolve(node["body"][key])
-        except Unresolved:
-            return None
-        if value is None:
-            return None
-        criteria[str(ref_field) if (ref_field and len(keys) == 1) else key] = value
-    return criteria
-
-
-def find_node(nodes: dict[str, Node], resource_type: str, name: str) -> Node | None:
-    for node in nodes.values():
-        if node["resource"] == resource_type and node["name"] == name:
-            return node
-    return None

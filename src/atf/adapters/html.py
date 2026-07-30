@@ -80,9 +80,9 @@ class HtmlAdapter(NoopDelete):
         what it says. A response that arrived saying no is still a page: a 404 has a heading on it,
         and a suite is entitled to claim what it says.
         """
-        where = node["body"].get(AT)
+        where = node.body.get(AT)
         if where is None:
-            raise ValueError(f"{node['id']}: a page needs `{AT}` — where to look")
+            raise ValueError(f"{node.id}: a page needs `{AT}` — where to look")
 
         url = self.url_for(str(ctx.resolve(where)))
         try:
@@ -103,7 +103,7 @@ class HtmlAdapter(NoopDelete):
 
     def create(self, node: Node, body: Record, ctx: Context) -> Record:
         raise ValueError(
-            f"{node['id']}: a page is somewhere to look, not something ATF makes. "
+            f"{node.id}: a page is somewhere to look, not something ATF makes. "
             "Declare its type `mode: data`."
         )
 

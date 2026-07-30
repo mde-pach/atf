@@ -17,23 +17,12 @@ from .adapters import (
     Adapter,
     Browsable,
     Record,
-    actions_of,
     can_act,
     can_browse,
     close_adapter,
     registered_systems,
 )
-from .catalog import (
-    BUILT_IN_ACTIONS,
-    DATA,
-    EPHEMERAL,
-    REFERENCE,
-    UNIVERSAL_TYPE_KEYS,
-    Node,
-    find_node,
-    load_catalog,
-    natural_keys,
-)
+from .catalog import Catalog, Node, load_catalog
 from .engine.status import (
     ABSENT,
     BLOCKED,
@@ -50,6 +39,7 @@ from .engine.status import (
 )
 from .placeholders import Unresolved, references
 from .placeholders import resolve as resolve_placeholders
+from .typespec import BUILT_IN_ACTIONS, DATA, EPHEMERAL, REFERENCE, TypeSpec
 
 log = logging.getLogger("atf.materializer")
 
@@ -102,8 +92,7 @@ class Materializer:
         self.catalog_root = Path(catalog_root)
         self.env = env
         self.adapters = adapters
-        self.types: dict[str, dict[str, Any]] = {}
-        self.nodes: dict[str, Node] = {}
+        self.catalog = Catalog()
         self._ids: dict[str, Any] = {}
         self._cache: dict[str, Any] = {}
         # Generated values, held for one scenario. A `${fake:email}` written in a body and again in
@@ -119,18 +108,32 @@ class Materializer:
     # ---- catalog ----------------------------------------------------------
 
     def reload(self) -> None:
-        self.types, self.nodes = load_catalog(self.catalog_root, registered_systems())
+        self.catalog = load_catalog(self.catalog_root, registered_systems())
         self._ids.clear()
         self._cache.clear()
 
+    @property
+    def types(self) -> dict[str, TypeSpec]:
+        return self.catalog.types
+
+    @property
+    def nodes(self) -> dict[str, Node]:
+        return self.catalog.nodes
+
     def resource_types(self) -> list[str]:
-        return sorted(self.types)
+        return self.catalog.resource_types
+
+    def spec(self, resource_type: str) -> TypeSpec:
+        spec = self.catalog.spec(resource_type)
+        if spec is None:
+            raise UnknownResource(f"no resource type {resource_type!r} in the catalog")
+        return spec
 
     def resolve_id(self, resource_type: str, name: str) -> str:
-        node = find_node(self.nodes, resource_type, name)
+        node = self.catalog.find(resource_type, name)
         if node is None:
             raise UnknownResource(f"no {resource_type} named {name!r} in the catalog")
-        return node["id"]
+        return node.id
 
     def node(self, nid: str) -> Node:
         try:
@@ -183,7 +186,7 @@ class Materializer:
         if node is None:
             return None
         record = self.find_existing(node)
-        identity = None if record is None else record.get(node["id_field"])
+        identity = None if record is None else record.get(node.id_field)
         self._ids[nid] = identity
         return identity
 
@@ -199,7 +202,7 @@ class Materializer:
                 continue
             node = self.node(current)
             seen.append(current)
-            stack.extend(node["depends_on"])
+            stack.extend(node.depends_on)
         return seen
 
     def topo(self, subset: Iterable[str]) -> list[str]:
@@ -212,7 +215,7 @@ class Materializer:
         def visit(nid: str, seen: frozenset[str]) -> None:
             if nid in placed or nid in seen:
                 return
-            for dep in self.node(nid)["depends_on"]:
+            for dep in self.node(nid).depends_on:
                 if dep in members:
                     visit(dep, seen | {nid})
             if nid not in placed:
@@ -225,20 +228,6 @@ class Materializer:
 
     # ---- reads ------------------------------------------------------------
 
-    def browse_fields(self, resource_type: str) -> list[str]:
-        """Fields a scoped listing needs before it can run — empty when the type lists globally.
-
-        A type whose `list_path` is scoped to a parent (`/owners/{owner_id}/lists`) cannot be
-        enumerated without knowing which parent, so the caller has to supply one.
-        """
-        import string
-
-        entry = self.types.get(resource_type) or {}
-        template = entry.get("list_path")
-        if not isinstance(template, str) or not template:
-            return []
-        return [name for _, name, _, _ in string.Formatter().parse(template) if name]
-
     def browse(self, resource_type: str, limit: int = 200, scope: dict[str, Any] | None = None) -> list[Record]:
         """Every record this type already has in the environment.
 
@@ -246,42 +235,30 @@ class Materializer:
         node can be written from a real record instead of guessed. Adapters opt in by implementing
         `browse`; one that does not simply has nothing to show.
         """
-        entry = self.types.get(resource_type)
-        if entry is None:
-            raise KeyError(f"no resource type {resource_type!r} in the catalog")
-        adapter = self.adapters.get(str(entry.get("system", "")))
+        spec = self.spec(resource_type)
+        adapter = self.adapters.get(spec.system)
         if adapter is None or not can_browse(adapter):
             return []
 
-        needed = [field for field in self.browse_fields(resource_type) if field not in (scope or {})]
+        needed = [field for field in spec.browse_fields if field not in (scope or {})]
         if needed:
             raise ScopeRequired(resource_type, needed)
         return cast("Browsable", adapter).browse(self.probe(resource_type, scope), self, limit)
 
     def probe(self, resource_type: str, scope: dict[str, Any] | None = None) -> Node:
         """A node that exists only to carry a type's config to an adapter, with no instance behind it."""
-        entry = self.types.get(resource_type) or {}
-        config = {key: value for key, value in entry.items() if key not in UNIVERSAL_TYPE_KEYS}
         return Node(
             id=f"{resource_type}.*",
             collection="",
             name="*",
-            resource=resource_type,
-            system=str(entry.get("system", "")),
-            mode=str(entry.get("mode", "create")),
-            lifecycle=str(entry.get("lifecycle", "persistent")),
-            id_field=str(entry.get("id_field", "id")),
-            config=config,
-            represents="",
-            depends_on=[],
-            dependents=[],
+            spec=self.spec(resource_type),
             body=dict(scope or {}),
         )
 
     def find_existing(self, node: Node) -> Record | None:
-        if node["lifecycle"] == EPHEMERAL:
+        if node.ephemeral:
             return None
-        adapter = self.adapters.get(node["system"])
+        adapter = self.adapters.get(node.system)
         if adapter is None:
             return None
         try:
@@ -294,15 +271,15 @@ class Materializer:
         self.invalidate_cache()
         out: dict[str, ResourceStatus] = {}
         for nid, node in sorted(self.nodes.items()):
-            if collection is not None and node["collection"] != collection:
+            if collection is not None and node.collection != collection:
                 continue
             out[nid] = self._status_of(node)
         return Statuses(out)
 
     def _status_of(self, node: Node) -> ResourceStatus:
-        if node["system"] not in self.adapters:
-            return ResourceStatus(UNSUPPORTED, f"no adapter for system {node['system']!r} in env {self.env}")
-        if node["lifecycle"] == EPHEMERAL:
+        if node.system not in self.adapters:
+            return ResourceStatus(UNSUPPORTED, f"no adapter for system {node.system!r} in env {self.env}")
+        if node.ephemeral:
             return ResourceStatus(EPHEMERAL, "built per run")
         try:
             record = self.find_existing(node)
@@ -310,8 +287,8 @@ class Materializer:
             return ResourceStatus(ERROR, _short(exc))
         if record is None:
             return ResourceStatus(ABSENT)
-        identity = record.get(node["id_field"])
-        self._ids[node["id"]] = identity
+        identity = record.get(node.id_field)
+        self._ids[node.id] = identity
         return ResourceStatus(PRESENT, identity=identity, record=record)
 
     # ---- writes -----------------------------------------------------------
@@ -323,11 +300,11 @@ class Materializer:
         report the same refusal back, so the honest UI never offers the button.
         """
         node = self.node(node_id)
-        if node["mode"] == REFERENCE:
+        if node.mode == REFERENCE:
             return False, "reference resources must already exist in the environment — ATF never creates them"
-        if node["mode"] == DATA:
+        if node.mode == DATA:
             return False, "an observation, not a resource ATF makes — there is nothing here to create"
-        if node["lifecycle"] == EPHEMERAL:
+        if node.ephemeral:
             return False, "built fresh for every run by the test that needs it"
         return True, ""
 
@@ -378,7 +355,7 @@ class Materializer:
             node = self.node(nid)
 
             # Dependencies come first in topo order, so checking the direct ones is transitive.
-            blocker = next((dep for dep in node["depends_on"] if dep in stalled), None)
+            blocker = next((dep for dep in node.depends_on if dep in stalled), None)
             if blocker is not None:
                 blocked = ProvisionResult(
                     nid, BLOCKED, ok=False, detail=f"depends on {blocker}, which did not provision"
@@ -399,7 +376,7 @@ class Materializer:
             results.append(outcome)
             if outcome.ok:
                 record = outcome.record or {}
-                self._ids[nid] = record.get(node["id_field"])
+                self._ids[nid] = record.get(node.id_field)
                 records[nid] = record
                 _notify(on_result, outcome)
                 continue
@@ -413,48 +390,43 @@ class Materializer:
 
     def _attempt(self, node: Node, overrides: Record | None = None, fresh: bool = False) -> ProvisionResult:
         """Provision one node. Returns a result carrying `record` when it succeeded."""
-        nid = node["id"]
-        adapter = self.adapters.get(node["system"])
+        nid = node.id
+        adapter = self.adapters.get(node.system)
         if adapter is None:
-            detail = f"no adapter for system {node['system']!r} in env {self.env}"
+            detail = f"no adapter for system {node.system!r} in env {self.env}"
             return ProvisionResult(nid, UNSUPPORTED, ok=False, detail=detail)
 
         try:
-            record, action = self._provision(_varied(node, overrides), adapter, fresh)
+            record, action = self._provision(node.varied_with(overrides), adapter, fresh)
         except Exception as exc:  # noqa: BLE001 - reported, not raised: callers read `results`
             return ProvisionResult(nid, ERROR, ok=False, detail=_short(exc))
 
         if record is None:
             # An absent observation is an answer, not a failure: `data` says "look at this", and
             # "it is not there" is one of the things a scenario may want to claim about it.
-            if node["mode"] == DATA:
+            if node.mode == DATA:
                 return ProvisionResult(nid, OBSERVED, ok=True, record={})
             return ProvisionResult(nid, action, ok=False, detail="reference resource not found")
         return ProvisionResult(nid, action, ok=True, record=record)
 
     def _provision(self, node: Node, adapter: Adapter, fresh: bool = False) -> tuple[Record | None, str]:
-        if node["mode"] == DATA:
+        if node.mode == DATA:
             return adapter.find(node, self), OBSERVED
-        if node["mode"] == REFERENCE:
+        if node.mode == REFERENCE:
             return adapter.find(node, self), REFERENCE
 
         # An isolated instance is not looked up, for the same reason an ephemeral one is not: the
         # lookup would find the shared resource and hand back the very thing being isolated from.
-        existing = None if fresh or node["lifecycle"] == EPHEMERAL else adapter.find(node, self)
+        existing = None if fresh or node.ephemeral else adapter.find(node, self)
         if existing is not None:
             return existing, EXISTS
 
-        body = self.resolve(node["body"])
+        body = self.resolve(node.body)
         record = adapter.create(node, body, self)
         self.invalidate_cache()
         return record, CREATED
 
     # ---- acting on one ----------------------------------------------------
-
-    def actions(self, resource_type: str) -> list[str]:
-        """What this type says can be done to one of its resources, plus what ATF can always do."""
-        entry = self.types.get(resource_type) or {}
-        return sorted({*actions_of(entry), *BUILT_IN_ACTIONS})
 
     def act(self, node: Node, record: Record, action: str) -> Record | None:
         """Do something to a resource that is already there.
@@ -463,9 +435,9 @@ class Materializer:
         through `NoopDelete`, and the scenario after it reads the resource back and finds out.
         Every other action is one the catalog declared and the adapter interprets.
         """
-        adapter = self.adapters.get(node["system"])
+        adapter = self.adapters.get(node.system)
         if adapter is None:
-            raise ProvisioningError(node["id"], f"no adapter for system {node['system']!r} in env {self.env}")
+            raise ProvisioningError(node.id, f"no adapter for system {node.system!r} in env {self.env}")
 
         if action in BUILT_IN_ACTIONS:
             adapter.delete(node, record, self)
@@ -474,8 +446,8 @@ class Materializer:
 
         if not can_act(adapter):
             raise ProvisioningError(
-                node["id"],
-                f"the {node['system']!r} adapter can make a resource and remove one, and nothing "
+                node.id,
+                f"the {node.system!r} adapter can make a resource and remove one, and nothing "
                 "else — give it an `act` to reach the actions this type declares",
             )
         result = cast("Actionable", adapter).act(node, record, action, self)
@@ -546,7 +518,7 @@ class Materializer:
         # Kept unresolved, as the catalog writes bodies: the `${uuid…}` in the key resolves through
         # this scenario's memo, so every later read of this node resolves to the same instance and
         # the claims about it need to know nothing about any of this.
-        self._fresh[nid] = (_varied(self.node(nid), varied), record)
+        self._fresh[nid] = (self.node(nid).varied_with(varied), record)
         return record, records
 
     def made_fresh(self, nid: str) -> Node | None:
@@ -566,13 +538,13 @@ class Materializer:
         not text is left out too — appending to a number would quietly change what kind of thing the
         backend is being sent.
         """
-        keys = natural_keys(node["config"])
+        keys = node.natural_keys
         if not keys:
-            return [], f"{node['resource']} declares no natural key, so nothing tells two of them apart"
-        mine = [key for key in keys if _is_own_text(node["body"].get(key))]
+            return [], f"{node.resource} declares no natural key, so nothing tells two of them apart"
+        mine = [key for key in keys if _is_own_text(node.body.get(key))]
         if not mine:
             return [], (
-                f"every field a {node['resource']} is known by ({', '.join(keys)}) is either a link "
+                f"every field a {node.resource} is known by ({', '.join(keys)}) is either a link "
                 "to another resource or not text, so a copy could not be told from the shared one"
             )
         return mine, ""
@@ -590,14 +562,14 @@ class Materializer:
         if not wanted:
             return {}
         self._isolated += 1
-        tag = str(self.resolve(f"${{uuid:hex#{node['id']}/{self._isolated}}}"))[:FRESH_TAG]
-        return {key: f"{node['body'][key]}{FRESH_MARK}{tag}" for key in wanted}
+        tag = str(self.resolve(f"${{uuid:hex#{node.id}/{self._isolated}}}"))[:FRESH_TAG]
+        return {key: f"{node.body[key]}{FRESH_MARK}{tag}" for key in wanted}
 
     def ephemeral_records(self, records: Mapping[str, Record]) -> list[tuple[str, Record]]:
         return [
             (nid, record)
             for nid, record in records.items()
-            if nid in self.nodes and self.nodes[nid]["lifecycle"] == EPHEMERAL
+            if nid in self.nodes and self.nodes[nid].ephemeral
         ]
 
     def close(self) -> None:
@@ -619,33 +591,15 @@ class Materializer:
         pairs: list[tuple[str, Record]] = [(str(nid), record) for nid, record in source]
         for nid, record in pairs:
             node = self.made_fresh(nid) or self.nodes.get(nid)
-            if node is None or (node["lifecycle"] != EPHEMERAL and nid not in self._fresh):
+            if node is None or (not node.ephemeral and nid not in self._fresh):
                 continue
-            adapter = self.adapters.get(node["system"])
+            adapter = self.adapters.get(node.system)
             if adapter is None:
                 continue
             try:
                 adapter.delete(node, record, self)
             except Exception as exc:
                 log.warning("teardown of %s failed: %s", nid, _short(exc))
-
-
-def _varied(node: Node, overrides: Record | None) -> Node:
-    """This node with some of its body written differently, for one pass.
-
-    A copy, never the node itself: `self.nodes` is session state that every other scenario reads,
-    and a variation that outlived the scenario asking for it would be a shared fixture wearing a
-    different hat — which is the problem inline variation exists to solve.
-
-    The varied body is what `find` matches on as well as what `create` sends, so overriding a field
-    of the natural key genuinely selects a different resource, and overriding anything else changes
-    what a newly created one holds.
-    """
-    if not overrides:
-        return node
-    varied = dict(node)
-    varied["body"] = {**node["body"], **overrides}
-    return cast("Node", varied)
 
 
 def _is_own_text(value: Any) -> bool:

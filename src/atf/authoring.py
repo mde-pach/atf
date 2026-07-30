@@ -20,6 +20,7 @@ import yaml
 from typing_extensions import override
 
 from .catalog import Node
+from .typespec import TypeSpec
 
 # Fields a backend owns rather than the catalog: they appear in a record but must never be declared,
 # because the backend will assign them again on the next create.
@@ -77,9 +78,7 @@ class Derived:
 
 def derive(
     record: dict[str, Any],
-    resource_type: str,
-    type_config: dict[str, Any],
-    id_field: str,
+    spec: TypeSpec,
     nodes: dict[str, Node],
     identities: dict[str, Any] | None = None,
     name: str = "",
@@ -95,14 +94,14 @@ def derive(
         str(value): node_id for node_id, value in identities.items() if value not in (None, "") and node_id in nodes
     }
 
-    keys = _natural_keys(type_config)
+    keys = spec.natural_keys
     body: dict[str, Any] = {}
     depends_on: list[str] = []
     dropped: list[str] = []
 
     for key, value in record.items():
         lowered = str(key).lower()
-        if lowered == str(id_field).lower() or lowered in SERVER_OWNED:
+        if lowered == spec.id_field.lower() or lowered in SERVER_OWNED:
             dropped.append(str(key))
             continue
         # Nested structures are rarely declarable as-is; keep the natural key, drop the rest.
@@ -119,22 +118,13 @@ def derive(
         body[str(key)] = value
 
     return Derived(
-        name=name or _suggest_name(record, keys, resource_type, nodes, set(by_identity)),
-        resource=resource_type,
+        name=name or _suggest_name(record, keys, spec.name, nodes, set(by_identity)),
+        resource=spec.name,
         body=body,
         depends_on=depends_on,
         dropped=dropped,
-        identity=record.get(id_field),
+        identity=record.get(spec.id_field),
     )
-
-
-def _natural_keys(type_config: dict[str, Any]) -> list[str]:
-    keys = type_config.get("natural_key")
-    if isinstance(keys, str):
-        return [keys]
-    if isinstance(keys, list):
-        return [str(key) for key in keys]
-    return []
 
 
 def _suggest_name(
@@ -160,7 +150,7 @@ def _suggest_name(
         resource_type,
     )
     stem = re.sub(r"[^a-z0-9]+", "_", raw.split("@")[0].lower()).strip("_") or resource_type
-    taken = {node["name"] for node in nodes.values() if node["resource"] == resource_type}
+    taken = {node.name for node in nodes.values() if node.resource == resource_type}
     if stem not in taken:
         return stem
     suffix = 2
@@ -175,7 +165,7 @@ def check_name(name: str, resource_type: str, nodes: dict[str, Node]) -> None:
             f"{name!r} is not a usable name — use lower case, digits and underscores, starting with a letter"
         )
     clash = next(
-        (node["id"] for node in nodes.values() if node["resource"] == resource_type and node["name"] == name), None
+        (node.id for node in nodes.values() if node.resource == resource_type and node.name == name), None
     )
     if clash is not None:
         article = "an" if resource_type[:1].lower() in "aeiou" else "a"

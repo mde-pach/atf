@@ -19,6 +19,7 @@ import pytest
 
 from atf.adapters.command import CommandAdapter
 from atf.catalog import Node
+from atf.typespec import EPHEMERAL, TypeSpec
 
 
 def node(**body) -> Node:
@@ -26,15 +27,7 @@ def node(**body) -> Node:
         id="commands.one",
         collection="commands",
         name="one",
-        resource="command",
-        system="command",
-        mode="create",
-        lifecycle="ephemeral",
-        id_field="id",
-        config={},
-        represents="",
-        depends_on=[],
-        dependents=[],
+        spec=TypeSpec(name="command", system="command", lifecycle=EPHEMERAL),
         body=body,
     )
 
@@ -129,7 +122,7 @@ def test_a_command_is_never_already_run(tmp_path):
 def test_a_node_runs_the_command_line_its_body_says(tmp_path):
     adapter = CommandAdapter(cwd=str(tmp_path))
     made = node(command=f"{sys.executable} -c \"print('from the catalog')\"")
-    record = adapter.create(made, made["body"], Ctx())
+    record = adapter.create(made, made.body, Ctx())
 
     assert record["stdout"].strip() == "from the catalog"
     assert record["ok"] is True
@@ -138,5 +131,5 @@ def test_a_node_runs_the_command_line_its_body_says(tmp_path):
 def test_a_node_with_nothing_to_run_says_which_node(tmp_path):
     made = node()
     with pytest.raises(ValueError) as err:
-        CommandAdapter(cwd=str(tmp_path)).create(made, made["body"], Ctx())
+        CommandAdapter(cwd=str(tmp_path)).create(made, made.body, Ctx())
     assert "commands.one: nothing to run" in str(err.value)

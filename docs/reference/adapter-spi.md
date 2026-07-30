@@ -43,8 +43,8 @@ crash the command.
 
 ### `create(node, body, ctx)` {#create}
 
-Provisions the resource and returns its record. `body` is `node["body"]` with all `${...}`
-placeholders resolved; the returned record must carry the identity under `node["id_field"]`.
+Provisions the resource and returns its record. `body` is `node.body` with all `${...}`
+placeholders resolved; the returned record must carry the identity under `node.id_field`.
 
 `create` may do whatever it takes — several calls, a polling loop, an SDK. The catalog still treats
 the result as one resource. It is not called for `mode: reference` types; a reference resource that
@@ -81,11 +81,11 @@ write, including the ones that are one call the adapter already knew how to make
 ```python
 class QueueAdapter:
     def act(self, node, record, action, ctx):
-        declared = node["config"]["actions"][action]
+        declared = node.config["actions"][action]
         return self.client.send(record["id"], **ctx.resolve(declared))
 ```
 
-The declaration is yours to interpret: it reaches you under `node["config"]["actions"][action]`, and
+The declaration is yours to interpret: it reaches you under `node.config["actions"][action]`, and
 ATF has only checked that it is a mapping. An adapter without `act` says so when a scenario reaches
 for a declared action, rather than failing obscurely.
 
@@ -193,11 +193,12 @@ most often:
 
 | Field | Description |
 |---|---|
-| `node["id"]` | `<collection>.<name>`, for error messages. |
-| `node["body"]` | The instance body, **unresolved** — see [`resolve`](#ctx-resolve). |
-| `node["config"]` | Type keys other than `system`, `mode`, `lifecycle` and `id_field`. This is where your adapter's per-type options arrive. |
-| `node["id_field"]` | The field the returned record must carry the identity under. |
-| `node["lifecycle"]` | `persistent` or `ephemeral`. |
+| `node.id` | `<collection>.<name>`, for error messages. |
+| `node.body` | The instance body, **unresolved** — see [`resolve`](#ctx-resolve). |
+| `node.config` | Type keys other than `system`, `mode`, `lifecycle` and `id_field`. This is where your adapter's per-type options arrive. |
+| `node.id_field` | The field the returned record must carry the identity under. |
+| `node.lifecycle` | `persistent` or `ephemeral`. |
+| `node.key_criteria(ctx.resolve)` | `{the field the backend spells it as: the value expected there}`, or `None` when the question cannot be asked yet. |
 
 ## HTTP helpers {#http-helpers}
 
@@ -241,7 +242,7 @@ class ThingAdapter:
         self.client = ThingClient(settings["base_url"])
 
     def find(self, node, ctx):
-        return self.client.get(node["body"]["name"])
+        return self.client.get(node.body["name"])
 
     def create(self, node, body, ctx):
         return self.client.create(**body)

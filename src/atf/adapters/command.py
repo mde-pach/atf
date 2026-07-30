@@ -89,8 +89,8 @@ class CommandAdapter(NoopDelete):
         """Run what this node says to run. A command exists by having been run."""
         line = body.get(COMMAND)
         if not line:
-            raise ValueError(f"{node['id']}: nothing to run — give the node a `command` to run")
-        return self.run(line, cwd=body.get(CWD), env=body.get(ENV), called=node["id"])
+            raise ValueError(f"{node.id}: nothing to run — give the node a `command` to run")
+        return self.run(line, cwd=body.get(CWD), env=body.get(ENV), called=node.id)
 
     # ---- running one --------------------------------------------------------
 

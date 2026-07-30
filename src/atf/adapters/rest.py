@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 
 from .. import http
-from ..catalog import Node, key_criteria, natural_keys
+from ..catalog import Node
 from ..compare import matches as _matches
 from ..placeholders import Unresolved
 from . import Context, Record
@@ -89,7 +89,7 @@ class RestAdapter:
             raise ValueError(f"POST {path}: {response.status_code} {response.text[:200]}")
 
         record = self._record_from(response, node)
-        if record is not None and record.get(node["id_field"]) is not None:
+        if record is not None and record.get(node.id_field) is not None:
             return record
 
         # No identity in the create response (204, or an envelope we don't know): re-read it.
@@ -98,7 +98,7 @@ class RestAdapter:
         if found is not None:
             return found
         raise ValueError(
-            f"POST {path}: created, but no record carrying {node['id_field']!r} could be read back — "
+            f"POST {path}: created, but no record carrying {node.id_field!r} could be read back — "
             "set `record_key` if the response wraps it, or check the natural key round-trips"
         )
 
@@ -125,24 +125,24 @@ class RestAdapter:
         response carries comes back as the record; a `204` carries nothing, and the assertions after
         it read the resource back for themselves as they always do.
         """
-        declared = (node["config"].get("actions") or {}).get(action)
+        declared = (node.config.get("actions") or {}).get(action)
         if not isinstance(declared, dict):
             raise ValueError(
-                f"{node['id']}: resource type {node['resource']!r} declares no action {action!r}"
+                f"{node.id}: resource type {node.resource!r} declares no action {action!r}"
             )
 
         verbs = [key for key in declared if str(key).upper() in _ACTION_VERBS]
         if len(verbs) != 1:
             offered = ", ".join(sorted(_ACTION_VERBS)).lower()
             raise ValueError(
-                f"{node['id']}: action {action!r} must name exactly one of {offered} — "
+                f"{node.id}: action {action!r} must name exactly one of {offered} — "
                 f"got {', '.join(map(str, verbs)) or 'none'}"
             )
         verb = str(verbs[0])
         body = ctx.resolve(declared[verb]) if isinstance(declared[verb], dict) else {}
 
         template = declared.get("at")
-        identity = record.get(node["id_field"])
+        identity = record.get(node.id_field)
         where = str(template).format(**record) if isinstance(template, str) else str(identity)
         path = f"{self._path(node).rstrip('/')}/{str(where).lstrip('/')}"
 
@@ -154,10 +154,10 @@ class RestAdapter:
         return self._record_from(response, node)
 
     def delete(self, node: Node, record: Record, ctx: Context) -> None:
-        config = node["config"]
+        config = node.config
         if config.get("deletable") is False:
             return
-        identity = record.get(node["id_field"])
+        identity = record.get(node.id_field)
         if identity is None:
             return
         template = config.get("delete_path")
@@ -171,19 +171,19 @@ class RestAdapter:
     # ---- internals --------------------------------------------------------
 
     def _path(self, node: Node) -> str:
-        path = node["config"].get("path")
+        path = node.config.get("path")
         if not isinstance(path, str) or not path:
-            raise ValueError(f"{node['id']}: resource type {node['resource']!r} needs a `path`")
+            raise ValueError(f"{node.id}: resource type {node.resource!r} needs a `path`")
         return path
 
     def _criteria(self, node: Node, ctx: Context) -> dict[str, Any] | None:
         """`{remote_field: expected}` to match on, or `None` when the identity can't be resolved yet."""
-        if not natural_keys(node["config"]):
-            raise ValueError(f"{node['id']}: resource type {node['resource']!r} needs a `natural_key`")
-        return key_criteria(node, ctx.resolve)
+        if not node.natural_keys:
+            raise ValueError(f"{node.id}: resource type {node.resource!r} needs a `natural_key`")
+        return node.key_criteria(ctx.resolve)
 
     def _listing(self, node: Node, ctx: Context) -> tuple[str, dict[str, Any]]:
-        config = node["config"]
+        config = node.config
         url = self._path(node)
         params: dict[str, Any] = {}
 
@@ -197,9 +197,9 @@ class RestAdapter:
         if isinstance(filters, list):
             for name in filters:
                 key = str(name)
-                if key in node["body"]:
+                if key in node.body:
                     try:
-                        params[key] = ctx.resolve(node["body"][key])
+                        params[key] = ctx.resolve(node.body[key])
                     except Unresolved:
                         continue
         return url, params
@@ -210,9 +210,9 @@ class RestAdapter:
         fields = [name for _, name, _, _ in string.Formatter().parse(template) if name]
         scope: dict[str, Any] = {}
         for name in fields:
-            if name not in node["body"]:
-                raise ValueError(f"{node['id']}: list_path needs {name!r} in the node body")
-            scope[name] = ctx.resolve(node["body"][name])
+            if name not in node.body:
+                raise ValueError(f"{node.id}: list_path needs {name!r} in the node body")
+            scope[name] = ctx.resolve(node.body[name])
         return scope
 
     def _list(self, url: str, params: dict[str, Any]) -> list[dict[str, Any]]:
@@ -225,7 +225,7 @@ class RestAdapter:
             payload = response.json()
         except ValueError:
             return None
-        record_key = node["config"].get("record_key")
+        record_key = node.config.get("record_key")
         if record_key and isinstance(payload, dict):
             payload = payload.get(str(record_key))
         return payload if isinstance(payload, dict) else None

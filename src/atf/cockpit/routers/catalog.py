@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException, Request
 from markupsafe import Markup
 
 from ...adapters import can_browse
-from ...catalog import TYPES_FILE, Node, natural_keys
+from ...catalog import TYPES_FILE, Catalog, Node
 from ...engine.status import Statuses
 from ...materializer import Materializer, ScopeRequired
 from ...placeholders import Unresolved, references
@@ -137,8 +137,8 @@ def _context(
     # A node selection wins, and pins its own type open in the list; otherwise a type is selected,
     # defaulting to the first one — the catalog always has something to say.
     node = nodes.get(focus)
-    focus = node["id"] if node else ""
-    selected = node["resource"] if node else (wanted if wanted in types else next(iter(types), ""))
+    focus = node.id if node else ""
+    selected = node.resource if node else (wanted if wanted in types else next(iter(types), ""))
 
     targets = cockpit.provision_targets(env)
     age = cockpit.status_age(env)
@@ -158,7 +158,7 @@ def _context(
         # node selected the type page is not rendered, so browsing for it would be a wasted call.
         "records": None if node else environment_records(env, types.get(selected), scope_id),
         "instance_files": instance_files(),
-        "keys": natural_keys(types[selected].config) if selected in types else [],
+        "keys": types[selected].spec.natural_keys if selected in types else [],
         # The label is derived from the same call the action uses, so the two cannot disagree.
         # With nothing to provision the control is not rendered at all: a disabled button beside
         # an explanation of why it is disabled is two elements saying "ignore me".
@@ -178,7 +178,7 @@ def _context(
 def _node_context(env: str, node: Node, nodes: dict[str, Node], status: Statuses) -> dict[str, Any]:
     cockpit = app()
     found = cockpit.discovery(env)
-    node_id = node["id"]
+    node_id = node.id
     entry = status.of(node_id)
     creatable, why = cockpit.state(env).materializer.provisionable(node_id)
     closure = closure_of(node_id, nodes)
@@ -188,10 +188,10 @@ def _node_context(env: str, node: Node, nodes: dict[str, Node], status: Statuses
         # for "nothing has to exist first" is the whole of what there is to say.
         "graph": build_graph(nodes, node_id, status) if len(closure) > GRAPH_FROM else None,
         "lineage": lineage_sentence(node, nodes),
-        "needs": [nodes[dep] for dep in node["depends_on"] if dep in nodes],
-        "needed_by": [nodes[dep] for dep in node["dependents"] if dep in nodes],
+        "needs": [nodes[dep] for dep in node.depends_on if dep in nodes],
+        "needed_by": [nodes[dep] for dep in node.dependents if dep in nodes],
         "specs": found.specs_for_resource(node_id),
-        "payload": _payload(node["body"]),
+        "payload": _payload(node.body),
         "identity": entry.identity or "",
         "state": entry.state,
         "detail": entry.detail,
@@ -210,9 +210,9 @@ def _type_context(env: str, view: TypeView | None, status: Statuses) -> dict[str
 
     engine = app().state(env).materializer
     targets = [
-        node["id"]
+        node.id
         for node in view.nodes
-        if status.of(node["id"]).missing and engine.provisionable(node["id"])[0]
+        if status.of(node.id).missing and engine.provisionable(node.id)[0]
     ]
     return {
         "type_targets": targets,
@@ -227,7 +227,7 @@ def _type_blocked(env: str, view: TypeView, targets: list[str]) -> str:
         return ""
     if not view.nodes:
         return f"no {view.name} is declared in the catalog yet"
-    refusals = {app().state(env).materializer.provisionable(node["id"])[1] for node in view.nodes}
+    refusals = {app().state(env).materializer.provisionable(node.id)[1] for node in view.nodes}
     refusals.discard("")
     if refusals:
         return sorted(refusals)[0]
@@ -291,7 +291,7 @@ def environment_records(env: str, view: TypeView | None, scope_id: str = "") -> 
     if view is None:
         return EnvRecords(browsable=False)
 
-    out = EnvRecords(type_name=view.name, id_field=view.id_field, scope_fields=engine.browse_fields(view.name))
+    out = EnvRecords(type_name=view.name, id_field=view.id_field, scope_fields=view.spec.browse_fields)
     adapter = engine.adapters.get(view.system)
     if adapter is None:
         out.error = f"No adapter for {view.system!r} in {env}, so ATF cannot see what is out there."
@@ -302,16 +302,16 @@ def environment_records(env: str, view: TypeView | None, scope_id: str = "") -> 
 
     scope: dict[str, Any] | None = None
     if out.scope_fields:
-        out.choices = _scope_choices(env, engine.nodes, engine.types, view, out.scope_fields[0])
+        out.choices = _scope_choices(env, engine.catalog, view, out.scope_fields[0])
         out.scope = engine.nodes.get(scope_id)
         if out.scope is None:
             out.needs = list(out.scope_fields)
             return out
-        identity = _identities(env).get(out.scope["id"])
+        identity = _identities(env).get(out.scope.id)
         if identity in (None, ""):
             out.needs = list(out.scope_fields)
             out.error = (
-                f"{out.scope['name']} is not in {env} yet, so there is nothing inside it to list. Provision it first."
+                f"{out.scope.name} is not in {env} yet, so there is nothing inside it to list. Provision it first."
             )
             return out
         scope = {out.scope_fields[0]: identity}
@@ -325,27 +325,19 @@ def environment_records(env: str, view: TypeView | None, scope_id: str = "") -> 
         out.error = _first_line(exc)
         return out
 
-    keys = natural_keys(view.config)
-    out.columns = _columns(records, view.id_field, keys)
+    out.columns = _columns(records, view.id_field, view.spec.natural_keys)
     out.truncated = len(records) >= BROWSE_LIMIT
-    by_identity, by_key = _declared(env, engine, view, keys)
+    by_identity, by_key = _declared(env, engine, view)
     for record in records:
         identity = record.get(view.id_field)
         out.rows.append(
             EnvRow(
                 identity="" if identity is None else str(identity),
                 cells=[_cell(record.get(column)) for column in out.columns],
-                node=by_identity.get(str(identity)) or by_key.get(_signature(record, keys, view.config)),
+                node=by_identity.get(str(identity)) or by_key.get(view.spec.signature(record)),
             )
         )
     return out
-
-
-def remote_keys(config: dict[str, Any]) -> list[str]:
-    """The natural key as the *backend* spells it — what a record's own fields are called."""
-    keys = natural_keys(config)
-    ref_field = config.get("ref_field")
-    return [str(ref_field)] if (ref_field and len(keys) == 1) else keys
 
 
 @dataclass
@@ -373,11 +365,11 @@ def instance_rows(view: TypeView | None, status: Statuses, records: EnvRecords |
         return []
     rows = [
         InstanceRow(
-            label=node["name"],
-            status=status.state(node["id"]),
-            detail=node["represents"],
+            label=node.name,
+            status=status.state(node.id),
+            detail=node.represents,
             node=node,
-            identity=str(status.identity(node["id"]) or ""),
+            identity=str(status.identity(node.id) or ""),
         )
         for node in view.nodes
     ]
@@ -385,7 +377,7 @@ def instance_rows(view: TypeView | None, status: Statuses, records: EnvRecords |
     if records is None:
         return rows
 
-    keys = remote_keys(view.config)
+    keys = view.spec.remote_keys
     at = {name: position for position, name in enumerate(records.columns)}
     for row in records.rows:
         if row.node is not None:
@@ -424,18 +416,17 @@ def _declared(
     env: str,
     engine: Materializer,
     view: TypeView,
-    keys: list[str],
 ) -> tuple[dict[str, Node], dict[tuple[str, ...] | None, Node]]:
     """Two ways to recognise a declared record: by the identity it has here, or by its natural key."""
     identities = _identities(env)
     by_identity: dict[str, Node] = {}
     by_key: dict[tuple[str, ...] | None, Node] = {}
     for node in view.nodes:
-        identity = identities.get(node["id"])
+        identity = identities.get(node.id)
         if identity not in (None, ""):
             by_identity.setdefault(str(identity), node)
         try:
-            values = tuple(str(engine.resolve(node["body"][key])) for key in keys)
+            values = tuple(str(engine.resolve(node.body[key])) for key in view.spec.natural_keys)
         except (KeyError, Unresolved):
             continue
         if values:
@@ -443,24 +434,9 @@ def _declared(
     return by_identity, by_key
 
 
-def _signature(record: dict[str, Any], keys: list[str], config: dict[str, Any]) -> tuple[str, ...] | None:
-    """A record's natural key, positionally — what an adapter's `find` would have matched it on."""
-    if not keys:
-        return None
-    ref_field = config.get("ref_field")
-    values: list[str] = []
-    for key in keys:
-        remote = str(ref_field) if (ref_field and len(keys) == 1) else key
-        if record.get(remote) is None:
-            return None
-        values.append(str(record[remote]))
-    return tuple(values)
-
-
 def _scope_choices(
     env: str,
-    nodes: dict[str, Node],
-    types: dict[str, dict[str, Any]],
+    catalog: Catalog,
     view: TypeView,
     scope_field: str,
 ) -> list[ScopeChoice]:
@@ -471,20 +447,20 @@ def _scope_choices(
     """
     parent_types: list[str] = []
     for node in view.nodes:
-        for referenced in sorted(references(node["body"].get(scope_field))):
-            target = nodes.get(referenced)
-            if target is not None and target["resource"] not in parent_types:
-                parent_types.append(target["resource"])
+        for referenced in sorted(references(node.body.get(scope_field))):
+            target = catalog.nodes.get(referenced)
+            if target is not None and target.resource not in parent_types:
+                parent_types.append(target.resource)
     guessed = _FOREIGN_KEY.sub("", scope_field)
-    if not parent_types and guessed in types:
+    if not parent_types and guessed in catalog.types:
         parent_types.append(guessed)
 
     identities = _identities(env)
     choices: list[ScopeChoice] = []
-    for node in sorted(nodes.values(), key=lambda item: item["name"]):
-        if node["resource"] not in parent_types:
+    for node in sorted(catalog.nodes.values(), key=lambda item: item.name):
+        if node.resource not in parent_types:
             continue
-        identity = identities.get(node["id"])
+        identity = identities.get(node.id)
         choices.append(
             ScopeChoice(
                 node=node,
@@ -525,9 +501,9 @@ def _node_label(node: Node, closure: list[str]) -> str:
     """Provisioning always provisions the closure, so the button says so before you press it."""
     others = len(closure) - 1
     if others <= 0:
-        return f"Provision {node['name']}"
+        return f"Provision {node.name}"
     count = "1 dependency" if others == 1 else f"{others} dependencies"
-    return f"Provision {node['name']} + {count}"
+    return f"Provision {node.name} + {count}"
 
 
 def _payload(body: dict[str, Any]) -> Markup:

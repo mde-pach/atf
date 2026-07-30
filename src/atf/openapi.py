@@ -73,7 +73,8 @@ from typing import Any
 import yaml
 
 from .authoring import diff
-from .catalog import RESERVED_FIXTURE_NAMES, TYPES_FILE, natural_keys
+from .catalog import RESERVED_FIXTURE_NAMES, TYPES_FILE
+from .typespec import TypeSpec
 
 # Every type an OpenAPI schema describes is served over a JSON API, which is the one system ATF
 # ships an adapter for out of the box. Nothing in a schema could say otherwise.
@@ -310,7 +311,7 @@ def convention_of(types: Mapping[str, Any]) -> dict[str, list[str]]:
     for name, entry in sorted(types.items()):
         if not isinstance(entry, Mapping):
             continue
-        for key in natural_keys(dict(entry)):
+        for key in TypeSpec.from_entry(name, entry).natural_keys:
             out.setdefault(key, []).append(str(name))
     return out
 
@@ -767,7 +768,10 @@ def _drift(collection: Collection, declared: Any) -> str:
     said = declared.get("path")
     if isinstance(said, str) and said and said != collection.path:
         return f"the catalog says `{said}`, the schema says `{collection.path}`"
-    keys = [key for key in natural_keys(dict(declared)) if key not in collection.scope]
+    keys = [
+        key for key in TypeSpec.from_entry(collection.name, declared).natural_keys
+        if key not in collection.scope
+    ]
     if keys and collection.guess.considered:
         known = {one.field for one in collection.guess.considered}
         # Only worth saying when the schema described *some* settable fields; an empty schema

@@ -25,46 +25,46 @@ class FakeAdapter:
     # ---- SPI ----
 
     def find(self, node: Node, ctx: Context) -> Record | None:
-        self.calls.append(("find", node["id"]))
+        self.calls.append(("find", node.id))
         criteria = self._criteria(node, ctx)
         if criteria is None:
             return None
-        for record in self.store.get(node["resource"], []):
+        for record in self.store.get(node.resource, []):
             if all(record.get(key) == value for key, value in criteria.items()):
                 return record
         return None
 
     def create(self, node: Node, body: Record, ctx: Context) -> Record:
-        self.calls.append(("create", node["id"]))
-        if node["id"] in self.fail_create:
-            raise ValueError(f"backend refused to create {node['id']}")
+        self.calls.append(("create", node.id))
+        if node.id in self.fail_create:
+            raise ValueError(f"backend refused to create {node.id}")
         record = dict(body)
-        record[node["id_field"]] = f"{node['resource']}-{self.next_id}"
+        record[node.id_field] = f"{node.resource}-{self.next_id}"
         self.next_id += 1
-        self.store.setdefault(node["resource"], []).append(record)
+        self.store.setdefault(node.resource, []).append(record)
         return record
 
     def delete(self, node: Node, record: Record, ctx: Context) -> None:
-        self.calls.append(("delete", node["id"]))
-        bucket = self.store.get(node["resource"], [])
-        self.store[node["resource"]] = [item for item in bucket if item is not record]
+        self.calls.append(("delete", node.id))
+        bucket = self.store.get(node.resource, [])
+        self.store[node.resource] = [item for item in bucket if item is not record]
 
     # ---- helpers ----
 
     def _criteria(self, node: Node, ctx: Context) -> dict[str, Any] | None:
         from atf.placeholders import Unresolved
 
-        keys = node["config"].get("natural_key")
+        keys = node.config.get("natural_key")
         if isinstance(keys, str):
             keys = [keys]
         if not keys:
             return None
         criteria: dict[str, Any] = {}
         for key in keys:
-            if key not in node["body"]:
+            if key not in node.body:
                 return None
             try:
-                criteria[str(key)] = ctx.resolve(node["body"][key])
+                criteria[str(key)] = ctx.resolve(node.body[key])
             except Unresolved:
                 return None
         return criteria

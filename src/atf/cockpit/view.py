@@ -18,11 +18,12 @@ from urllib.parse import urlencode
 from fastapi import HTTPException, Request
 from fastapi.templating import Jinja2Templates
 
-from ..catalog import DATA, EPHEMERAL, REFERENCE, Node
+from ..catalog import Node
 from ..discovery import Spec, Step, Test
 from ..engine.status import ABSENT, ERROR, PRESENT, UNSUPPORTED, Statuses
 from ..engine.status import TONES as STATUS_TONES
 from ..runner import FAILED, PASSED, SKIPPED, StepResult, TestResult
+from ..typespec import DATA, REFERENCE, TypeSpec
 from .deps import Cockpit, get_cockpit
 from .glossary import TERMS, Term, docs_url
 
@@ -174,9 +175,9 @@ def readiness(node_ids: list[str], nodes: dict[str, Node], status: Statuses) -> 
             reason = _BLOCKING.get(entry.state)
             if reason:
                 out.blockers.append((member, reason))
-            elif entry.state == ABSENT and nodes[member]["mode"] == REFERENCE:
+            elif entry.state == ABSENT and nodes[member].mode == REFERENCE:
                 out.blockers.append((member, "must already exist here — ATF never creates a reference resource"))
-            elif nodes[member]["mode"] == DATA:
+            elif nodes[member].mode == DATA:
                 # An observation is not a precondition. Absent means only "not there yet", which is
                 # frequently the very thing the scenario is about to claim.
                 continue
@@ -192,7 +193,7 @@ def closure_of(node_id: str, nodes: dict[str, Node], seen: set[str] | None = Non
         return []
     seen.add(node_id)
     members = [node_id]
-    for dependency in nodes[node_id]["depends_on"]:
+    for dependency in nodes[node_id].depends_on:
         members.extend(closure_of(dependency, nodes, seen))
     return members
 
@@ -299,20 +300,39 @@ def _scenario_state(spec: Spec, outcomes: list[str], ready: Readiness) -> str:
 class TypeView:
     """A resource type, with everything a spec author needs in order to use one."""
 
-    name: str
-    system: str
-    mode: str
-    lifecycle: str
-    id_field: str
-    config: dict[str, Any]
+    spec: TypeSpec
     nodes: list[Node] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=dict)
     specs: list[Spec] = field(default_factory=list)
 
     @property
+    def name(self) -> str:
+        return self.spec.name
+
+    @property
+    def system(self) -> str:
+        return self.spec.system
+
+    @property
+    def mode(self) -> str:
+        return self.spec.mode
+
+    @property
+    def lifecycle(self) -> str:
+        return self.spec.lifecycle
+
+    @property
+    def id_field(self) -> str:
+        return self.spec.id_field
+
+    @property
+    def config(self) -> dict[str, Any]:
+        return self.spec.config
+
+    @property
     def example(self) -> str:
         """The Gherkin line that uses one. The type page is where a spec author learns this."""
-        name = self.nodes[0]["name"] if self.nodes else "name"
+        name = self.nodes[0].name if self.nodes else "name"
         return f'Given the {self.name} "{name}"'
 
     @property
@@ -327,7 +347,7 @@ class TypeView:
     def tone(self) -> str:
         if self.counts.get(ERROR) or self.counts.get(UNSUPPORTED):
             return "bad"
-        if self.lifecycle == EPHEMERAL:
+        if self.spec.ephemeral:
             return "accent"
         return "ok" if self.total and self.present == self.total else "idle"
 
@@ -338,30 +358,20 @@ def type_views(env: str) -> dict[str, TypeView]:
     status = app.status(env)
     found = app.discovery(env)
 
-    views = {
-        name: TypeView(
-            name=name,
-            system=str(entry.get("system", "")),
-            mode=str(entry.get("mode", "create")),
-            lifecycle=str(entry.get("lifecycle", "persistent")),
-            id_field=str(entry.get("id_field", "id")),
-            config={k: v for k, v in entry.items() if k not in {"system", "mode", "lifecycle", "id_field"}},
-        )
-        for name, entry in sorted(engine.types.items())
-    }
+    views = {name: TypeView(spec=spec) for name, spec in sorted(engine.types.items())}
 
-    for node in sorted(engine.nodes.values(), key=lambda item: item["name"]):
-        view = views.get(node["resource"])
+    for node in sorted(engine.nodes.values(), key=lambda item: item.name):
+        view = views.get(node.resource)
         if view is None:
             continue
         view.nodes.append(node)
-        state = status.state(node["id"])
+        state = status.state(node.id)
         view.counts[state] = view.counts.get(state, 0) + 1
 
     for spec in found.specs:
         for node_id in spec.resources:
             node = engine.nodes.get(node_id)
-            view = views.get(node["resource"]) if node else None
+            view = views.get(node.resource) if node else None
             if view is not None and spec not in view.specs:
                 view.specs.append(spec)
 
@@ -445,7 +455,7 @@ def neighbourhood(nodes: dict[str, Node], focus: str) -> dict[str, int]:
 
     def walk(current: str, depth: int, upstream: bool) -> None:
         node = nodes[current]
-        neighbours = node["depends_on"] if upstream else node["dependents"]
+        neighbours = node.depends_on if upstream else node.dependents
         for neighbour in neighbours:
             if neighbour not in nodes:
                 continue
@@ -484,20 +494,20 @@ def build_graph(nodes: dict[str, Node], focus: str, status: Statuses) -> Graph:
             boxes.append(
                 GraphBox(
                     id=node_id,
-                    label=node["name"],
-                    sub=node["resource"],
+                    label=node.name,
+                    sub=node.resource,
                     x=x,
                     y=y,
                     focus=node_id == focus,
                     status=status.state(node_id),
-                    system=node["system"],
-                    represents=node["represents"],
+                    system=node.system,
+                    represents=node.represents,
                 )
             )
 
     edges: list[GraphEdge] = []
     for node_id in layers:
-        for dependency in nodes[node_id]["depends_on"]:
+        for dependency in nodes[node_id].depends_on:
             if dependency not in positions or node_id not in positions:
                 continue
             start = positions[dependency]
@@ -514,12 +524,12 @@ def build_graph(nodes: dict[str, Node], focus: str, status: Statuses) -> Graph:
 
 def lineage_sentence(node: Node, nodes: dict[str, Node]) -> str:
     """The graph in words, which is what someone new to the suite actually reads."""
-    chain = [member for member in closure_of(node["id"], nodes) if member != node["id"]]
+    chain = [member for member in closure_of(node.id, nodes) if member != node.id]
     if not chain:
-        return f"Nothing has to exist first — provisioning {node['name']} is a single create."
-    names = ", ".join(nodes[member]["name"] for member in chain)
+        return f"Nothing has to exist first — provisioning {node.name} is a single create."
+    names = ", ".join(nodes[member].name for member in chain)
     return (
-        f"{node['name']} needs {names}. Provisioning it provisions "
+        f"{node.name} needs {names}. Provisioning it provisions "
         f"{plural(len(chain) + 1, 'resource')} in all, dependencies first."
     )
 

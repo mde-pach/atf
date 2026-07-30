@@ -15,7 +15,7 @@ class ReferenceAdapter(RestAdapter):
     @override
     def create(self, node: Node, body: Record, ctx: Context) -> Record:
         raise ValueError(
-            f"{node['id']}: {node['resource']!r} is a reference resource and must already exist in {ctx.env}"
+            f"{node.id}: {node.resource!r} is a reference resource and must already exist in {ctx.env}"
         )
 
     @override

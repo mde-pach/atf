@@ -38,7 +38,7 @@ from pytest_bdd import parsers, then, when
 
 from .adapters import Record, can_browse
 from .adapters.command import CommandAdapter
-from .catalog import Node, find_node, key_criteria, natural_keys
+from .catalog import Node
 from .compare import (
     MARKERS,
     MISSING,
@@ -52,7 +52,7 @@ from .compare import (
     written_matches,
 )
 from .context import RESULT, Slot, ephemeral_record
-from .materializer import EPHEMERAL, Materializer, ProvisioningError, ScopeRequired
+from .materializer import Materializer, ProvisioningError, ScopeRequired
 from .placeholders import Unresolved
 from .records import as_records
 
@@ -429,7 +429,7 @@ def comparisons_for(subject: str, on_field: bool) -> list[Comparison]:
 def _(request: pytest.FixtureRequest, context: Any, action: str, resource_type: str, name: str) -> None:
     """Do to this resource what its type says that action means."""
     engine, node = _node(request, resource_type, name)
-    known = engine.actions(resource_type)
+    known = engine.spec(resource_type).actions
     if action not in known:
         pytest.fail(
             f"{resource_type} declares no action {action!r} (it offers: {', '.join(known)}). "
@@ -487,16 +487,16 @@ def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: st
 def _(request: pytest.FixtureRequest, context: Any, resource_type: str, name: str) -> None:
     """Read this resource back and require it to be absent — what a deletion is checked with."""
     engine, node = _node(request, resource_type, name)
-    if node["lifecycle"] == EPHEMERAL:
+    if node.ephemeral:
         pytest.fail(
-            f"{node['id']} is ephemeral, so ATF never looks one up and cannot tell whether it is gone. "
+            f"{node.id} is ephemeral, so ATF never looks one up and cannot tell whether it is gone. "
             "Assert on the backend directly in a step of your own."
         )
     record = read(engine, node, context)
     if record is not None:
         pytest.fail(
-            f"{node['id']} is still in {engine.env}: {node['id_field']}="
-            f"{record.get(node['id_field'])!r} matches what the catalog declares."
+            f"{node.id} is still in {engine.env}: {node.id_field}="
+            f"{record.get(node.id_field)!r} matches what the catalog declares."
         )
 
 
@@ -658,7 +658,7 @@ def _listing(engine: Materializer, resource_type: str, doing: str = "count") -> 
         known = ", ".join(engine.resource_types()) or "none"
         pytest.fail(f"no resource type {resource_type!r} in the catalog (known types: {known})")
 
-    system = str(engine.types[resource_type].get("system", ""))
+    system = engine.spec(resource_type).system
     adapter = engine.adapters.get(system)
     if adapter is None:
         pytest.fail(f"no adapter for system {system!r} in {engine.env}, so there is nothing to count.")
@@ -698,7 +698,7 @@ def _(request: pytest.FixtureRequest, context: Any, slot: str, resource_type: st
     engine, node = _node(request, resource_type, name)
     records = _slot(context, slot)
     if not any(identifies(engine, node, record) for record in records):
-        pytest.fail(f"nothing in {slot} is {node['id']}. {_looked_for(engine, node, records)}")
+        pytest.fail(f"nothing in {slot} is {node.id}. {_looked_for(engine, node, records)}")
 
 
 @then(parsers.parse(SLOT_LACKS))
@@ -708,7 +708,7 @@ def _(request: pytest.FixtureRequest, context: Any, slot: str, resource_type: st
     records = _slot(context, slot)
     if any(identifies(engine, node, record) for record in records):
         pytest.fail(
-            f"{slot} contains {node['id']}, which it must not. {_looked_for(engine, node, records)}"
+            f"{slot} contains {node.id}, which it must not. {_looked_for(engine, node, records)}"
         )
 
 
@@ -788,8 +788,8 @@ def read(engine: Materializer, node: Node, context: Any) -> Record | None:
     The cache is dropped first because it is the whole point: the listing behind it was read before
     the actions ran, and an assertion after an action has to see what the action did.
     """
-    if node["lifecycle"] == EPHEMERAL:
-        return ephemeral_record(context, node["id"])
+    if node.ephemeral:
+        return ephemeral_record(context, node.id)
     engine.invalidate_cache()
     return engine.find_existing(node)
 
@@ -802,10 +802,10 @@ def identifies(engine: Materializer, node: Node, record: Record) -> bool:
     """
     if not isinstance(record, dict):
         return False
-    identity = engine.identity_of(node["id"])
-    if identity not in (None, "") and matches(record.get(node["id_field"]), identity):
+    identity = engine.identity_of(node.id)
+    if identity not in (None, "") and matches(record.get(node.id_field), identity):
         return True
-    criteria = key_criteria(node, engine.resolve)
+    criteria = node.key_criteria(engine.resolve)
     return bool(criteria) and all(matches(record.get(key), want) for key, want in criteria.items())
 
 
@@ -814,10 +814,10 @@ def _node(request: pytest.FixtureRequest, resource_type: str, name: str) -> tupl
     if resource_type not in engine.types:
         known = ", ".join(engine.resource_types()) or "none"
         pytest.fail(f"no resource type {resource_type!r} in the catalog (known types: {known})")
-    node = find_node(engine.nodes, resource_type, name)
+    node = engine.catalog.find(resource_type, name)
     if node is None:
         declared = ", ".join(
-            sorted(other["name"] for other in engine.nodes.values() if other["resource"] == resource_type)
+            sorted(other.name for other in engine.nodes.values() if other.resource == resource_type)
         )
         pytest.fail(
             f"the catalog declares no {resource_type} called {name!r} "
@@ -827,7 +827,7 @@ def _node(request: pytest.FixtureRequest, resource_type: str, name: str) -> tupl
     # about — the node as it was varied to make it, carrying the key it was given. Substituted here,
     # once, rather than in each step: a claim says which resource it is about and nothing about how
     # that resource came to be, and it should not have to.
-    return engine, engine.made_fresh(node["id"]) or node
+    return engine, engine.made_fresh(node.id) or node
 
 
 def _field(
@@ -839,7 +839,7 @@ def _field(
         pytest.fail(f"{_absent(engine, node)} There is no {field!r} to read.")
     if field not in record:
         carries = ", ".join(sorted(map(str, record))) or "no fields at all"
-        pytest.fail(f"{node['id']} has no field {field!r} in {engine.env} — the record carries {carries}.")
+        pytest.fail(f"{node.id} has no field {field!r} in {engine.env} — the record carries {carries}.")
     return record[field]
 
 
@@ -875,18 +875,18 @@ def _holding(context: Any) -> str:
 
 
 def _absent(engine: Materializer, node: Node) -> str:
-    if node["lifecycle"] == EPHEMERAL:
-        return f"this scenario has not provisioned {node['id']}, and an ephemeral resource is never looked up."
-    criteria = key_criteria(node, engine.resolve)
+    if node.ephemeral:
+        return f"this scenario has not provisioned {node.id}, and an ephemeral resource is never looked up."
+    criteria = node.key_criteria(engine.resolve)
     if not criteria:
-        keys = ", ".join(natural_keys(node["config"])) or "no natural key"
-        return f"{node['id']} could not be looked up in {engine.env}: {keys} could not be resolved."
+        keys = ", ".join(node.natural_keys) or "no natural key"
+        return f"{node.id} could not be looked up in {engine.env}: {keys} could not be resolved."
     spelled = ", ".join(f"{key}={value!r}" for key, value in sorted(criteria.items()))
-    return f"nothing in {engine.env} matches {node['id']} ({spelled})."
+    return f"nothing in {engine.env} matches {node.id} ({spelled})."
 
 
 def _looked_for(engine: Materializer, node: Node, records: list[Record]) -> str:
-    criteria = key_criteria(node, engine.resolve) or {}
+    criteria = node.key_criteria(engine.resolve) or {}
     spelled = ", ".join(f"{key}={value!r}" for key, value in sorted(criteria.items())) or "its identity"
     carried = _shared(records)
     return (

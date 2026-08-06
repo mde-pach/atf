@@ -45,14 +45,19 @@ class Overview:
             return f"{self.environment} is ready."
         why = []
         if self.unmakeable:
-            why.append(f"{len(self.unmakeable)} resources are absent and cannot be made here")
+            why.append(f"{_many(len(self.unmakeable), 'resource')} absent and cannot be made here")
         if unreachable := self.resources.get(str(State.UNREACHABLE), 0):
-            why.append(f"{unreachable} resources are unreachable")
+            why.append(f"{_many(unreachable, 'resource')} unreachable")
         if failed := self.tests.get(str(Outcome.FAILED), 0):
-            why.append(f"{failed} tests are failing")
+            why.append(f"{_many(failed, 'test')} failing")
         if not self.well_formed:
             why.append(f"the suite has {self.faults} faults")
         return f"{self.environment} is not ready — {' and '.join(why)}."
+
+
+def _many(count: int, thing: str) -> str:
+    """`1 resource is`, `2 resources are` — the sentence has to read."""
+    return f"{count} {thing} is" if count == 1 else f"{count} {thing}s are"
 
 
 def overview(ground: Ground, root: Path, faults: int = 0) -> Overview:
@@ -357,12 +362,28 @@ class TestEntry:
 
 
 def tests(suite: Suite, features: list[Any], root: Path, environment: str) -> list[TestEntry]:
-    """Every behaviour the suite describes, in one list, with the verdict history gives it."""
+    """Every behaviour the suite describes, in one list, with the verdict history gives it.
+
+    A scenario and a pytest function appear the same way. `form` says which one you are looking at
+    and nothing else treats them differently.
+    """
     latest: dict[str, Outcome] = {}
     for run in record.runs_for(root, environment):
         for outcome in run.outcomes:
             latest[outcome.test] = outcome.outcome
     flaky = record.flaky(root, environment)
+
+    def entry(identity: str, label: str, form: str, tags: list[str], arranges: list[str]) -> TestEntry:
+        seen = next((word for test, word in latest.items() if test.endswith(label)), None)
+        return TestEntry(
+            id=identity,
+            label=label,
+            form=form,
+            tags=tags,
+            verdict=str(record.verdict([seen] if seen else [])),
+            flaky=any(test.endswith(label) for test in flaky),
+            arranges=arranges,
+        )
 
     out: list[TestEntry] = []
     for feature in features:
@@ -371,19 +392,88 @@ def tests(suite: Suite, features: list[Any], root: Path, environment: str) -> li
                 continue
             words = {w for line in scenario.lines for w in line.text.replace('"', " ").split()}
             identity = f"{feature.path.name}::{scenario.name}" if feature.path else scenario.name
-            seen = next((word for test, word in latest.items() if test.endswith(scenario.name)), None)
             out.append(
-                TestEntry(
-                    id=identity,
-                    label=scenario.name,
-                    form="scenario",
-                    tags=list(scenario.tags),
-                    verdict=str(record.verdict([seen] if seen else [])),
-                    flaky=any(test.endswith(scenario.name) for test in flaky),
-                    arranges=sorted(words & set(suite.instances)),
-                )
+                entry(identity, scenario.name, "scenario", list(scenario.tags), sorted(words & set(suite.instances)))
             )
+    for path, name, asks in _functions(suite):
+        arranges = sorted(set(asks) & set(suite.instances))
+        out.append(entry(f"{path}::{name}", name, "function", [], arranges))
     return out
+
+
+def _functions(suite: Suite) -> list[tuple[str, str, list[str]]]:
+    """Every `test_` function under the specs directory, with the fixtures it asks for by name."""
+    import ast  # noqa: PLC0415 - only this reads a test module without importing it
+
+    found: list[tuple[str, str, list[str]]] = []
+    specs = suite.manifest.specs
+    if not specs.is_dir():
+        return found
+    for path in sorted(specs.rglob("test_*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name.startswith("test_"):
+                asks = [one.arg for one in node.args.args]
+                found.append((path.name, node.name, asks))
+    return found
+
+
+@dataclass
+class TestDetail:
+    """One test opened: what it says, what it asks for, and what history says about it."""
+
+    id: str
+    label: str
+    form: str
+    tags: list[str] = field(default_factory=list)
+    verdict: str = "never run"
+    flaky: bool = False
+    where: str = ""
+    lines: list[tuple[str, str]] = field(default_factory=list)
+    arranges: list[str] = field(default_factory=list)
+    last: Any = None
+    before: list[str] = field(default_factory=list)
+
+
+def detail_of_test(
+    suite: Suite, features: list[Any], root: Path, environment: str, id: str
+) -> TestDetail:
+    """One test, its sentences, and its outcomes newest first. `KeyError` where there is no such test."""
+    listed = next((one for one in tests(suite, features, root, environment) if one.id == id), None)
+    if listed is None:
+        raise KeyError(id)
+
+    lines: list[tuple[str, str]] = []
+    where = ""
+    for feature in features:
+        for scenario in feature.scenarios:
+            if scenario.name != listed.label or scenario.is_phrase:
+                continue
+            lines = [(line.keyword.title(), line.text) for line in scenario.lines]
+            where = f"{feature.path.name}:{scenario.number}" if feature.path else ""
+
+    outcomes = [
+        outcome
+        for run in record.runs_for(root, environment)
+        for outcome in run.outcomes
+        if outcome.test.endswith(listed.label)
+    ]
+    return TestDetail(
+        id=listed.id,
+        label=listed.label,
+        form=listed.form,
+        tags=listed.tags,
+        verdict=listed.verdict,
+        flaky=listed.flaky,
+        where=where,
+        lines=lines,
+        arranges=listed.arranges,
+        last=outcomes[-1] if outcomes else None,
+        before=[str(one.outcome) for one in reversed(outcomes[:-1])],
+    )
 
 
 # --- The composer -------------------------------------------------------------------------------

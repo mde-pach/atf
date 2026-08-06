@@ -89,6 +89,30 @@ MUTATIONS = (
         caught_by="tests/specs/reading.feature::status can be asked for only what is not there",
     ),
     Mutation(
+        what="the environment in a link",
+        module="editor.py",
+        find='    return f"{href}{\'&\' if \'?\' in href else \'?\'}env={urllib.parse.quote(HERE[0])}"',
+        replace="    return href",
+        caught_by="tests/specs/the-editor.feature::"
+        "the environment survives moving to another view",
+    ),
+    Mutation(
+        what="the composer re-answering",
+        module="editor.py",
+        find="    offered = editor.composer(written)",
+        replace="    offered = editor.composer([])",
+        caught_by="tests/specs/the-editor.feature::"
+        "taking a step in the composer re-answers what can be said next",
+    ),
+    Mutation(
+        what="a pytest function in the tests list",
+        module="core.py",
+        find='        out.append(entry(f"{path}::{name}", name, "function", [], arranges))',
+        replace="        pass",
+        caught_by="tests/specs/the-editor.feature::"
+        "a scenario and a pytest function are listed the same way",
+    ),
+    Mutation(
         what="the report registry",
         module="reports.py",
         find="        REGISTRY[name] = Format(name=name, write=write, read=read)",

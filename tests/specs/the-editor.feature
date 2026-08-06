@@ -67,3 +67,52 @@ Feature: the editor shows the same graph
     Given the screen "small_lineage"
     When I read "/api/graph/pad" from the editor
     Then the answer contains "Sketch outline"
+
+  @edit
+  Scenario: every link carries the environment, so a pasted one answers the same
+    Given the screen "catalogue"
+    Then the link "Graph" is showing
+    And the words "environment:" are showing
+
+  @edit
+  Scenario: the environment in the URL is the one the page answers for
+    Given the screen "readonly_screen"
+    Then the heading "Catalogue" is showing
+    And the words "Notebook" are showing
+
+  @edit
+  Scenario: the environment survives moving to another view
+    Given the screen "readonly_screen"
+    When I click the link "Overview"
+    Then the words "readonly is" are showing
+
+  @edit
+  Scenario: the overview runs the checks rather than assuming the suite is well formed
+    Given the screen "faults"
+    When I read "/api/overview" from the editor
+    Then the answer contains "faults"
+
+  @edit
+  Scenario: taking a step in the composer re-answers what can be said next
+    Given the screen "composing"
+    Then the words "so far" are showing
+    And the words "exists" are showing
+
+  @edit
+  Scenario: a scenario and a pytest function are listed the same way
+    Given the screen "listing"
+    Then the heading "Tests" is showing
+    And the words "scenario" are showing
+    And the words "function" are showing
+
+  @edit
+  Scenario: opening a test shows what it says and what it asks for
+    Given the screen "one_test"
+    Then the words "Given the draft" are showing
+    And the link "scratch" is showing
+    And the button "Run this test" is showing
+
+  @edit
+  Scenario: a run is opened item by item, and can be exported as a registered format
+    Given the screen "runs"
+    Then the heading "Activity" is showing

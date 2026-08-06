@@ -138,9 +138,10 @@ def make(context: click.Context, **flags: Any) -> None:
 @click.option("--no-make", is_flag=True, help="do not make missing resources")
 @click.option("--dry-run", is_flag=True, help="print the selected identities and exit 0")
 @click.option("-k", "keyword", default="", help="only tests whose identity matches this expression")
+@click.argument("tests", nargs=-1, metavar="[TEST]...")
 @click.pass_context
 def run(context: click.Context, **flags: Any) -> None:
-    """Run tests and record a run."""
+    """Run tests and record a run. A named TEST is one identity, as `atf docs` and the editor spell it."""
     _adopt(context, flags)
     _guarded(context, lambda: do_run(context.obj, **flags))
 
@@ -333,7 +334,11 @@ def do_run(options: Options, **flags: Any) -> Answer:
     collected = Collected()
     started = record.now()
 
-    arguments = [str(manifest.specs), "-p", "atf.plugin", "--rootdir", str(manifest.root)]
+    # A named test is a path pytest can collect, so `atf run "lists.feature::a list …"` names one
+    # identity where `-k` names a pattern. `-k` cannot: its expression language has no room for a
+    # sentence with spaces in it.
+    named = [str(manifest.specs / one) for one in flags.get("tests", ())]
+    arguments = [*(named or [str(manifest.specs)]), "-p", "atf.plugin", "--rootdir", str(manifest.root)]
     if flags["keyword"]:
         arguments += ["-k", flags["keyword"]]
     if options.quiet:

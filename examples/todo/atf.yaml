@@ -1,0 +1,17 @@
+resources: [./resources.py]
+specs: ./specs
+extensions: [./adapters/sqlite.py]
+default_env: local
+
+environments:
+  local:
+    mutable: true
+    sqlite: { path: ./todo.db }
+    command: { prefix: "python todo.py" }
+
+  # No `mutable`, so it is false. ATF reads this environment and changes nothing in it.
+  readonly:
+    sqlite: { path: ./todo.db }
+
+  staging:
+    sqlite: { path: ./staging.db }

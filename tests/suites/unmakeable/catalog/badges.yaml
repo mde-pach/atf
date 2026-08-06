@@ -1,5 +1,0 @@
-missing:
-  resource: badge
-  represents: A precondition nobody has met — ATF never creates one, so seeding cannot get past it.
-  body:
-    nickname: nobody-has-this

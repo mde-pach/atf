@@ -1,9 +1,0 @@
-# The guest the `ephemeral` suite builds for its run and deletes afterwards. Ephemeral *there*;
-# here it is an ordinary observation, because the whole point is to look after the run and find
-# nothing.
-
-visitor:
-  resource: guest
-  represents: The guest a suite-under-test builds per run — and must not leave behind.
-  body:
-    nickname: visitor

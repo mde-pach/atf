@@ -8,6 +8,7 @@ dist/
 build/
 *.egg-info/
 site/
+
 .cache/
 .atf/
 .playwright-mcp/
@@ -15,3 +16,8 @@ site/
 
 # Isolated worktrees for background agents. Never part of the repository.
 .claude/worktrees/
+
+# What the example suites make when you run them. The declarations are the repository's; the rows
+# and files they provision are not.
+examples/**/*.db
+examples/shipped/tmp/

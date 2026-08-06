@@ -1,9 +1,0 @@
-# ---- the one nobody shares ---------------------------------------------------
-
-running:
-  resource: private_cockpit
-  represents: A cockpit of one scenario's own, for the scenario that runs a scenario from it.
-  depends_on:
-    - workspaces.chained
-  body:
-    workspace: ${workspaces.chained.id}

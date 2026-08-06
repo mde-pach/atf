@@ -1,0 +1,159 @@
+"""Choosing which tests run, running them, and turning what pytest said into a [run](record.py).
+
+Selection is answered off the graph, never off history — except `--failed`, which is the one flag
+that reads history by definition.
+
+**An empty selection splits.** `--select` naming something the suite does not declare is a mistake:
+the run never starts and the exit code is `2`. `--select` naming a real resource that no test
+reaches is an answer: the run happens and exits `0`. A typo must not go green; a correct selection
+with no work in it must not go red.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from . import graph, record
+from .declare import instance_of
+from .loader import Suite
+from .record import Outcome, Run, TestOutcome, Where
+
+
+@dataclass
+class Selection:
+    """What chose the tests, kept on the run so a partial one is never mistaken for a full one."""
+
+    tags: list[str] = field(default_factory=list)
+    select: str = ""
+    failed: bool = False
+    keyword: str = ""
+    #: Resolved from history when `failed` is set, so the plugin does not read history itself.
+    failed_ids: set[str] = field(default_factory=set)
+
+    @property
+    def downstream(self) -> bool:
+        """`+groceries` widens to anything that depends on `groceries`."""
+        return self.select.startswith("+")
+
+    @property
+    def resource(self) -> str:
+        return self.select.lstrip("+")
+
+    def as_json(self) -> dict[str, Any]:
+        return {
+            "tag": self.tags or None,
+            "select": self.select or None,
+            "failed": self.failed,
+        }
+
+    def is_empty(self) -> bool:
+        return not (self.tags or self.select or self.failed or self.keyword)
+
+
+class SelectionError(Exception):
+    """Raised when a selection names something the suite does not declare — never started, exit 2."""
+
+
+def resources_reaching(suite: Suite, name: str, *, downstream: bool) -> set[str]:
+    """Which resource names satisfy this `--select`.
+
+    Without `+`, exactly the one named. With `+`, that one and everything standing on it — a test
+    naming a `Task` is a test that reaches the `TodoList` under it.
+    """
+    if name not in suite.instances:
+        known = ", ".join(sorted(suite.instances)) or "none"
+        raise SelectionError(f'no resource "{name}" in this suite (declared: {known})')
+    wanted = {name}
+    if downstream:
+        target = suite.resource(name)
+        wanted |= {
+            instance_of(other).name
+            for other in graph.dependents(target, suite.instances.values())
+        }
+    return wanted
+
+
+@dataclass
+class Collected:
+    """A pytest plugin that keeps one outcome per test, whatever pytest did to it."""
+
+    outcomes: dict[str, TestOutcome] = field(default_factory=dict)
+    collected: list[str] = field(default_factory=list)
+
+    def pytest_collection_modifyitems(self, items: list[pytest.Item]) -> None:
+        self.collected = [item.nodeid for item in items]
+
+    def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
+        """Fold every phase of a test into one word, and keep where it failed."""
+        existing = self.outcomes.get(report.nodeid)
+        if report.when == "setup" and report.passed and existing is None:
+            self.outcomes[report.nodeid] = TestOutcome(test=report.nodeid, outcome=Outcome.PASSED)
+
+        duration = int(report.duration * 1000)
+        if report.failed:
+            self.outcomes[report.nodeid] = TestOutcome(
+                test=report.nodeid,
+                outcome=Outcome.FAILED,
+                duration_ms=duration,
+                failed_at=_where(report),
+            )
+        elif report.skipped and (existing is None or existing.outcome is not Outcome.FAILED):
+            self.outcomes[report.nodeid] = TestOutcome(
+                test=report.nodeid, outcome=Outcome.SKIPPED, duration_ms=duration
+            )
+        elif report.when == "call" and report.passed and existing is not None:
+            existing.duration_ms = duration
+
+    def finish(self) -> list[TestOutcome]:
+        """Every collected test, including any the run never heard back about.
+
+        A stranded test is `failed` with its reason. It did not pass and it was certainly not
+        skipped, so a run that produced one must not go green.
+        """
+        for nodeid in self.collected:
+            if nodeid not in self.outcomes:
+                self.outcomes[nodeid] = TestOutcome(
+                    test=nodeid,
+                    outcome=Outcome.FAILED,
+                    failed_at=Where(message=record.STRANDED),
+                )
+        return [self.outcomes[nodeid] for nodeid in self.collected if nodeid in self.outcomes]
+
+
+def _where(report: pytest.TestReport) -> Where:
+    # `location` is absent on a report for a collection failure, which is exactly when the message
+    # matters most — so it is read defensively rather than unpacked.
+    location = report.location or ("", 0, "")
+    file, line = str(location[0] or ""), int(location[1] or 0)
+    message = str(report.longrepr) if report.longrepr is not None else ""
+    step = ""
+    for candidate in message.splitlines():
+        stripped = candidate.strip()
+        if stripped.split(" ", 1)[0] in ("Given", "When", "Then", "And", "But"):
+            step = stripped
+            break
+    return Where(file=file, line=line + 1, step=step, message=message.strip())
+
+
+def build_run(
+    environment: str,
+    root: Path,
+    selection: Selection,
+    outcomes: list[TestOutcome],
+    started: str,
+) -> Run:
+    return Run(
+        id=record.new_id(),
+        environment=environment,
+        started=started,
+        finished=record.now(),
+        source="local",
+        label=record.label_from_environment(),
+        revision=record.revision(root),
+        selection=selection.as_json(),
+        outcomes=outcomes,
+    )

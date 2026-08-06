@@ -1,114 +1,83 @@
-# ATF documentation
+# What ATF is
 
-ATF is an end-to-end test framework built on one idea: **a test is a readable spec that declares the
-resources it needs, and the framework makes those resources exist before the test runs.**
+ATF is a test framework in which the preconditions of a test are **declared as typed data rather
+than executed as setup code**. A resource — an owner, a list, a browser session — is a class with
+typed fields and a system behind it. A test names the resources it needs, ATF makes them exist,
+creating what is missing and updating what differs, and then the test runs.
 
-```gherkin
-Scenario: A project belongs to its account
-  Given the account "primary"
-  And the project "alpha"
-  When I list the projects of the account
-  Then the project "alpha" is listed
+Declaring them buys a graph: what depends on what, and which tests need which things. ATF holds that
+graph before anything runs, and can read, order, draw and query it. ATF is pointed at whatever a
+team already has — a command line, a browser, a database, an HTTP API, a queue. There is no backend
+to install.
+
+## An example
+
+Two files. The first declares what exists; nothing in it touches anything.
+
+```python
+# resources.py
+from adapters.sqlite import sqlite      # this suite's adapter, not ATF's
+
+@sqlite(table="owners", unique_by="email")
+class Owner:
+    email: str
+
+@sqlite(table="lists", unique_by="slug")
+class TodoList:
+    owner: Owner          # the dependency, and the foreign key
+    slug: str
+
+primary   = Owner(email="primary@example.com")
+groceries = TodoList(owner=primary, slug="groceries")
 ```
 
-You did not write `Given the account "primary"`. The account is a node in a YAML catalog; ATF
-resolves it, provisions its whole dependency chain into the target environment, and hands the record
-to your step. Adding a resource is a YAML node. Adding a behaviour is a scenario. Tests and fixtures
-follow.
+The second uses it, from a pytest function:
 
-## Start here
+```python
+def test_show_lists_the_list(groceries: TodoList, shell):
+    result = shell(f"todo show {groceries.owner.email}")
+    assert "groceries" in result["output"]
+```
 
-New to ATF? The tutorial is three short lessons, and everything is provided.
+`shell` is the built-in fixture for [running a command line](reference/act.md#shell), through the
+prefix the environment gives it.
 
-1. **[Your first spec](tutorial/your-first-spec.md)** — build a working suite from nothing and watch
-   it provision what it needs. Ten minutes, no server required.
-2. **[Point ATF at your own API](tutorial/point-atf-at-your-api.md)** — swap the stand-in for a real
-   service, and see find-or-create earn its keep.
-3. **[Read your suite in the cockpit](tutorial/read-your-suite-in-the-cockpit.md)** — the web app
-   that renders what your suite declares, what exists, and what is red.
+…and from a Gherkin scenario:
 
-In a hurry, or want the words first? Read the **[glossary](explanation/glossary.md)**, then
-**[Life of a run](explanation/life-of-a-run.md)** — between them they are the whole mental model.
+```gherkin
+Scenario: show lists the owner's lists
+  Given the todo_list "groceries"
+  When I run "todo show primary@example.com"
+  Then the result field "output" contains "groceries"
+```
 
-## How-to guides
+Neither one creates an owner. Both get one, because `groceries` is typed as belonging to `primary`
+and the closure follows the field. The two surfaces compile to the same thing: the same resources,
+the same order, the same failure messages.
 
-Recipes for getting a specific job done, assuming you know your way around.
+A resource *is* a pytest fixture — the parameter name resolves, the annotation types. Because its
+dependency is a typed field rather than a fixture body, these answer without running a test:
 
-**Setting up**
+```sh
+atf status staging          what is present, absent or unreachable, right now
+atf impact groceries        which tests break if this list does
+atf unused                  what nothing asks for
+atf docs                    the specs as markdown, carrying the last verdict
+```
 
-- [Add a resource](how-to/add-a-resource.md) — declare a new entity your specs can depend on,
-  including dependencies and placeholders.
-- [Add an adapter](how-to/add-an-adapter.md) — reach a system the built-in adapters cannot,
-  including multi-step creation.
-- [Adopt ATF in an existing suite](how-to/adopt-atf-in-an-existing-suite.md) — add ATF to a
-  repository that already has pytest tests, one resource at a time.
-- [Run ATF in CI](how-to/run-atf-in-ci.md) — your suite as a deployment guard, and getting the
-  results back.
+The cost: a resource can only express what a system can find, create, update and delete. Setup that
+is genuinely a computation stays a pytest fixture, and plain fixtures keep working beside resources.
 
-**Day to day**
+## Where to go
 
-- [Add a scenario](how-to/add-a-scenario.md) — one more behaviour in a feature that already exists.
-- [Keep the catalog in step with an API change](how-to/keep-the-catalog-in-step.md) — when the
-  service moves underneath your declarations.
-
-**When it breaks**
-
-- [Find out why an environment is red](how-to/find-out-why-an-environment-is-red.md) — the order to
-  look in, using the cockpit.
-- [Diagnose a failing provision](how-to/diagnose-a-failing-provision.md) — read the error you
-  actually got, and narrow down which half is broken.
-
-## Reference
-
-Facts to look up while you work. Dry by design, and every key has its own anchor.
-
-**Configuration**
-
-- **[Manifest](reference/manifest.md)** — every key of `atf.yaml`, the built-in adapter settings,
-  the auth schemes.
-- **[Catalog](reference/catalog.md)** — the type registry, instance files, placeholders, validation
-  rules, node structure.
-- **[Providers](reference/providers.md)** — the `${...}` sources: generated values, the environment,
-  now.
-- **[Phrasebook](reference/phrasebook.md)** — one sentence, and the claims it stands for.
-
-**Runtime**
-
-- **[Provisioning](reference/provisioning.md)** — the provisioning step, `Given a fresh …`,
-  `Background:`, tags, questions.
-- **[Acting](reference/acting.md)** — doing something to a system or an interface.
-- **[Assertions](reference/assertions.md)** — the claims, tables and markers.
-- **[Fixtures](reference/fixtures.md)** — `context`, teardown, the `Materializer`.
-- **[CLI](reference/cli.md)** — every command, flag, exit code and environment variable.
-- **[Cockpit](reference/cockpit.md)** — the three verticals, readiness, provisioning, the composer,
-  run history.
-- **[Adapter SPI](reference/adapter-spi.md)** — the protocol, the registry, the HTTP helpers.
-
-## Explanation
-
-Background and reasoning, for when you want to understand rather than do.
-
-- **[Glossary](explanation/glossary.md)** — every word ATF uses in a particular way, defined once.
-- **[Life of a run](explanation/life-of-a-run.md)** — what happens, in order, from `atf run` to
-  teardown.
-- **[About the model](explanation/the-model.md)** — why resources, scenarios, tests and fixtures are
-  separate things, and why the edges between them are the point.
-- **[About declarative catalogs](explanation/why-declarative-catalogs.md)** — why resources are data
-  rather than setup code, what that buys, and what it costs.
-- **[About lifecycles](explanation/lifecycles.md)** — persistent versus ephemeral, and the ownership
-  rule that keeps a suite re-runnable.
-
-## Versions and stability
-
-ATF is at **0.1.0** and is not yet released to PyPI. The adapter SPI, the manifest schema and the
-catalog format are the surfaces a suite depends on; they are stable in intent but not yet frozen,
-and there is no deprecation policy before 1.0. Pin a commit if you need reproducibility.
-
-## Elsewhere in the repository
-
-- [`tests/`](https://github.com/mde-pach/atf/tree/main/tests) — ATF tested with ATF: a suite
-  whose system under test is the `atf` CLI. The largest worked example there is, and the only one
-  that cannot drift from what ATF does, because breaking ATF turns it red.
-- Whatever `atf init` writes you. There is no sample project checked in here on purpose: a
-  checked-in example is a second thing to keep green and it drifts from what the tool produces,
-  while the scaffold is what every new suite actually starts as.
+- **[Run a suite](tutorial/1-run-a-suite.md)** — four chapters, from running a suite someone handed
+  you to pointing ATF at your own system.
+- **[The model](orientation/the-model.md)** — the whole map on one page: five bands, every concept
+  named once, and what each one sits next to.
+- **[Coming from another tool](orientation/coming-from-another-tool.md)** — the route in for pytest fixtures,
+  factory_boy, Cucumber, Terraform, dbt, Playwright or Django.
+- **[Reference](reference/arrange.md)** — every definition, one page per band. Start with Arrange.
+- **[Declared, not executed](explanation/declared-not-executed.md)** — the argument for the bet
+  above, at length, including what it costs.
+- **[One engine, two surfaces](explanation/one-engine-two-surfaces.md)** — why a pytest function and
+  a Gherkin scenario are the same test written twice.

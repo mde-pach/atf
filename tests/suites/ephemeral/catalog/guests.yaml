@@ -1,5 +1,0 @@
-visitor:
-  resource: guest
-  represents: Built fresh for every run, deleted when the scenario ends.
-  body:
-    nickname: visitor

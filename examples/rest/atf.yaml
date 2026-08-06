@@ -1,0 +1,9 @@
+resources: [./resources.py]
+specs: ./specs
+default_env: local
+
+environments:
+  local:
+    mutable: true
+    rest:    { base_url: "http://127.0.0.1:8799" }
+    process: { cwd: . }

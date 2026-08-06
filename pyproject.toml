@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Another Test Framework — declarative resources, pluggable adapters, specs, and a cockpit."
 requires-python = ">=3.11"
 dependencies = [
+    "click>=8.1",
     "pyyaml",
     "httpx",
     "typing-extensions",
@@ -12,7 +13,6 @@ dependencies = [
     "jinja2>=3.1",
     "python-multipart>=0.0.9",        # cockpit form posts (run-selected)
     "pytest>=8",
-    "pytest-bdd>=8.1",
     "pytest-json-report>=1.5",
 ]
 
@@ -23,7 +23,7 @@ Documentation = "https://mde-pach.github.io/atf/"
 Source = "https://github.com/mde-pach/atf"
 
 [project.scripts]
-atf = "atf.cli:main"
+atf = "atf.entry:main"
 
 [dependency-groups]
 # `faker` is here so the repo's own type check and tests can see it. It is *not* a dependency of
@@ -106,7 +106,7 @@ missing-override-decorator = "error"
 possibly-unresolved-reference = "error"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests/specs"]
 markers = [
     "browser: needs a real browser — skipped unless playwright and chromium are installed",
     # Applied to every scenario by `tests/specs/conftest.py`, so that `-n auto --dist loadgroup`

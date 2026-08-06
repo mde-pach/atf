@@ -1,11 +1,11 @@
 site_name: ATF
-site_description: Another Test Framework — declarative resources, pluggable adapters, specs, and a cockpit.
-site_url: https://mde-pach.github.io/atf/
+site_description: A test framework whose preconditions are declared as typed data rather than executed as setup.
 repo_url: https://github.com/mde-pach/atf
 repo_name: mde-pach/atf
 edit_uri: edit/main/docs/
 
 docs_dir: docs
+site_dir: site
 
 theme:
   name: material
@@ -28,9 +28,12 @@ theme:
         icon: material/weather-sunny
         name: Switch to light mode
   features:
+    # Ordinary collapsible sections: the sidebar lists the five modes and opens
+    # only the one you are in. Not tabs — they hid too much — and not
+    # `navigation.sections`, which forces every section open at once.
+    - navigation.indexes
     - navigation.instant
     - navigation.tracking
-    - navigation.sections
     - navigation.top
     - navigation.footer
     - toc.follow
@@ -39,79 +42,95 @@ theme:
     - content.code.copy
     - content.action.edit
 
-# The four Diátaxis sections, in the order a user meets them.
 nav:
-  - Home: index.md
+  - Start here:
+      - index.md
+      - The model: orientation/the-model.md
+      - Coming from another tool: orientation/coming-from-another-tool.md
+      - Glossary: orientation/glossary.md
+
   - Tutorial:
-      - 1. Your first spec: tutorial/your-first-spec.md
-      - 2. Point ATF at your own API: tutorial/point-atf-at-your-api.md
-      - 3. Read your suite in the cockpit: tutorial/read-your-suite-in-the-cockpit.md
-  - How-to guides:
-      - Setting up:
-          - Add a resource: how-to/add-a-resource.md
-          - Add an adapter: how-to/add-an-adapter.md
+      - tutorial/index.md
+      - 1. Run a suite: tutorial/1-run-a-suite.md
+      - 2. Write a test: tutorial/2-write-a-test.md
+      - 3. Declare what it needs: tutorial/3-declare-what-it-needs.md
+      - 4. Point it at your own system: tutorial/4-point-it-at-your-own-system.md
+
+  - Guides:
+      - how-to/index.md
+      - Getting going:
+          - Install ATF: how-to/install-atf.md
           - Adopt ATF in an existing suite: how-to/adopt-atf-in-an-existing-suite.md
+      - Arrange:
+          - Add a resource: how-to/add-a-resource.md
+          - Give a resource a factory: how-to/give-a-resource-a-factory.md
+          - Depend on another resource: how-to/depend-on-another-resource.md
+          - Vary a resource for one test: how-to/vary-a-resource-for-one-test.md
+          - Require something you cannot create: how-to/require-something-you-cannot-create.md
+          - Make something fresh for each test: how-to/make-something-fresh-for-each-test.md
+      - Act and assert:
+          - Write a scenario: how-to/write-a-scenario.md
+          - Teach ATF a sentence: how-to/teach-atf-a-sentence.md
+          - Write a step in Python: how-to/write-a-step-in-python.md
+          - Assert a record field by field: how-to/assert-a-record-field-by-field.md
+          - Test a web interface: how-to/test-a-web-interface.md
+          - Test a command line: how-to/test-a-command-line.md
+      - Environments and runs:
+          - Configure an environment: how-to/configure-an-environment.md
           - Run ATF in CI: how-to/run-atf-in-ci.md
-      - Day to day:
-          - Add a scenario: how-to/add-a-scenario.md
-          - Keep the catalog in step with an API change: how-to/keep-the-catalog-in-step.md
-      - When it breaks:
-          - Find out why an environment is red: how-to/find-out-why-an-environment-is-red.md
-          - Diagnose a failing provision: how-to/diagnose-a-failing-provision.md
+          - Run only what a change touched: how-to/run-only-what-a-change-touched.md
+          - Share an environment: how-to/share-an-environment.md
+          - Keep a large suite fast: how-to/keep-a-large-suite-fast.md
+          - Work out why it is red: how-to/work-out-why-it-is-red.md
+          - Teach ATF a new system: how-to/teach-atf-a-new-system.md
+
   - Reference:
-      - Configuration:
-          - Manifest reference: reference/manifest.md
-          - Catalog reference: reference/catalog.md
-          - Providers reference: reference/providers.md
-          - Phrasebook reference: reference/phrasebook.md
-      - Runtime:
-          - Provisioning reference: reference/provisioning.md
-          - Acting reference: reference/acting.md
-          - Assertions reference: reference/assertions.md
-          - Fixtures reference: reference/fixtures.md
-          - CLI reference: reference/cli.md
-          - Cockpit reference: reference/cockpit.md
-          - Adapter SPI reference: reference/adapter-spi.md
+      - reference/index.md
+      - The three verbs:
+          - Arrange: reference/arrange.md
+          - Act: reference/act.md
+          - Assert: reference/assert.md
+      - Around them:
+          - The ground: reference/the-ground.md
+          - The record: reference/the-record.md
+      - Surfaces:
+          - The command: reference/the-command.md
+          - The editor: reference/the-editor.md
+          - Extending ATF: reference/extending-atf.md
+
+  - Advanced:
+      - advanced/index.md
+      - How ATF tests itself: advanced/how-atf-tests-itself.md
+
+  - Advanced:
+      - advanced/index.md
+      - How ATF tests itself: advanced/how-atf-tests-itself.md
+
   - Explanation:
-      - Glossary: explanation/glossary.md
-      - Life of a run: explanation/life-of-a-run.md
-      - About the model: explanation/the-model.md
-      - About declarative catalogs: explanation/why-declarative-catalogs.md
-      - About lifecycles: explanation/lifecycles.md
-      - About the phrasebook: explanation/why-the-phrasebook.md
+      - explanation/index.md
+      - One engine, two surfaces: explanation/one-engine-two-surfaces.md
+      - Declared, not executed: explanation/declared-not-executed.md
+      - Why there is no state file: explanation/why-there-is-no-state-file.md
+      - Every failure names your sentence: explanation/every-failure-names-your-sentence.md
+      - What we borrowed: explanation/what-we-borrowed.md
+      - The concept budget: explanation/the-concept-budget.md
 
 markdown_extensions:
   - admonition
   - attr_list
   - def_list
-  - tables
+  - md_in_html
   - toc:
       permalink: true
   - pymdownx.details
+  - pymdownx.superfences
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  # `mermaid` fences are handed to Material's bundled renderer instead of being highlighted.
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
 
-plugins:
-  - search
-
-# `mkdocs build --strict` (used in CI) turns these warnings into build failures.
-validation:
-  links:
-    absolute_links: relative_to_docs
-    unrecognized_links: warn
-    # Anchors are a published surface — the cockpit deep-links into the glossary.
-    anchors: warn
-  nav:
-    omitted_files: warn
-
-extra:
-  social:
-    - icon: fontawesome/brands/github
-      link: https://github.com/mde-pach/atf
+exclude_docs: |
+  _context/

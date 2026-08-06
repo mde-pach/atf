@@ -1,70 +1,12 @@
-# ATF, set up on itself the way any project sets ATF up: one `atf.yaml` at the root, found by
-# walking up from wherever you are. The resources are suites-under-test and this cockpit's own pages;
-# the systems under test are the `atf` command and the interface it serves.
-#
-# So `atf status local`, `atf seed local`, `atf run`, `atf lint`, `atf docs` and `atf serve` all work
-# from here, with no variable to export first. What they need is the environment running:
-#
-#     uv run python -m tests.backend        # in another terminal, then any of the above
-#
-# That is the same shape as any project: start the thing you are testing, then point ATF at it. The
-# scenarios start it themselves, because a test run should need one command.
-
-catalog: ./tests/catalog
+resources: [./tests/resources.py]
 specs: ./tests/specs
+extensions: [./tests/vocabulary.py]
 default_env: local
-
-adapters:
-  - tests.suite_adapters
-  - tests.cockpit_adapters
-
-mutable_envs: [local]
-
-# A `@browser` scenario cannot run where the `browser` system is unavailable, and the adapter is
-# what knows whether it is. Without this the suite would be red on any checkout that never ran
-# `uv sync --group browser`, and a suite that is red for a reason nobody can act on stops being read.
-#
-# Written with the `@` an author would type on the scenario. It is how a tag is said, not part of
-# its name, so the manifest accepts it either way and drops it — and writing it here is what keeps
-# that true, now that no unit test asserts it.
-requires:
-  "@browser": browser
 
 environments:
   local:
-    adapters:
-      workspace:
-        suites: ./tests/suites
-      cockpit: {}
-      # What a cockpit page sent, read by role and accessible name. No browser, no selectors —
-      # which is why most of this suite's interface scenarios run on any checkout.
-      html: {}
-      browser: {}
-      # The command under test, run by ATF's own adapter.
-      command: {}
-      # The same environment the suites-under-test provision into, read back through the same
-      # generic adapter they use. It is what turns `the backend has 1 owners` — a hand-written
-      # assertion about a collection — into `the owner "primary" exists`, which ATF already claims.
-      #
-      # A literal address rather than a `*_env` pointer, and that is the whole of what made the old
-      # wiring hacky. A pointer is resolved when the plugin imports, so the value had to exist by
-      # then — which meant `conftest.py` starting a server as an import side effect and writing the
-      # variable back. Written down here, the address is known before anything runs and the server
-      # only has to be answering by the time a scenario asks for a resource. Nothing secret about a
-      # loopback port, so nothing is lost by saying it.
-      rest:
-        base_url: http://127.0.0.1:8765
-        auth: { header: X-Actor, value: atf-tests }
-        pagination: { results_key: results, count_key: count }
-    clients:
-      atf:
-        backend_url: http://127.0.0.1:8765
-        actor: atf-tests
-
-display:
-  systems:
-    workspace: { label: Workspace, color: "#7857d8" }
-    cockpit: { label: Cockpit, color: "#2f6be0" }
-    html: { label: Page, color: "#0f8f6f" }
-    browser: { label: Browser, color: "#c2410c" }
-    rest: { label: Backend, color: "#475569" }
+    mutable: true
+    filesystem: { root: ./.workspaces }
+    command:    { prefix: "uv run atf --config .workspaces/suite/atf.yaml" }
+    process:    { cwd: . }
+    browser:    { base_url: "http://127.0.0.1:8791", headless: true }

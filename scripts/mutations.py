@@ -58,6 +58,14 @@ MUTATIONS = (
         caught_by="tests/specs/refusing.feature::two of a kind in scope is refused before any test body runs",
     ),
     Mutation(
+        what="the report registry",
+        module="reports.py",
+        find="        REGISTRY[name] = Format(name=name, write=write, read=read)",
+        replace="        pass",
+        caught_by="tests/specs/the-record.feature::"
+        "a format the suite registered is a format --report accepts",
+    ),
+    Mutation(
         what="a field a declared action writes",
         module="reconcile.py",
         find="    return {field for action in declaration_of(resource).actions.values() for field in action.values}",

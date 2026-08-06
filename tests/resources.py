@@ -174,9 +174,9 @@ class Workspace:
 
 
 INNER_VOCABULARY = '''\
-"""What the scaffolded suite registers: one marker, one claim, one check."""
+"""What the scaffolded suite registers: a marker, a claim, a check and a report format."""
 
-from atf import check, claim, marker
+from atf import check, claim, marker, report
 
 
 @marker("markdown")
@@ -195,6 +195,13 @@ def _(suite):
     for name, node in suite.suite.instances.items():
         if type(node).__name__ == "Note" and not str(node.path).startswith("notebooks/"):
             yield name, "it is not under notebooks/"
+
+
+@report("tally")
+def _(run, path):
+    """A line per test, which is the shortest thing a format can be."""
+    lines = [f"{one.outcome} {one.test}" for one in run.outcomes]
+    path.write_text(f"{run.environment}\\n" + "\\n".join(lines) + "\\n", encoding="utf-8")
 '''
 
 BAD_VOCABULARY = '''\

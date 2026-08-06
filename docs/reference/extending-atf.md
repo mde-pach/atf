@@ -251,46 +251,29 @@ A report format turns a run into a file. `atf run --report <format>:<path>` sele
 for a chat message are registered here, and the name becomes one `--report` and `atf import-run`
 both accept. The function receives the run record and the destination path.
 
-`run.environment`
-:   The environment's name.
-
-`run.started_at`, `run.finished_at`
-:   Timestamps.
-
-`run.outcomes`
-:   One per test.
-
-`outcome.test`
-:   The scenario or function name.
-
-`outcome.outcome`
-:   `passed`, `failed` or `skipped`.
-
-`outcome.duration`
-:   Seconds, as a float.
-
-`outcome.message`
-:   The failure message, or `None`.
-
-`outcome.tags`
-:   The test's tags.
+The function receives a [run](the-record.md#run) and a `Path`. The run's shape is owned by that
+page and not restated here: `run.environment`, `run.started`, `run.finished`, and `run.outcomes` —
+one [outcome](the-record.md#outcome) per test, each with `test`, `outcome`, `duration_ms` and
+`failed_at`. `failed_at` is `None` on anything that did not fail, and carries the file, the line,
+the step and the message on anything that did.
 
 ```python
 import xml.etree.ElementTree as ET
 
-from atf import report
+from atf import Outcome, report
 
 
 @report("junit")
 def _(run, path):
-    failures = sum(o.outcome == "failed" for o in run.outcomes)
+    failures = sum(one.outcome is Outcome.FAILED for one in run.outcomes)
     suite = ET.Element("testsuite", name=run.environment,
                        tests=str(len(run.outcomes)), failures=str(failures))
-    for o in run.outcomes:
-        case = ET.SubElement(suite, "testcase", name=o.test, time=f"{o.duration:.3f}")
-        if o.outcome == "failed":
-            ET.SubElement(case, "failure", message=o.message)
-        elif o.outcome == "skipped":
+    for one in run.outcomes:
+        case = ET.SubElement(suite, "testcase", name=one.test,
+                             time=f"{one.duration_ms / 1000:.3f}")
+        if one.failed_at is not None:
+            ET.SubElement(case, "failure", message=one.failed_at.message)
+        elif one.outcome is Outcome.SKIPPED:
             ET.SubElement(case, "skipped")
     ET.ElementTree(suite).write(path, encoding="utf-8")
 ```

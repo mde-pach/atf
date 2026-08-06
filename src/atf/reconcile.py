@@ -17,7 +17,7 @@ class ProvisionError(Exception):
 
 
 @dataclass(frozen=True)
-class Outcome:
+class Reconciliation:
     """What one pass did to one resource, and what the environment holds now."""
 
     resource: Any
@@ -115,7 +115,7 @@ def diff(resource: Any, found: Record) -> Record:
     return {**changed, **parent_changes(resource, found)}
 
 
-def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Outcome:
+def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Reconciliation:
     """Bring one resource to what its declaration says, and report what that took.
 
     Only this resource. Everything it needs is [closure](graph.py)'s job, and `provision` walks that.
@@ -124,15 +124,16 @@ def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Outcome:
     state, found = ground.find(resource)
 
     if state is State.UNREACHABLE:
-        return Outcome(resource, state, Did.LEFT_ALONE, why=f"the {declaration.system} system could not be reached")
+        why = f"the {declaration.system} system could not be reached"
+        return Reconciliation(resource, state, Did.LEFT_ALONE, why=why)
 
     if state is State.PRESENT and found is not None:
         _remember_identity(resource, found)
         changes = diff(resource, found)
         if not changes:
-            return Outcome(resource, State.PRESENT, Did.UNCHANGED, record=found)
+            return Reconciliation(resource, State.PRESENT, Did.UNCHANGED, record=found)
         if not ground.mutable:
-            return Outcome(
+            return Reconciliation(
                 resource,
                 State.PRESENT,
                 Did.LEFT_ALONE,
@@ -141,10 +142,10 @@ def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Outcome:
                 why=f"the {ground.config.name} environment is not mutable",
             )
         if declaration.when_absent == "observe":
-            return Outcome(resource, State.PRESENT, Did.LEFT_ALONE, record=found, changes=changes, why="observe")
+            return Reconciliation(resource, State.PRESENT, Did.LEFT_ALONE, record=found, changes=changes, why="observe")
         if dry_run:
-            return Outcome(resource, State.PRESENT, Did.UPDATED, record=found, changes=changes, why="dry run")
-        return Outcome(
+            return Reconciliation(resource, State.PRESENT, Did.UPDATED, record=found, changes=changes, why="dry run")
+        return Reconciliation(
             resource,
             State.PRESENT,
             Did.UPDATED,
@@ -154,30 +155,30 @@ def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Outcome:
 
     # Absent from here down.
     if declaration.when_absent == "require":
-        return Outcome(
+        return Reconciliation(
             resource,
             State.ABSENT,
             Did.LEFT_ALONE,
             why=f"it is declared `when_absent=\"require\"`, and {ground.config.name} does not have it",
         )
     if declaration.when_absent == "observe":
-        return Outcome(resource, State.ABSENT, Did.LEFT_ALONE, why="it is declared `when_absent=\"observe\"`")
+        return Reconciliation(resource, State.ABSENT, Did.LEFT_ALONE, why="it is declared `when_absent=\"observe\"`")
     if not ground.mutable:
-        return Outcome(
+        return Reconciliation(
             resource,
             State.ABSENT,
             Did.LEFT_ALONE,
             why=f"the {ground.config.name} environment is not mutable",
         )
     if dry_run:
-        return Outcome(resource, State.ABSENT, Did.CREATED, changes=declared_values(resource), why="dry run")
+        return Reconciliation(resource, State.ABSENT, Did.CREATED, changes=declared_values(resource), why="dry run")
 
     try:
         record = ground.adapter_for(resource).create(resource)
     except Unreachable as exc:
-        return Outcome(resource, State.UNREACHABLE, Did.LEFT_ALONE, why=str(exc))
+        return Reconciliation(resource, State.UNREACHABLE, Did.LEFT_ALONE, why=str(exc))
     _remember_identity(resource, record)
-    return Outcome(resource, State.PRESENT, Did.CREATED, record=record, changes=declared_values(resource))
+    return Reconciliation(resource, State.PRESENT, Did.CREATED, record=record, changes=declared_values(resource))
 
 
 def _remember_identity(resource: Any, record: Record) -> None:
@@ -201,7 +202,7 @@ def _apply(ground: Ground, resource: Any, found: Record, changes: Record) -> Rec
         ) from exc
 
 
-def provision(ground: Ground, resources: list[Any], *, dry_run: bool = False) -> list[Outcome]:
+def provision(ground: Ground, resources: list[Any], *, dry_run: bool = False) -> list[Reconciliation]:
     """Make each of these, and everything each of them needs, parents first.
 
     The order comes off the graph, so nothing here says "owners before lists". A resource reached
@@ -210,24 +211,24 @@ def provision(ground: Ground, resources: list[Any], *, dry_run: bool = False) ->
     return [ensure(ground, node, dry_run=dry_run) for node in graph.order(resources)]
 
 
-def status(ground: Ground, resources: list[Any]) -> list[Outcome]:
+def status(ground: Ground, resources: list[Any]) -> list[Reconciliation]:
     """Where each of these stands, changing nothing.
 
     `atf status` never gates: absence is information, and the exit code is `0` or `2`.
     """
     _learn_parents(ground, resources)
-    out: list[Outcome] = []
+    out: list[Reconciliation] = []
     for node in resources:
         state, found = ground.find(node)
         if state is State.UNREACHABLE:
-            out.append(Outcome(node, state, Did.LEFT_ALONE, why=f"the {declaration_of(node).system} system"))
+            out.append(Reconciliation(node, state, Did.LEFT_ALONE, why=f"the {declaration_of(node).system} system"))
         elif state is State.PRESENT and found is not None:
             changes = diff(node, found)
             out.append(
-                Outcome(node, state, Did.UPDATED if changes else Did.UNCHANGED, record=found, changes=changes)
+                Reconciliation(node, state, Did.UPDATED if changes else Did.UNCHANGED, record=found, changes=changes)
             )
         else:
-            out.append(Outcome(node, State.ABSENT, _would(ground, node)))
+            out.append(Reconciliation(node, State.ABSENT, _would(ground, node)))
     return out
 
 
@@ -297,26 +298,26 @@ def browse(ground: Ground, resource: Any) -> list[Record]:
 # --- Teardown -------------------------------------------------------------------------------------
 
 
-def teardown(ground: Ground, resources: list[Any]) -> list[Outcome]:
+def teardown(ground: Ground, resources: list[Any]) -> list[Reconciliation]:
     """Remove these, **always in reverse lineage order**, so a list goes before its owner.
 
     It runs after a failure too. A `persistent` resource is never passed here: outliving the process
     is what makes re-runs cheap and recognition worth having.
     """
-    out: list[Outcome] = []
+    out: list[Reconciliation] = []
     for node in graph.teardown_order(resources):
         if scope_of(node) == "persistent":
             continue
         state, found = ground.find(node)
         if state is not State.PRESENT or found is None:
-            out.append(Outcome(node, state, Did.LEFT_ALONE, why="it was not there"))
+            out.append(Reconciliation(node, state, Did.LEFT_ALONE, why="it was not there"))
             continue
         try:
             ground.adapter_for(node).delete(node, found)
         except Unreachable as exc:
-            out.append(Outcome(node, State.UNREACHABLE, Did.LEFT_ALONE, why=str(exc)))
+            out.append(Reconciliation(node, State.UNREACHABLE, Did.LEFT_ALONE, why=str(exc)))
             continue
-        out.append(Outcome(node, State.ABSENT, Did.UPDATED, why="removed"))
+        out.append(Reconciliation(node, State.ABSENT, Did.UPDATED, why="removed"))
     return out
 
 

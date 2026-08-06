@@ -26,6 +26,14 @@ Feature: what a run leaves behind for next time
     And the elsewhere field "output" contains "imported"
 
   @run
+  Scenario: a format the suite registered is a format --report accepts
+    Given the workspace "scaffolded"
+    When I run "run --report tally:.workspaces/suite/tally.txt"
+    Then the command succeeded
+    And "tally.txt" contains "local"
+    And "tally.txt" contains "passed"
+
+  @run
   Scenario: nothing is recorded when the run never starts
     Given the workspace "scaffolded"
     When I run "run --select +notabene" as "refused"

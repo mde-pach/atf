@@ -38,7 +38,7 @@ from .manifest import Environment, Manifest, ManifestError
 from . import systems  # noqa: F401  # isort: skip
 from .environment import Ground, GroundError, build_ground  # isort: skip
 from .reconcile import (  # isort: skip
-    Outcome,
+    Reconciliation,
     ProvisionError,
     act,
     browse,
@@ -52,7 +52,9 @@ from .spi import Adapter, Did, Record, SpiError, State  # isort: skip
 
 from . import claims  # isort: skip
 from .markers import Marker, MarkerError, marker  # isort: skip
+from .record import Outcome, Run, TestOutcome, Verdict, Where  # isort: skip
 from .registries import Check, check, claim  # isort: skip
+from .reports import report  # isort: skip
 from .steps import Step, StepError, given, then, when  # isort: skip
 
 #: The systems ATF ships. `rest` joins them later; everything else is an adapter somebody wrote.
@@ -80,6 +82,8 @@ __all__ = [
     "Marker",
     "MarkerError",
     "Outcome",
+    "Reconciliation",
+    "Run",
     "ProvisionError",
     "Record",
     "SpiError",
@@ -87,10 +91,13 @@ __all__ = [
     "Step",
     "StepError",
     "Suite",
+    "TestOutcome",
     "SuiteError",
     "Unmet",
     "Unreachable",
     "Update",
+    "Verdict",
+    "Where",
     "__version__",
     "act",
     "adapter",
@@ -120,6 +127,7 @@ __all__ = [
     "parents",
     "process",
     "provision",
+    "report",
     "resource",
     "rest",
     "status",

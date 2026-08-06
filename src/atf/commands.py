@@ -69,12 +69,12 @@ class Report:
     """What one command did, in the shape a terminal, the editor and an agent all read."""
 
     env: str
-    outcomes: list[reconcile.Outcome]
+    outcomes: list[reconcile.Reconciliation]
     code: int = OK
     error: str = ""
 
     @property
-    def unreachable(self) -> list[reconcile.Outcome]:
+    def unreachable(self) -> list[reconcile.Reconciliation]:
         return [outcome for outcome in self.outcomes if outcome.state is State.UNREACHABLE]
 
     def lines(self) -> list[str]:
@@ -153,7 +153,7 @@ def make(
     return Report(env=ground.config.name, outcomes=outcomes, code=FAILED if failed else OK)
 
 
-def _was_required(outcome: reconcile.Outcome) -> bool:
+def _was_required(outcome: reconcile.Reconciliation) -> bool:
     """`require` is for something the environment owns, so its absence is a real failure."""
     return declaration_of(outcome.resource).when_absent == "require"
 

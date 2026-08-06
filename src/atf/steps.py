@@ -1,28 +1,4 @@
-"""The step registry ATF owns, and the grammar a sentence is matched with.
-
-Phase 0 found that this cannot be a convenience. A scenario's fixture closure does not contain its
-steps' parameters — pytest-bdd asks for those while the step runs, so `item.fixturenames` for a
-scenario is `['_pytest_bdd_example', '_session_faker', 'request']` and nothing else. "What does this
-sentence ask for?" is therefore only answerable from ATF's own records, and that answer is what
-makes ambiguity a collection error rather than a surprise halfway through a run.
-
-So the pattern and the function are kept together here: the steps ATF ships, the steps a suite
-writes with `@when` / `@then`, and everything a `@phrase` expands to.
-
-```python
-from atf import claims, then, when
-
-
-@when("I list the owner's lists")
-def _(shell, owner):
-    return shell(f"todo show {owner.email}")
-
-
-@then('the invoice totals "{amount}"')
-def _(invoice, amount):
-    claims.field_is(invoice, "total", amount)
-```
-"""
+"""The step registry: a sentence, the function that runs it, and what that function asks for."""
 
 from __future__ import annotations
 
@@ -66,7 +42,7 @@ class Step:
     def parameters(self) -> tuple[str, ...]:
         """What this step asks the framework for: its signature, minus the holes.
 
-        This is the half of §1.2 that pytest cannot answer, and the reason this registry exists.
+        A scenario's fixture closure does not contain these; this registry is what answers it.
         """
         holes = set(self.placeholders)
         return tuple(
@@ -110,8 +86,7 @@ def register(keyword: str, pattern: str, target: str = "") -> Callable[[Callable
         )
         clash = next((s for s in REGISTRY if s.keyword == keyword and s.pattern == pattern), None)
         if clash is not None and clash.function is not function:
-            # By module and name rather than by identity, so re-importing a suite's steps module is
-            # a reload and not a clash. Two different files claiming one sentence is the mistake.
+            # Compared by module and name, so re-importing one steps module is a reload.
             if clash.written_at != step.written_at:
                 raise StepError(
                     f"two steps are written {keyword.title()} {pattern!r}: "

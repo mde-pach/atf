@@ -33,7 +33,12 @@ jobs:
         # Built against the *minimum* supported Python, so newer syntax cannot slip in.
         # `--locked` fails if uv.lock has drifted from pyproject.toml, rather than silently
         # resolving something different from what a developer gets locally.
-        run: uv sync --locked --group docs --python 3.11
+        run: uv sync --locked --group docs --group browser --group mcp --python 3.11
+
+      - name: Install chromium
+        # The editor scenarios drive a real page. A system that does not answer is `unreachable`,
+        # and unreachable fails the test that asked for it.
+        run: uv run playwright install --with-deps chromium
 
       # Ordered cheapest-first, so an obvious mistake fails in seconds.
       - name: Lint
@@ -50,25 +55,26 @@ jobs:
       - name: Docs build with no broken links
         run: uv run mkdocs build --strict
 
-      # `tests/` is an ATF suite describing ATF, so this is one run: the scenarios, and the
-      # handful of Python tests for the parts no scenario can watch.
-      # Three invocations rather than one, because they want different things. The Python tests are
-      # ordinary tests and go across cores. The scenarios are an ATF suite and must not — the engine
-      # is single-worker by design. The mutation guard runs the suite in subprocesses, so it shares a
-      # machine with nobody. One `pytest -q` over the lot takes four times as long as the three.
-      - name: Tests
-        run: uv run pytest -q --ignore=tests/specs --ignore=tests/test_mutations.py -n auto
-
-      - name: The scenarios
-        run: uv run pytest -q tests/specs
-
-      - name: The suite can still go red
-        run: uv run pytest -q tests/test_mutations.py
-
-      # No `ATF_MANIFEST` anywhere: `atf.yaml` is at the root of this repository, so the command
-      # finds it the way it finds any project's.
+      # No `--config` anywhere: `atf.yaml` is at the root of this repository, so the command finds
+      # it the way it finds any project's.
       - name: The feature files are well formed
-        run: uv run atf lint
+        run: uv run atf check
+
+      # `tests/` is an ATF suite describing ATF, run the way a user runs one. Single-worker: the
+      # engine is, and the suite serves an editor on one port.
+      - name: The suite
+        run: uv run atf run
+
+      # Runs the suite twice over, so this comes after a plain run rather than replacing it.
+      - name: The suite can still go red
+        run: uv run python scripts/mutations.py
+
+      # The examples are documentation that runs. A broken one is a broken page.
+      - name: The examples
+        run: |
+          for example in examples/todo examples/rest; do
+            (cd "${example}" && uv run --project "${{ github.workspace }}" atf run)
+          done
 
       # Run the way a user would, which catches anything the harness papers over: scaffold a suite
       # with the command, then run it with nothing else set up. There is no example checked in — the
@@ -77,5 +83,6 @@ jobs:
         run: |
           mkdir -p "${RUNNER_TEMP}/scaffolded"
           cd "${RUNNER_TEMP}/scaffolded"
-          uv run --project "${{ github.workspace }}" python -m atf.cli init
-          ATF_ACTOR=scaffold uv run --project "${{ github.workspace }}" python -m pytest -q
+          uv run --project "${{ github.workspace }}" atf init
+          uv run --project "${{ github.workspace }}" atf status local
+          uv run --project "${{ github.workspace }}" atf run

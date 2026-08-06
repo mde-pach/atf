@@ -1,13 +1,4 @@
-"""`atf init` — three files and a directory, and nothing else.
-
-It scaffolds **ATF itself**, not a project: a manifest with one environment, an empty `resources.py`,
-an empty `specs/`. It generates no tests, no resources and no example code, because a suite that
-starts with somebody else's example starts with somebody else's domain.
-
-The manifest it writes deliberately does **not** carry `from __future__ import annotations` into
-`resources.py`. A resources module states its shape in annotations, and under that import they are
-strings rather than types.
-"""
+"""`atf init` — a manifest, an empty resources module, an empty specs directory."""
 
 from __future__ import annotations
 

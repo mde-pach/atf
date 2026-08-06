@@ -1,23 +1,4 @@
-"""`@browser(...)` — a page, opened and looked at.
-
-Its settings are `base_url` and `headless`; its option is `url`. A page is not created, it is
-opened, so a browser resource is normally declared `when_absent="observe"`: an absent one is a fact
-about the environment rather than an error, and whether that fails is decided by what the test
-claims about it.
-
-```python
-@browser(when_absent="observe", unique_by="path")
-class Screen:
-    path: str
-```
-
-**Everything is asked for by role and accessible name, never by selector.** `get_by_role` is
-Playwright's own accessibility query, so a claim about a heading is a claim about what a screen
-reader would announce — which is the thing worth testing and the thing a CSS class is not.
-
-Playwright is not a dependency of ATF. Without it this system is `unreachable`, which is the honest
-answer: the question could not be asked, and no test silently passes on nothing.
-"""
+"""`@browser(...)` — a page, opened and looked at by role and accessible name."""
 
 from __future__ import annotations
 

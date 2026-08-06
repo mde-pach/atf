@@ -1,15 +1,4 @@
-"""The declaration layer: `@resource`, the system decorators built on it, and what they record.
-
-A resource is declared as a class and instantiated at module level. **Construction declares; it does
-not touch anything.** What a resource needs is written with `depends_on` and nothing else — no
-annotation carries a dependency, because a dependency does not always have a field to live in. A
-report written per owner that stores only its slug has nowhere to put an `owner`, and it still needs
-the owner.
-
-`@resource` owns what belongs to ATF: `unique_by`, `depends_on`, `when_absent`, `scope`, `actions`.
-`@adapter("sqlite")` mints `@sqlite(...)`, which is `@resource` with a system and that system's own
-options bound. A suite writes `@sqlite`; ATF only ever reads `@resource`.
-"""
+"""`@resource`, the system decorators built on it, and what a declaration records."""
 
 from __future__ import annotations
 
@@ -24,9 +13,8 @@ SCOPES = ("function", "session", "persistent")
 class Unreachable(Exception):
     """Raised by an adapter when the system it talks to cannot be reached.
 
-    This is the third thing an environment can say. `find` returning a record means present, `None`
-    means absent, and this means the question could not be asked — which is never read as absence,
-    because ATF does not try to create a row in a database it could not connect to.
+    The third thing an environment can say: `find` returning a record is present, `None` is absent,
+    and this is a question that could not be asked. Never read as absence.
     """
 
 
@@ -63,7 +51,7 @@ class Declaration:
 
     @property
     def kinds_needed(self) -> tuple[type, ...]:
-        """The entries that name a kind rather than a particular resource."""
+        """The `depends_on` entries that name a kind, not a particular resource."""
         return tuple(entry for entry in self.depends_on if isinstance(entry, type))
 
 
@@ -71,8 +59,7 @@ class Declaration:
 class Instance:
     """What one declared resource is, beside the fields a suite gave it.
 
-    Held under a single attribute on the object so that a suite's own field names collide with one
-    name rather than with several.
+    Held under one attribute on the object, so a suite's own field names collide with one name.
     """
 
     kind: str
@@ -83,9 +70,7 @@ class Instance:
     #: What this resource was last found as, so a child can be checked against the parent it points
     #: at. Set when the resource is reconciled, and never read from anywhere else.
     identity: Any = None
-    #: A copy a scenario made by patching a recognised field. It is a *different* resource from the
-    #: one declared, so it is torn down with the scenario rather than inheriting a lifetime nobody
-    #: chose for it.
+    #: A copy a scenario made by patching a recognised field. Torn down with the scenario.
     ephemeral: bool = False
     #: Fields a scenario named in a variation. An explicit value always holds, even where the field
     #: would otherwise be left to whatever an action made of it.
@@ -96,7 +81,7 @@ class Instance:
 
 
 def is_resource(value: Any) -> bool:
-    """Whether this is a declared resource, rather than an ordinary value like a string."""
+    """Whether this is a declared resource. `False` for an ordinary value such as a string."""
     return hasattr(type(value), "__atf_declaration__")
 
 
@@ -133,8 +118,7 @@ def _init(self: Any, **values: Any) -> None:
     depends_on = values.pop("depends_on", None) or []
     if not isinstance(depends_on, list | tuple):
         raise DeclarationError(f"{type(self).__name__}: depends_on must be a list of resources")
-    # The fields are ordinary attributes, because that is how a test reads them: `primary.email`,
-    # `groceries.owner.email`.
+    # The fields are ordinary attributes: `primary.email`, `groceries.owner.email`.
     self.__dict__.update(values)
     self.__atf_resource__ = Instance(
         kind=type(self).__name__,
@@ -185,8 +169,7 @@ def _recognition(cls: type, unique_by: str | tuple[str, ...] | list[str]) -> tup
     """`unique_by` as a tuple of field names, whether one was written or several.
 
     Several is for a resource unique only in combination — a plan recognised by its code *within a
-    region*. They are the fields the resource carries, and never a parent: a dependency goes in
-    `depends_on`, and what a parent is called in a row is the adapter's business rather than ATF's.
+    region*. Every name is a field the resource carries. A parent is never one of them.
     """
     if isinstance(unique_by, str):
         return (unique_by,) if unique_by else ()
@@ -296,9 +279,7 @@ def adapter(name: str):
     """
 
     def decorate(cls: type) -> type:
-        # Compared by where it is written rather than by identity, so re-importing the same file —
-        # which the editor does, and which loading a second suite forces — is a reload and not a
-        # clash. Two different files claiming one system name is the real mistake.
+        # Compared by where it is written, so re-importing one file is a reload and not a clash.
         seen = ADAPTERS.get(name)
         if seen is not None and (seen.__module__, seen.__qualname__) != (cls.__module__, cls.__qualname__):
             raise DeclarationError(

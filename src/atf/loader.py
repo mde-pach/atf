@@ -1,11 +1,4 @@
-"""Loading a suite: import what the manifest names, and read the graph off what came back.
-
-Nothing here touches an environment. Importing `resources.py` evaluates declarations, and a
-declaration is data — so a suite loads, and its graph is answerable, on a laptop with no network.
-
-Order matters in one place. `extensions` are imported before `resources`, because an extension is
-where `@adapter("sqlite")` lives and a resources module cannot say `@sqlite(...)` until it does.
-"""
+"""Importing what a manifest names, and reading the declarations that came back."""
 
 from __future__ import annotations
 import __future__  # noqa: I001 - the module, to recognise the import above in somebody else's file
@@ -143,8 +136,7 @@ def _refuse_name_collisions(kinds: dict[str, type], instances: dict[str, Any], p
 def _refuse_future_annotations(module: Any, problems: list[str]) -> None:
     """A resources module states its shape in annotations, so they must be types, not strings.
 
-    Nothing reads a dependency out of an annotation any more, so this costs a suite nothing it
-    needed. It keeps `email: str` meaning the class `str` rather than the four characters.
+    Under that import `email: str` is the four characters, not the class.
     """
     if getattr(module, "annotations", None) is __future__.annotations:
         problems.append(

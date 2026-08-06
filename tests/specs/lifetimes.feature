@@ -22,9 +22,9 @@ Feature: what a run leaves behind
     And I run "run" as "testing"
     Then "notebooks/work/standup.md" holds "stand up\n"
 
-  @make
+  @run
   Scenario: teardown removes a child before the parent it hangs off
     Given the workspace "scaffolded"
-    When I run "make local scratch"
-    And I run "status local scratch" as "before"
-    Then the before field "output" contains "present"
+    When I run "run" as "testing"
+    Then the testing field "exit_code" is "0"
+    And "sketches/pad" is not there

@@ -1,12 +1,4 @@
-"""An environment, live: the adapters built against it and what they answer.
-
-**One adapter instance is built per system, per environment**, constructed with that environment's
-settings and holding its own connection. Nothing here decides what to do about a resource — that is
-[reconcile](reconcile.py). This decides *who to ask*.
-
-A system a resource needs but the environment does not configure stops the run at start-up, naming
-the system and the environment, rather than failing inside the first test.
-"""
+"""One environment, live: an adapter per system, and what each answers."""
 
 from __future__ import annotations
 
@@ -23,8 +15,8 @@ from .spi import Record, State, check, check_shape, offers
 class GroundError(Exception):
     """Raised when an environment cannot be built, or cannot answer for a system it must.
 
-    Named for the band the specification puts an environment in, rather than `EnvironmentError`,
-    which is a builtin alias of `OSError` and would be caught by anything catching one.
+    Named for the band the specification puts an environment in. Not `EnvironmentError`, which is
+    a builtin alias of `OSError`.
     """
 
 
@@ -33,7 +25,7 @@ class Ground:
     """A suite pointed at one environment, with an adapter ready for each system it uses.
 
     The name is the band the specification puts an environment in. It holds no state about what has
-    been made — presence is asked, never remembered, which is why there is no state file.
+    been made: presence is asked, never remembered.
     """
 
     suite: Suite
@@ -77,11 +69,10 @@ PATH_SETTINGS = ("root", "cwd", "path", "dir", "directory")
 
 
 def _against_manifest(settings: Record, root: Path) -> Record:
-    """Resolve a relative path setting against the manifest's directory rather than the cwd.
+    """Resolve a relative path setting against the manifest's directory.
 
-    ATF's own suite found this: an inner manifest saying `filesystem: { root: . }` was writing into
-    whatever directory `atf` was invoked from, so `find` asked about one place and `create` wrote to
-    another. A manifest describes a suite, and a suite does not move when you cd.
+    A relative path in an environment's settings means "beside the manifest", whatever directory
+    `atf` was invoked from.
     """
     out = dict(settings)
     for name, value in settings.items():
@@ -98,10 +89,9 @@ def systems_used(suite: Suite) -> set[str]:
 def systems_wanted(suite: Suite, config: EnvironmentConfig) -> set[str]:
     """Every system to build an adapter for: the ones resources use, and the ones configured.
 
-    A system with settings and no resources is not a mistake — `command` is the common case, since
-    `shell` runs command lines for tests that arrange nothing through that system. A configured
-    system ATF has no adapter for is ignored rather than fatal, so an environment shared with
-    another tool does not have to be trimmed to suit this one.
+    A system with settings and no resources is included — `command` is the common case, since
+    `shell` runs command lines for tests that arrange nothing through it. A configured system ATF
+    has no adapter for is ignored.
     """
     configured = {system for system in config.settings if system in suite.adapters}
     return systems_used(suite) | configured
@@ -145,8 +135,7 @@ def build_ground(suite: Suite, env: str = "") -> Ground:
         except Exception as exc:  # noqa: BLE001
             problems.append(str(exc))
 
-    # An adapter may refuse a declaration it cannot honour — a lifetime it has no way to observe,
-    # say. Optional, and asked before a run rather than discovered inside one.
+    # An optional `check` lets an adapter refuse a declaration it cannot honour, before a run.
     for node in suite.instances.values():
         adapter = adapters.get(declaration_of(node).system)
         say = getattr(adapter, "check", None)

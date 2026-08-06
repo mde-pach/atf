@@ -1,22 +1,4 @@
-"""`@command` — a command-line invocation, and the `shell` fixture behind `When I run`.
-
-Its setting is `prefix`; it takes no options of its own. The prefix is what turns
-`todo show primary@example.com` into whatever actually runs — `python todo.py show ...` locally, a
-container exec on CI — so a scenario says the product's own words and the environment says how to
-reach it.
-
-```python
-def test_show_lists_the_list(groceries: TodoList, shell):
-    result = shell(f"todo show {groceries.owner.email}")
-    assert "groceries" in result["output"]
-```
-
-`shell` returns the same record `When I run` puts on a slot: `exit_code`, `output`, `ok`.
-
-**A command invocation does not persist**, so `find` answers about the last run in this process and
-nothing older. A `@command` resource is a thing to *do* before a test, not a thing to recognise
-afterwards, and saying so here is better than pretending otherwise in `atf status`.
-"""
+"""`@command` — a command-line invocation, and the `shell` fixture behind `When I run`."""
 
 from __future__ import annotations
 

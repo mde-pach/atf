@@ -1,35 +1,4 @@
-"""What an adapter is, and the two vocabularies everything downstream speaks.
-
-An adapter teaches ATF a system. **It is the only place where ATF touches anything.** One instance
-is built per system, per environment, constructed with that environment's settings and holding its
-own connection on `self`. There is no context object and no `connect` step: if the adapter exists,
-it is already pointed somewhere.
-
-```python
-@adapter("sqlite")
-class Sqlite:
-    class Options(TypedDict):       # what the decorator takes, per resource
-        table: str
-
-    class Settings(TypedDict):      # what an environment configures
-        path: str
-
-    def __init__(self, settings: Settings): ...
-
-    def find(self, resource) -> Record | None: ...
-    def create(self, resource) -> Record: ...
-    def update(self, resource, found, changes) -> Record: ...
-    def delete(self, resource, found) -> None: ...
-
-    def act(self, resource, found, action) -> Any: ...   # optional
-    def browse(self, resource) -> list[Record]: ...      # optional
-```
-
-The four returns cover the whole of what an environment can say. A record is `present`, `None` is
-`absent`, and `atf.Unreachable` is `unreachable`. Let a connection error out — an adapter that
-swallows one and returns `None` turns an unreachable database into a suite that tries to create
-everything in it.
-"""
+"""What an adapter is: four required methods, two optional, and the two vocabularies."""
 
 from __future__ import annotations
 
@@ -53,8 +22,8 @@ class Did(StrEnum):
     CREATED = "created"
     UPDATED = "updated"
     UNCHANGED = "unchanged"
-    # Deliberately not "blocked". A resource that cannot be made fails the test that asked for it;
-    # this word is for `atf status` and for a dry run, which report rather than gate.
+    # `atf status` and a dry run report this. There is no "blocked": a resource that cannot be
+    # made fails the test that asked for it.
     LEFT_ALONE = "left alone"
 
 
@@ -92,8 +61,7 @@ def check_shape(name: str, cls: type) -> None:
 def offers(cls: type, method: str) -> bool:
     """Whether an adapter implements one of the optional methods.
 
-    Which optional methods an adapter has decides which sentences exist, so this is asked before a
-    scenario is compiled rather than when a step runs.
+    Which optional methods an adapter has decides which sentences exist. Asked at collection.
     """
     return callable(getattr(cls, method, None))
 
@@ -101,8 +69,7 @@ def offers(cls: type, method: str) -> bool:
 def check(cls: type, kind: str, given: Record, where: str) -> Record:
     """Check a mapping against the adapter's own `Options` or `Settings`, and return it.
 
-    Both are checked **before** a run rather than inside one, which is the whole reason an adapter
-    declares them as types. An adapter that declares neither is taking whatever it is given.
+    Both are checked before a run. An adapter that declares neither takes whatever it is given.
     """
     declared = getattr(cls, kind, None)
     if declared is None:
@@ -131,7 +98,7 @@ def check(cls: type, kind: str, given: Record, where: str) -> Record:
 
 
 def _fits(value: Any, annotation: Any) -> bool:
-    """A shallow check, because a manifest holds scalars and lists of them and nothing deeper."""
+    """A shallow check: a manifest holds scalars and lists of them and nothing deeper."""
     if annotation is Any:
         return True
     if not isinstance(annotation, type):

@@ -1,19 +1,4 @@
-"""A run written out in a named format. ATF holds a registry; each name owns a writer.
-
-```sh
-atf run --report ctrf:out.json --report ctrf:artifacts/nightly.json
-```
-
-The argument is `format:destination`. The flag repeats; each occurrence writes one file.
-
-**`ctrf` is the only format ATF ships**, and it is registered by name like any other, so a team may
-replace it. JUnit XML, Allure and anything else a pipeline reads are formats a team registers. A page
-showing `--report junit:…` is showing a registered format, not a shipped one.
-
-The cost of a registry is that a format is a public surface: a report ATF writes today must keep its
-shape tomorrow. ATF pins that promise to CTRF's own specification rather than to a format of its own
-naming.
-"""
+"""A run written out in a named format, and the registry of formats."""
 
 from __future__ import annotations
 

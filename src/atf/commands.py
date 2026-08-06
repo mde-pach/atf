@@ -1,12 +1,4 @@
-"""`atf` — every subcommand, and what each one answers.
-
-**Exit codes are coarse; the reason travels in the message.** There are three and there is no
-fourth: `0` passed, `1` a test failed, `2` the run never started. For the commands that do not run
-tests, read them as: the question was answered, the answer is no, the question could not be asked.
-
-`--json` carries a structured error code for anything that wants to branch on why, because a shell
-script cannot branch on a number that covers four causes.
-"""
+"""Every subcommand, and what each one answers."""
 
 from __future__ import annotations
 
@@ -130,9 +122,7 @@ def make(
         ground = build_ground(suite, env)
         wanted = _select(suite, names or [])
         if not ground.mutable and not dry_run:
-            # `make` is an operation that would change an environment. One that is not `mutable`
-            # refuses it before touching anything, rather than reporting each resource it left
-            # alone and exiting 0 — a pipeline reads the code, and this one has to say no.
+            # An environment that is not `mutable` refuses `make` before touching anything.
             return Report(
                 env=ground.config.name,
                 outcomes=[],
@@ -397,11 +387,7 @@ def _tests_reaching(suite: Suite, names: set[str]) -> list[str]:
 
 
 def do_check(*, config: str | None = None) -> Answer:
-    """Every registered check, over this suite.
-
-    **The exception to the exit codes.** Reporting an ill-formed suite is this command's job, so its
-    findings are its answer: it exits `1` on them rather than `2`, and prints them under `faults`.
-    """
+    """Every registered check, over this suite. Exits `1` on findings, under `faults`."""
     from .registries import CHECKS  # noqa: PLC0415
 
     try:

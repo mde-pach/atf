@@ -1,15 +1,4 @@
-"""`atf docs` — the specs as markdown, carrying the verdict history gives each scenario.
-
-What a suite claims is already written down, in sentences, by the people who wrote the tests. This
-renders that, and attaches what happened last time it ran.
-
-**`never run` is a verdict, not a blank.** A scenario nobody has run yet is labelled, because the
-difference between "we have never checked this" and "this passes" is the thing a reader most needs
-and the thing an empty cell hides.
-
-**It reports, it does not judge.** A `failing` verdict on the page does not change the exit code —
-`atf run` is what gates.
-"""
+"""`atf docs` — the specs as markdown, carrying the verdict each scenario last had."""
 
 from __future__ import annotations
 

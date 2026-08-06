@@ -1,14 +1,4 @@
-"""The graph ATF holds: what depends on what, read off `depends_on` and nothing else.
-
-Declaring preconditions as data buys this graph, and the graph is what no other test framework has.
-Everything here is a pure read of what a suite declared — no adapter is called, no environment is
-asked anything, and nothing is created. That is what makes `atf impact` and `atf unused` answerable
-on a laptop with no network.
-
-A `depends_on` entry is read for what it is. An instance means that resource. A kind means any of
-them, so anything already supplied of that kind answers it, and when nothing has, the kind is
-reported [unmet](#unmet) for whoever is in a position to build one.
-"""
+"""What depends on what, read off `depends_on`. No adapter is called and nothing is asked."""
 
 from __future__ import annotations
 
@@ -54,8 +44,8 @@ def _declared_parents(node: object) -> list[object]:
 def unmet(node: object) -> list[Unmet]:
     """The kinds this resource needs that nothing supplied.
 
-    A kind is answered by anything already supplied of that kind, which is why `depends_on=[Owner]`
-    on the class and `owner=primary` on the instance are one edge rather than two.
+    A kind is answered by anything already supplied of that kind, so `depends_on=[Owner]` on the
+    class and `owner=primary` on the instance are one edge.
     """
     supplied = _declared_parents(node)
     named_on_the_instance = [e for e in instance_of(node).depends_on if isinstance(e, type)]

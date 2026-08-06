@@ -1,17 +1,4 @@
-"""Reading a `.feature` file. A scenario is sentences, so this reads sentences and nothing else.
-
-The language ATF accepts is deliberately small: `Feature`, `Rule`, `Background`, `Scenario`,
-`Scenario Outline` with `Examples`, tags, comments, and `And` / `But` / `*` continuing whatever
-keyword came before. **There are no DocStrings and no data tables.** The only table in the language
-is `Examples`, because that is genuinely rows of one shape.
-
-Anything structured is written as several sentences, and when several sentences repeat they become
-one [phrase](phrases.py) — which needs no new syntax, because a phrase is itself a scenario.
-
-ATF reads features itself rather than through pytest-bdd. It already owns step matching, phrase
-expansion and fixture resolution, so what was left was collection — and owning that removes the
-five private imports MIGRATION.md ranks as risk 4.
-"""
+"""Reading a `.feature` file into scenarios and sentences."""
 
 from __future__ import annotations
 
@@ -35,9 +22,8 @@ class FeatureError(Exception):
 class Line:
     """One sentence, with its keyword already resolved through any `And`.
 
-    `written` keeps the word the author actually typed. Running a sentence needs the resolved
-    keyword; *reading* one back — in `atf docs`, in the editor — needs the original, because a
-    scenario that reads `Then, Then, Then` is not the scenario anybody wrote.
+    `keyword` is what runs the sentence; `written` is the word the author typed, which is what
+    `atf docs` and the editor read back.
     """
 
     keyword: str

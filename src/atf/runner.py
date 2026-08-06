@@ -1,13 +1,4 @@
-"""Choosing which tests run, running them, and turning what pytest said into a [run](record.py).
-
-Selection is answered off the graph, never off history — except `--failed`, which is the one flag
-that reads history by definition.
-
-**An empty selection splits.** `--select` naming something the suite does not declare is a mistake:
-the run never starts and the exit code is `2`. `--select` naming a real resource that no test
-reaches is an answer: the run happens and exits `0`. A typo must not go green; a correct selection
-with no work in it must not go red.
-"""
+"""Choosing which tests run, and turning what pytest said into a run."""
 
 from __future__ import annotations
 
@@ -90,9 +81,8 @@ class Collected:
     def pytest_deselected(self, items: list[pytest.Item]) -> None:
         """A test nobody selected is not a test that failed to report.
 
-        `finish` marks anything collected and never heard from as stranded, which is right for a
-        killed subprocess and wrong for `-k`. Without this a filtered run records every test it
-        deliberately skipped as failed.
+        `finish` marks anything collected and never heard from as stranded, which applies to a
+        killed subprocess and not to `-k` or `--tag`.
         """
         dropped = {item.nodeid for item in items}
         self.collected = [nodeid for nodeid in self.collected if nodeid not in dropped]
@@ -135,8 +125,7 @@ class Collected:
 
 
 def _where(report: pytest.TestReport) -> Where:
-    # `location` is absent on a report for a collection failure, which is exactly when the message
-    # matters most — so it is read defensively rather than unpacked.
+    # `location` is absent on a report for a collection failure.
     location = report.location or ("", 0, "")
     file, line = str(location[0] or ""), int(location[1] or 0)
     message = str(report.longrepr) if report.longrepr is not None else ""

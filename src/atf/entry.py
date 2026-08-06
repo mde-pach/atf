@@ -1,17 +1,4 @@
-"""The `atf` entry point: the command tree, `atf run`, and the three exit codes.
-
-**Exit codes are coarse; the reason travels in the message.** `0` passed, `1` a test failed, `2` the
-run never started. For the commands that do not run tests, read them as: the question was answered,
-the answer is no, the question could not be asked.
-
-The global flags — `--json`, `--config`, `--quiet` — are accepted **before or after** the
-subcommand. Both positions are real: a manifest's `command: { prefix: "atf --config ..." }` can only
-put them first, and `atf make readonly --json` reads naturally with them last.
-
-`run` is the only subcommand that executes anything, so it is the only one that owns a pytest
-invocation. Everything else answers from the graph, the manifest or the history, and lives in
-[commands](commands.py).
-"""
+"""The `atf` entry point: the command tree, `atf run`, and the three exit codes."""
 
 from __future__ import annotations
 
@@ -34,7 +21,7 @@ from .runner import Collected, Selection, SelectionError, build_run, resources_r
 
 @dataclass
 class Options:
-    """What every subcommand accepts, carried on Click's context rather than re-merged per command."""
+    """The flags every subcommand accepts, carried on Click's context."""
 
     as_json: bool = False
     config: str | None = None
@@ -44,9 +31,7 @@ class Options:
 def globals_too(command: Any) -> Any:
     """Let the global flags be written after the subcommand as well as before it.
 
-    Both positions are real. A manifest's `command: { prefix: "atf --config ..." }` can only put
-    them first, and `atf make readonly --json` reads naturally with them last. Click parses each
-    position; this only says the later one wins, in one place rather than per command.
+    Both positions are accepted. Click parses each; this says the later one wins.
     """
     for option in (
         click.option("--json", "as_json_after", is_flag=True, help="emit the answer as JSON"),
@@ -69,8 +54,7 @@ def _adopt(context: click.Context, flags: dict[str, Any]) -> None:
 def _guarded(context: click.Context, work: Any) -> None:
     """Run a subcommand, emit its answer, and exit with its code.
 
-    Anything unhandled becomes "the question could not be asked" rather than a traceback, because a
-    traceback is not an exit code a pipeline can read.
+    Anything unhandled becomes "the question could not be asked", with exit code `2`.
     """
     options: Options = context.obj
     try:

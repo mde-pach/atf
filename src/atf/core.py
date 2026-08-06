@@ -1,18 +1,4 @@
-"""The one API the command, the editor and an agent all read. There is no second way in.
-
-**No privileged path.** The editor holds no logic of its own: every view below is a function here,
-and every button is one of the operations in [commands](commands.py) — the same call, the same
-arguments, the same answer. The cost is real and worth stating: a feature that would be convenient
-in a browser and awkward on a command line has to be made to work on the command line first.
-
-**No knowledge of anybody's domain.** Nothing here names a system, a type, a claim or a marker. It
-reports whatever the registries contain, so a suite that registers `@redis` gets a catalogue entry,
-a count in the overview and a graph node without a line of editor code changing.
-
-The old cockpit is the counter-example this file exists to prevent: seven of its eight routers reach
-into `session` and `materializer` directly, so the no-privileged-path rule was already broken and
-would re-rot without one place to read from.
-"""
+"""The one API the command, the editor and an agent all read."""
 
 from __future__ import annotations
 
@@ -54,7 +40,7 @@ class Overview:
 
     @property
     def sentence(self) -> str:
-        """A fold of the two vocabularies, never a fifth state, and it names the reason."""
+        """One sentence: ready, or not ready and what is at fault."""
         if self.ready:
             return f"{self.environment} is ready."
         why = []
@@ -227,7 +213,7 @@ def detail(ground: Ground, name: str) -> ResourceDetail:
 
 
 def _can_make(ground: Ground, resource: Any, state: State) -> tuple[bool, str]:
-    """When a resource cannot be made, the reason is data — not a disabled button with no tooltip."""
+    """Whether this resource can be made here, and what stops it."""
     declaration = declaration_of(resource)
     if state is State.UNREACHABLE:
         return False, f"the {declaration.system} system is unreachable"
@@ -302,7 +288,7 @@ def in_words(suite: Suite, name: str) -> str:
 
 @dataclass
 class TestEntry:
-    """One behaviour: a scenario or a pytest function, treated alike because they compile alike."""
+    """One behaviour, in either form: a scenario or a pytest function."""
 
     id: str
     label: str
@@ -362,16 +348,14 @@ def offers(
 ) -> list[Offer]:
     """What can be said *next*, given what has been said above.
 
-    Three rules, and every one of them is read from the registries and the graph rather than from a
-    list of known systems:
+    Three rules, all read from the registries and the graph:
 
     - a `Given` for any resource the suite declares, by name or by kind;
-    - a `When` **only where the adapter can perform it** — an `act` sentence needs the kind to
-      declare that action *and* its adapter to implement `act`; `list every` needs `browse`;
-    - a `Then` **only once something above it has produced what the claim reads**.
+    - a `When` only where the adapter can perform it — an `act` sentence needs the kind to declare
+      that action *and* its adapter to implement `act`; `list every` needs `browse`;
+    - a `Then` only once something above it has produced what the claim reads.
 
-    Ordering the steps differently re-answers the offer, which is the whole point: the composer
-    cannot offer a claim about a result nothing has produced.
+    Ordering the steps differently re-answers the offer.
     """
     suite = ground.suite
     arranged = {name for keyword, text in so_far if keyword == "given" for name in _named(text, suite)}

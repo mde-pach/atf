@@ -1,13 +1,4 @@
-"""What one test is holding while it runs: what it arranged, and what its actions produced.
-
-This is **not** the scratchpad that used to be here. The old `spec/context.py` was a second way to
-arrange things, alongside the declarations — which is exactly what `one-engine-two-surfaces` exists
-to remove. Slots survive as a concept in the Act band; the object that also provisioned does not.
-
-Everything arranged goes through the same engine a pytest fixture goes through. A scenario asking for
-`the todo_list "groceries"` and a function taking `groceries: TodoList` reach the same
-[reconcile.ensure](reconcile.py), which is the whole claim.
-"""
+"""What one test is holding while it runs: what it arranged, and what its actions produced."""
 
 from __future__ import annotations
 
@@ -85,9 +76,8 @@ class Scope:
     def vary(self, field_name: str, value: str) -> Any:
         """One more field of whatever the previous `Given` named — the continuation sentence.
 
-        MIGRATION.md §1.6 asks for the parse rule. This is it: the line carries no subject, so it
-        continues the resource the last `Given` named, and it is an error rather than a guess when
-        no such line came before it.
+        The line carries no subject: it continues the resource the last `Given` named, and raises
+        when no such line came before it.
         """
         if self.pending is None:
             raise ScopeError(
@@ -117,7 +107,7 @@ class Scope:
     def _require_present(self, resource: Any) -> Any:
         """`--no-make`: read what is there, and fail the test on anything that is not.
 
-        The closure is walked all the same, because a parent missing is why a child is missing.
+        The whole closure is walked, so a missing parent is named as well as a missing child.
         """
         for node in graph.closure(resource):
             state, _ = self.ground.find(node)
@@ -207,13 +197,10 @@ def varied(resource: Any, patch: dict[str, str]) -> Any:
     """A copy of a resource with one or more fields changed, for the length of one scenario.
 
     The patch is applied **before** recognition, so patching a recognised field names a different
-    resource rather than renaming the one declared. `"null"` removes the field, and removing one
-    that carries lineage drops that edge — which is how a test about a list with no owner is written.
+    resource. `"null"` removes the field, and removing one that holds a parent drops that edge.
 
     **Patching a recognised field makes the copy function-scoped**, whatever the declaration says.
-    A new resource that nothing declared and nothing removes fills the environment a row per run,
-    and it is not a leak anything catches: a `persistent` resource is supposed to survive. Patching
-    any other field adjusts the resource already there, and leaves its lifetime alone.
+    Patching any other field leaves the resource's lifetime alone.
     """
     original: Instance = instance_of(resource)
     values = dict(original.values)

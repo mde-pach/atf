@@ -52,6 +52,19 @@ class Draft:
     text: str
 
 
+@filesystem(unique_by="path", scope="function")
+class Sketchbook:
+    """A directory made for one test, which teardown can only remove once it is empty."""
+
+    path: str
+
+
+@filesystem(unique_by="path", scope="function", depends_on=[Sketchbook])
+class Sketch:
+    path: str
+    text: str
+
+
 @filesystem(unique_by="path", scope="session")
 class Meeting:
     path: str
@@ -72,6 +85,8 @@ standup = Note(path="notebooks/work/standup.md", text="stand up\\n", depends_on=
 retro = Note(path="notebooks/work/retro.md", text="retro\\n", depends_on=[work])
 scratch = Draft(path="drafts/scratch.md", text="scratch\\n")
 weekly = Meeting(path="meetings/weekly.md", text="weekly\\n")
+pad = Sketchbook(path="sketches/pad")
+outline = Sketch(path="sketches/pad/outline.md", text="outline\\n", depends_on=[pad])
 archived = Archive(path="archive/2025.md")
 '''
 
@@ -90,6 +105,10 @@ Feature: notes
   Scenario: a draft is arranged for one test
     Given the draft "scratch"
     Then the draft "scratch" exists
+
+  Scenario: a sketch is arranged inside a sketchbook made for the same test
+    Given the sketch "outline"
+    Then the sketch "outline" exists
 
   Scenario: a marker asks for a kind where a value would be wrong
     Given the note "standup"

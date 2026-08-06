@@ -1,26 +1,4 @@
-"""`@process(...)` — a running process, arranged.
-
-Its setting is `cwd`, and its option is `command`. A process resource is *present* when something
-it started is still running, and creating one starts it.
-
-```python
-from atf import process
-
-
-@process(command="python -m http.server 8123", unique_by="command")
-class Server:
-    pass
-
-
-server = Server()
-```
-
-**Recognition here is a live question, as everywhere else.** ATF does not write down a process id;
-it asks whether a process matching the declaration is running, so a server killed by hand is absent
-the next time anything asks. That is done by holding the handles this adapter started and checking
-whether they are still alive — which means a process started by a *previous* run is not recognised,
-and this is the one system where `persistent` does not survive the process that made it.
-"""
+"""`@process(...)` — a running process, recognised by the port it answers on."""
 
 from __future__ import annotations
 
@@ -92,8 +70,7 @@ class Process:
         """Why this declaration cannot be honoured, or nothing.
 
         `persistent` means a resource outlives the process that made it, and without a port this
-        system has no way to tell whether it did. Rather than quietly behaving like `session`, it
-        says so before a run rather than inside one.
+        system has no way to tell whether it did.
         """
         declaration = declaration_of(resource)
         if declaration.scope == "persistent" and not self._port(resource):
@@ -120,11 +97,9 @@ class Process:
     def find(self, resource: Any) -> Record | None:
         """Whether this process is running.
 
-        **A declared port is observed; a bare command is only remembered.** Where a port is given,
-        recognition is the port answering — which is what every other system does, and what lets a
-        server an earlier run started be recognised rather than started a second time. Where no port
-        is given there is nothing to observe, so this falls back to the handles this adapter started
-        — and `check` refuses `persistent` on that basis rather than pretending.
+        **A declared port is observed; a bare command is only remembered.** With a port,
+        recognition is the port answering, so a server an earlier run started is recognised. With
+        none, this reads the handles this adapter started, and `check` refuses `persistent`.
         """
         port = self._port(resource)
         handle = self.running.get(self._key(resource))

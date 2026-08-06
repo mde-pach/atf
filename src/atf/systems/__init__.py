@@ -1,12 +1,4 @@
-"""The systems ATF ships — the ones it needs to test itself, and nothing more.
-
-`command`, `browser`, `filesystem` and `process` are here, and `rest` beside them.
-There is deliberately nothing that binds ATF to one database: `sqlite` throughout the documentation
-is the worked example of an adapter somebody wrote, and lives in the suite that uses it.
-
-Importing this package registers every system in it, so a manifest naming `filesystem:` settings
-finds an adapter without listing anything under `extensions:`.
-"""
+"""The systems ATF ships: `command`, `browser`, `filesystem`, `process` and `rest`."""
 
 from __future__ import annotations
 

@@ -1,44 +1,4 @@
-"""`@rest(...)` — a resource an HTTP API owns.
-
-Its settings are `base_url` and whatever the API needs to be talked to; its option is `path`.
-
-```python
-from atf import rest
-
-
-@rest(path="/owners", unique_by="email")
-class Owner:
-    email: str
-
-
-primary = Owner(email="primary@example.com")
-```
-
-## Uniqueness and lookup are two different questions
-
-`unique_by` says which resource this *is*. It does not say how to fetch it, and on an HTTP API those
-are rarely the same thing: an owner may be unique by email and fetchable only by a numeric id nobody
-writing a test knows. `find` answers the second, and may search, filter, page or query however the
-API requires, so long as it returns the resource with that email.
-
-Three strategies, and a resource says which by what it declares:
-
-`filter`
-:   `GET /owners?email=…`, then match. Chosen when `list_filter` names recognition fields the API
-    accepts as query parameters. One request, and the API does the work.
-
-`scan`
-:   `GET /owners`, following pagination, and match client-side. The default, because it needs the
-    API to support nothing at all. The cost is every page of a large collection, per question.
-
-`path`
-:   `GET /owners/{email}` — a direct read, when the recognised value *is* the address. Chosen by
-    declaring `read_path`.
-
-The identity is matched with the same comparison [reconciliation](../reconcile.py) uses, so an API
-returning an id as a string where the declaration wrote a number has still returned the right
-record.
-"""
+"""`@rest(...)` — a resource an HTTP API owns."""
 
 from __future__ import annotations
 
@@ -69,8 +29,7 @@ class Rest:
         list_filter: list[str]
         #: The key one record is wrapped in, when the API wraps it.
         record_key: str
-        #: The key a *collection* is wrapped in. Separate from `record_key` on purpose: an API that
-        #: answers `{"items": [...]}` to a list and a bare object to a read is the common shape.
+        #: The key a *collection* is wrapped in, for an API answering `{"items": [...]}` to a list.
         collection_key: str
         #: What this API calls the identifier. Read for lineage and for `delete`.
         id_field: str
@@ -119,8 +78,7 @@ class Rest:
     def _body(self, resource: Any) -> Record:
         """What `create` sends: the declared fields, with a parent resolved to its identifier.
 
-        Only the adapter knows what a parent is called in a request body, which is why ATF hands it
-        the parent rather than a foreign key it guessed at.
+        ATF hands over the parent itself; this is where it becomes whatever the body calls it.
         """
         out: Record = {}
         for field, value in values_of(resource).items():
@@ -177,8 +135,7 @@ class Rest:
     def _collection(self, resource: Any, params: Record | None = None) -> list[Record]:
         """A whole collection, however this API wraps and pages it.
 
-        `record_key` unwraps a collection as well as a single record: an API that answers
-        `{"items": [...]}` says so once on the decorator rather than twice.
+        `collection_key` unwraps a list; `record_key` unwraps one record.
         """
         url = self._path(resource)
         key = self._options(resource).get("collection_key")
@@ -200,8 +157,7 @@ class Rest:
         made = self._unwrap(response.json(), resource) if response.content else None
         if isinstance(made, dict) and made:
             return made
-        # No identity in the answer — a 204, or an envelope this adapter does not know. Re-read it,
-        # because a record ATF cannot see is a record it cannot claim about.
+        # No identity in the answer — a 204, or an envelope this adapter does not know. Re-read it.
         found = self.find(resource)
         if found is None:
             raise Unreachable(f"{url}: created, and not findable afterwards")

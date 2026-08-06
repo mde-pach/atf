@@ -1,22 +1,4 @@
-"""`@phrase` — vocabulary written in Gherkin, expanded before anything runs.
-
-A phrase is a tagged scenario, never collected as a test. Saying its name in another scenario splices
-its sentences in.
-
-```gherkin
-@phrase
-Scenario: the output contains "{words}"
-  Then the result field "output" contains "{words}"
-```
-
-It spans all three verbs, and **phrases may nest**. One flat namespace anywhere under the specs
-directory, so a phrase is shareable between suites as an ordinary Python package.
-
-**Expansion happens at collection, not while a scenario runs.** That is not a preference: ATF
-decides at collection which resource each parameter resolves to, and a phrase that expanded later
-would hide the sentences that decision is read from — so every scenario using one would go
-unchecked. Phase 0 of MIGRATION.md sets out why.
-"""
+"""`@phrase`: vocabulary written in Gherkin, expanded at collection."""
 
 from __future__ import annotations
 
@@ -78,8 +60,8 @@ def matching(phrases: dict[str, Phrase], sentence: str) -> tuple[Phrase, dict[st
 def expand(scenario: Scenario, phrases: dict[str, Phrase]) -> Scenario:
     """A scenario with every phrase it says replaced by the sentences that phrase stands for.
 
-    A phrase's own sentences may say phrases, so this recurses — and a phrase that reaches itself is
-    a cycle, reported with the way round rather than as a stack overflow.
+    A phrase's own sentences may say phrases, so this recurses. A phrase that reaches itself raises
+    `PhraseError` with the way round.
     """
     expanded = Scenario(
         name=scenario.name,

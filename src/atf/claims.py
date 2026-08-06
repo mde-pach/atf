@@ -1,21 +1,4 @@
-"""`atf.claims` — the comparisons a claim is made of, as a library anybody may call.
-
-A step you wrote should fail as well as a built-in does. That only happens if the comparing and the
-reporting are one thing you can import, rather than something welded to the built-in steps.
-
-```python
-from atf import claims, then
-
-
-@then('the invoice totals "{amount}"')
-def _(invoice, amount):
-    claims.field_is(invoice, "total", amount)
-```
-
-Every failure here names the sentence's own words: the field asked about, what was found, and what
-was wanted — in the reader's terms rather than Python's. `False != 'false'` sends somebody to the
-adapter to work out which side is which; `false (a true/false value)` ends the question.
-"""
+"""`atf.claims` — the comparisons a claim is made of, as a library anybody may call."""
 
 from __future__ import annotations
 

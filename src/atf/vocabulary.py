@@ -1,25 +1,4 @@
-"""The sentences ATF ships, written with the same registry a suite writes its own with.
-
-Nothing here is privileged. Each of these is an `@given` / `@when` / `@then` like any a suite adds,
-which is what `one-engine-two-surfaces` means: a scenario and a pytest function reach the same
-engine, and a step you wrote fails the way a built-in does.
-
-## Variation, and the continuation sentence
-
-```gherkin
-Given the todo_list "groceries" but "slug" is "weekly"
-And "owner" is "null"
-```
-
-The first sentence names the resource and the first field; each `And` names one more. **The
-continuation binds to the resource the previous `Given` named** — MIGRATION.md §1.6 asks for a parse
-rule and this is it: a `Given` line that is *only* a field claim continues the last `Given` line that
-named a resource, and there is nowhere else it could attach. It is an error when no such line came
-before it, rather than a guess.
-
-`"null"` is not a value; it removes the field. Removing a field that carries lineage drops that edge
-for this scenario, which is how a test about a list with no owner is written.
-"""
+"""The sentences ATF ships, registered through the same registry a suite uses."""
 
 from __future__ import annotations
 

@@ -1,35 +1,4 @@
-"""ATF — Another Test Framework.
-
-A test framework whose bet is that **preconditions are declared as data rather than executed as
-setup code**. Declaring them buys a graph ATF holds: what depends on what, and which tests need
-which things.
-
-```python
-from adapters.sqlite import sqlite       # your suite's adapter, not ATF's
-
-
-@sqlite(table="owners", unique_by="email")
-class Owner:
-    email: str
-
-
-@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
-class TodoList:
-    slug: str
-
-
-primary = Owner(email="primary@example.com")
-groceries = TodoList(owner=primary, slug="groceries")
-```
-
-What a resource needs is written with `depends_on`, never read out of an annotation — a dependency
-does not always have a field to live in, and one that has none is still a dependency.
-
-Everything exported here is the declaration layer, the graph read off it, or the loader that turns a
-manifest into both. The step and claim vocabulary (`when`, `then`, `claim`, `marker`, `claims`) and
-the systems ATF ships (`command`, `browser`, `filesystem`, `process`) arrive with the phases that
-build them.
-"""
+"""ATF — declared resources, and the tests that need them."""
 
 from __future__ import annotations
 

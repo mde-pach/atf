@@ -1,23 +1,4 @@
-r"""`@filesystem(...)` — files and directories, arranged.
-
-Its setting is `root`, and its option is `path`. A resource that declares `text` is a file holding
-it; one that declares no text is a directory.
-
-```python
-from atf import filesystem
-
-
-@filesystem(path="config/settings.toml", unique_by="path")
-class Settings:
-    text: str
-
-
-settings = Settings(text="[server]\\nport = 8080\\n")
-```
-
-A path is always resolved inside `root` and never escapes it. A suite that could write to `../..`
-is a suite that can delete something it did not make, and teardown here removes what it finds.
-"""
+r"""`@filesystem(...)` — files and directories under one root."""
 
 from __future__ import annotations
 
@@ -64,10 +45,9 @@ class Filesystem:
     def _tree(self, resource: Any) -> dict[str, str] | None:
         """A directory whose whole contents this resource declares, as `path -> text`.
 
-        A resource that declares `files` **owns what is under it**. ATF wrote the tree, so ATF
-        removes the tree — including anything the thing under test added while the test ran. A
-        directory that declares no `files` is only ever removed when it is empty, because removing
-        a tree ATF did not populate is not teardown.
+        A resource that declares `files` **owns what is under it**: teardown removes the whole tree,
+        including anything written into it while a test ran. A directory declaring no `files` is
+        removed only when it is empty.
         """
         files = values_of(resource).get("files")
         return {str(k): str(v) for k, v in files.items()} if isinstance(files, dict) else None

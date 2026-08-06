@@ -1,21 +1,4 @@
-"""Markers: `#uuid`, `#datetime`, and the ones a suite registers.
-
-**Quotes mean a literal value. `#` means a kind.** `is "uuid"` compares with the string `uuid`;
-`is #uuid` requires a UUID. `#` is how a marker is *said* in a scenario, the way `@` is how a tag is
-written — so the registration carries no sigil.
-
-```python
-from atf import marker
-
-
-@marker("iban")
-def _(value):
-    return checksum_ok(value), "not a valid IBAN"
-```
-
-A marker answers `(held, message)`. The message is what the reader sees when it did not hold, so it
-says what was wrong rather than repeating the marker's name back.
-"""
+"""The marker registry: `#uuid`, `#int`, and whatever a suite registers."""
 
 from __future__ import annotations
 
@@ -53,7 +36,7 @@ REGISTRY: dict[str, Marker] = {}
 
 
 def marker(name: str, *, takes_argument: bool = False) -> Callable[[Check], Check]:
-    """Register a marker. Written without the `#`, because `#` is how it is said, not what it is."""
+    """Register a marker. Written without the `#`, which is how it is said in a scenario."""
 
     def decorate(check: Check) -> Check:
         clean = name.lstrip(SIGIL)

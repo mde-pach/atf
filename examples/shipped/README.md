@@ -17,7 +17,7 @@ does not remove.
 
 ```bash
 cd examples/shipped
-uv run python -m atf make local
+uv run atf make local
 find tmp
 ```
 

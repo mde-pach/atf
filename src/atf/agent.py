@@ -1,17 +1,4 @@
-"""`atf edit --mcp` — the same operations, served to an agent instead of to a browser.
-
-Every tool here is a call into [core](core.py) or [commands](commands.py), which is the same rule
-the editor follows: **no privileged path.** An agent gets the answers the command line gives, in the
-shape the editor reads, and nothing that only an agent can do.
-
-What that buys is stated in each reference page's *To an agent* face, and it comes down to one
-thing: **an agent gets a cause, not a stack trace.** When a resource cannot be made the reason is a
-field — immutable environment, `require`, `observe`, unreachable system — so an agent branches on it
-rather than parsing prose.
-
-The MCP SDK is not a dependency of ATF. A framework should not decide that every suite serves
-agents, so the command says what to install rather than failing on an import nobody asked for.
-"""
+"""`atf edit --mcp` — the same operations, served to an agent."""
 
 from __future__ import annotations
 
@@ -94,11 +81,7 @@ def answer(editor: Editor, tool: str, arguments: dict[str, Any] | None = None) -
 
 
 def _report(report: commands.Report) -> dict[str, Any]:
-    """A command's answer as data.
-
-    **When a resource cannot be made, the reason is a field** — immutable environment, `require`,
-    `observe`, or an unreachable system. An agent branches on it rather than reading prose.
-    """
+    """A command's answer as data, with `why` naming any resource that could not be made."""
     if report.error:
         return {"error": report.error, "code": report.code}
     return {

@@ -1,19 +1,4 @@
-"""ATF's pytest plugin: one fixture per resource, one item per scenario, one engine behind both.
-
-Two surfaces reach the same place. A pytest function taking `groceries: TodoList` and a scenario
-saying `Given the todo_list "groceries"` both end in [reconcile.ensure](reconcile.py), which is what
-`one-engine-two-surfaces` claims and what this file has to make true.
-
-## The collection pass
-
-**Which resource each parameter resolves to is decided at collection, and the fixture obeys.** Phase
-0 measured why it has to be: a scenario's fixture closure holds none of its steps' parameters, so
-"the one in scope" is only answerable from ATF's own step registry and the parsed scenario — both of
-which are available before a single test body runs.
-
-The same pass reports every unresolvable and ambiguous parameter at once, so a suite with three
-problems says all three and starts nothing.
-"""
+"""ATF's pytest plugin: a fixture per resource, an item per scenario, one engine behind both."""
 
 from __future__ import annotations
 
@@ -98,7 +83,7 @@ _LOADED: Loaded | None = None
 DECISIONS: dict[tuple[str, str], str] = {}
 #: What `atf run` chose, set before pytest starts. `None` means every test.
 SELECTION: Any = None
-#: `--no-make`: a test needing an absent resource fails rather than having it created.
+#: `--no-make`: a test needing an absent resource fails, and nothing is created.
 NO_MAKE: bool = False
 #: Which manifest this run is against, when something other than the nearest one was named.
 MANIFEST: Any = None
@@ -141,7 +126,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", f"{MARKER}: a scenario ATF collected from a .feature file")
     for tag in sorted({tag for f in _LOADED.features for s in f.scenarios for tag in s.tags}):
         config.addinivalue_line("markers", f"{tag}: a tag this suite writes on scenarios")
-    # A tag on a scenario is a marker a suite chose, so it is registered rather than warned about.
+    # A tag on a scenario is registered as a pytest marker.
     for tag in sorted({tag for f in _LOADED.features for s in f.scenarios for tag in s.tags}):
         config.addinivalue_line("markers", f"{tag}: a tag on one of this suite's scenarios")
 
@@ -306,8 +291,7 @@ def _test_name(title: str) -> str:
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Narrow to what was selected, then decide every kind parameter in what is left.
 
-    Selection comes first on purpose: a suite fault in a test this run was never going to execute
-    should not stop the slice that was asked for.
+    Selection comes first: only what this run will execute is checked.
     """
     if SELECTION is not None:
         kept, dropped = _apply_selection(items)

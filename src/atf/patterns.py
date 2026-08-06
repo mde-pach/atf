@@ -1,9 +1,4 @@
-"""The grammar a step pattern is written in. Dependency-free, and the whole of it.
-
-A pattern is wording with `{captures}` in it. That is the only syntax ATF's sentences have: no
-regular expression to learn, nothing to escape, and no second form for the hard cases — because a
-scenario is sentences, and a sentence with a hole in it is still a sentence.
-"""
+"""The grammar a step pattern is written in: wording with `{captures}` in it."""
 
 from __future__ import annotations
 
@@ -16,8 +11,7 @@ CAPTURE_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)(?::[^{}]*)?\}")
 def fill(pattern: str, values: dict[str, str]) -> str:
     """A pattern with its `{captures}` replaced by the values chosen for them.
 
-    A capture with no value keeps its placeholder, so a half-built sentence reads as a half-built
-    sentence rather than as one with a hole silently closed up.
+    A capture with no value keeps its placeholder.
     """
     return CAPTURE_RE.sub(lambda match: values.get(match.group(1)) or match.group(0), pattern)
 

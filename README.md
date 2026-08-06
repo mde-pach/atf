@@ -99,10 +99,31 @@ adapter of its own.
 
 ```console
 $ atf run
-49 passed
+52 passed
 ```
 
 Run it twice. One green run says nothing about residue.
+
+## Conventions
+
+Four, and they are conventions rather than tests. Some were tests that read ATF's own source with a
+regular expression, which is a linter's job wearing a test's costume.
+
+- **No hardcoded credentials, and no blanket `type: ignore`.** Enforced by ruff (`S105`–`S107`,
+  `PGH`), named in `pyproject.toml`.
+- **No literal `http://` or `https://` under `src/atf/`.** A host belongs in a manifest, behind a
+  `*_env` pointer. Review's job.
+- **The scaffold must run green.** CI scaffolds a suite with `atf init` and runs it with nothing
+  else set up, because that is what a newcomer is handed.
+- **A comment says what a scope is or what a function does.** Not why it is that way, not what it
+  replaced, not what else was considered. A decision that needs recording is a commit message, where
+  it is read by whoever asks why rather than by everyone who asks what. Enforced mechanically for
+  length and for the phrases that always mean rationale — `uv run python scripts/prose.py`, in CI
+  beside `ruff check`, which itself holds a docstring to a one-line summary (`D200`, `D205`, `D400`)
+  — and the rest is review's job.
+
+The documentation is MkDocs Material, organised by [Diátaxis](https://diataxis.fr), and built with
+`--strict` in CI.
 
 ## Reading further
 

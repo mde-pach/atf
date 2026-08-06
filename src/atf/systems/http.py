@@ -1,4 +1,4 @@
-"""Shared HTTP plumbing: auth schemes, retries and paginated listings."""
+"""An HTTP client, with auth and pagination, for the systems that speak HTTP."""
 
 from __future__ import annotations
 

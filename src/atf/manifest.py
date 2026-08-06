@@ -1,29 +1,4 @@
-"""`atf.yaml` — five top-level keys, and that is all of them.
-
-```yaml
-resources: [./resources.py]
-specs: ./specs
-extensions: [./adapters/sqlite.py]
-default_env: local
-
-environments:
-  local:
-    mutable: true
-    sqlite:  { path: ./todo.db }
-    command: { prefix: "python todo.py" }
-```
-
-Everything under an environment other than `mutable` is a system's settings, keyed by that system's
-name. There is no `clients:` key: a suite's own client of the product is a fixture the suite writes,
-and none of ATF's business.
-
-`mutable` is **false unless stated**, so an environment says out loud that ATF may change it. Every
-manifest that provisions anything carries the word, which is the point — the dangerous setting is
-the one nobody had to type.
-
-This module replaces `model/manifest.py`, which reads the older design's keys (`catalog`,
-`adapters`, `mutable_envs`, `clients`, `providers`, `display`, `schemas`, `requires`).
-"""
+"""`atf.yaml`: five top-level keys, and the environments under them."""
 
 from __future__ import annotations
 
@@ -98,7 +73,7 @@ def find(start: Path | None = None) -> Path:
 
 
 def load(path: Path | None = None) -> Manifest:
-    """Read the manifest, reporting everything wrong with it at once rather than the first thing."""
+    """Read the manifest, reporting everything wrong with it at once."""
     path = (path or find()).resolve()
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))

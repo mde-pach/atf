@@ -1,18 +1,4 @@
-"""`atf edit` — a local server that reads and drives the suite you already have.
-
-**Every view here is a call into [core](core.py), and nothing else.** The editor holds no logic of
-its own: no query, no state, no second opinion about what a resource is. That is the rule the old
-cockpit broke — seven of its eight routers reached into `session` and `materializer` directly — and
-one module to read from is what keeps it from re-rotting.
-
-**It knows about no specific type, system, claim or marker.** It renders whatever the registries
-contain, so a suite that registers `@redis` gets a catalogue entry, a graph node and a composer
-sentence without a line here changing. A concept needing a special case to be rendered is not
-finished: fix the model, not the editor.
-
-The pages are deliberately plain HTML. Everything a person reads is a role and a name, because that
-is what a scenario claims on — `Then the heading "Catalogue" is showing`.
-"""
+"""`atf edit` — a local server over the suite, reading only `core`."""
 
 from __future__ import annotations
 
@@ -400,11 +386,7 @@ def build_app(editor: Editor) -> Any:
 
     @app.get("/api/tools")
     def _tools() -> Any:
-        """What `atf edit --mcp` offers, readable without the SDK installed.
-
-        Which tools exist decides what an agent can write, so the list is data rather than
-        something only a running MCP client can discover.
-        """
+        """What `atf edit --mcp` offers, as data, readable without the SDK installed."""
         from .agent import TOOLS  # noqa: PLC0415
 
         return JSONResponse(TOOLS)
@@ -419,8 +401,7 @@ def build_app(editor: Editor) -> Any:
         answer = editor.make(name)
         return JSONResponse(answer, status_code=200 if answer["code"] == 0 else 409)
 
-    # Registered last on purpose: `/api/{view}` matches any single segment, so it would shadow
-    # `/api/tools` and `/api/compose` if it came first.
+    # Registered last: `/api/{view}` matches any single segment, and would shadow the routes above.
     @app.get("/api/{view}")
     def _api(view: str) -> Any:
         """The same answers as data. `atf edit --mcp` serves these to an agent."""

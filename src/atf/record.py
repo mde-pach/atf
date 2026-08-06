@@ -1,13 +1,4 @@
-"""What a run leaves behind: outcomes, the verdict folded over them, and the history beside them.
-
-**There is no fourth outcome word.** `passed`, `failed`, `skipped`, and nothing else. What used to
-be `error` — including a test the runner never heard back about — is `failed` with the reason in its
-message, because a run that produced one must not go green.
-
-**A run records what it did, never what the environment held.** Presence is asked of the environment
-at the moment the question matters, so there is nothing here to go stale, to be gitignored, or to be
-repaired.
-"""
+"""What a run leaves behind: outcomes, the verdict folded over them, and history."""
 
 from __future__ import annotations
 
@@ -118,8 +109,8 @@ class Run:
 def verdict(outcomes: Any) -> Verdict:
     """Fold outcomes into one word. **Failure wins**, and the order is what makes it win.
 
-    Nineteen rows passing under a heading and one failing is `failing`. `never run` is a verdict
-    rather than a failure: a scenario nobody has run yet is labelled, not left blank.
+    Nineteen rows passing under a heading and one failing is `failing`. No outcomes at all is
+    `never run`.
     """
     seen = list(outcomes)
     if any(word == Outcome.FAILED for word in seen):

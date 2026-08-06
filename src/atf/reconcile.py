@@ -1,31 +1,4 @@
-"""Reconciliation: what ATF does with the answer recognition gave it.
-
-```text
-find  →  nothing        → create(resource)
-      →  same           → done
-      →  differs        → update(resource, found, changes)
-```
-
-**ATF computes the diff, never the adapter.** `changes` reaches the adapter already worked out, and
-the adapter's job is to apply it — which is what lets the editor show what pressing the button
-*would* alter, field by field, before anything is pressed.
-
-**A declaration is a partial specification.** The fields you named must hold; fields you did not
-name are left alone, so a `created_at` the system set and a colour somebody picked in the product
-survive untouched. The cost is the other side of that: an undeclared field can drift to anything and
-ATF will neither correct it nor mention it.
-
-## What counts as different
-
-This is the loosest part of ATF and it is loose on purpose. `compare.matches` treats `"1"` and `1`
-as the same value, and two spellings of one instant as one instant, because a system that returns an
-id as a string where the declaration wrote a number has still returned the right thing.
-
-Tightening it would make every run write to the real environment over a difference that is not one.
-Loosening it would leave real drift uncorrected. It lands on shared environments where a wrong
-answer is expensive, so the rule is stated here rather than buried: **a field differs when
-`compare.matches` says the found value is not the declared one.**
-"""
+"""Bringing a resource to what its declaration says, and taking it away again."""
 
 from __future__ import annotations
 
@@ -62,14 +35,8 @@ class Outcome:
 def acted_fields(resource: Any) -> set[str]:
     """Fields a declared action writes, which reconciliation must not undo.
 
-    A declaration is a partial specification and an action's whole purpose is to change state, so a
-    field named by both is a contradiction. `Task` declaring `done: False` and an action setting it
-    true means the next pass would revert whatever the action did — on whichever run touched the
-    resource next, silently.
-
-    ATF can see the contradiction, because `actions=` names the fields, so it resolves it rather
-    than asking an author to know. The cost is that the diff is narrower than "the fields you
-    named": a field an action writes is declared for its *initial* value and never held to it.
+    A field named by both the shape and an action is declared for its *initial* value, and is not
+    held to it afterwards.
     """
     return {field for action in declaration_of(resource).actions.values() for field in action.values}
 
@@ -77,9 +44,8 @@ def acted_fields(resource: Any) -> set[str]:
 def declared_values(resource: Any) -> Record:
     """The fields ATF writes when it creates: everything declared that is not another resource.
 
-    A field holding a parent is left out. What a parent means in the child's record — a foreign key,
-    an embedded document, a path segment — is the system's business, and the adapter is the only
-    thing that knows. [comparable_values](#comparable_values) is what a *diff* is taken over.
+    A field holding a parent is left out; the adapter resolves it. `comparable_values` is what a
+    diff is taken over.
     """
     return {name: value for name, value in values_of(resource).items() if not is_resource(value)}
 
@@ -87,9 +53,7 @@ def declared_values(resource: Any) -> Record:
 def comparable_values(resource: Any) -> Record:
     """What the diff is taken over: the declared scalars, minus what an action is free to change.
 
-    **A field a scenario varied is always compared**, even when an action writes it. Excluding it
-    would mean `but "text" is "varied"` quietly did nothing — the author named a value, so the value
-    holds. The exclusion is about drift nobody asked for, not about an instruction.
+    A field a scenario varied is always compared, even where an action writes it.
     """
     loose = acted_fields(resource) - instance_of(resource).varied
     return {name: value for name, value in declared_values(resource).items() if name not in loose}
@@ -98,10 +62,7 @@ def comparable_values(resource: Any) -> Record:
 def parent_key(resource: Any, field_name: str) -> str:
     """What a record calls the parent held in this field.
 
-    `owner` is written as `owner_id` unless the adapter says otherwise, which it does by naming a
-    `parent_suffix` option. A convention rather than a method on the SPI: ATF has to compute the
-    diff — the editor's "what would change" depends on it — so the alternative was asking the
-    adapter a question it would answer the same way every time.
+    `owner` is written as `owner_id`, unless the adapter names a `parent_suffix` option.
     """
     suffix = declaration_of(resource).options.get("parent_suffix", "_id")
     return f"{field_name}{suffix}"
@@ -115,10 +76,8 @@ def parent_identity(parent: Any, record: Record) -> Any:
 def parent_changes(resource: Any, found: Record) -> Record:
     """Parents this record no longer points at.
 
-    Without this a resource can be repointed at a different parent and reported `unchanged`, which
-    is the expensive kind of wrong: the suite passes against a graph nobody declared. It is checked
-    only where the record carries the key — an adapter that spells lineage some other way is not
-    second-guessed, and says nothing rather than something false.
+    Checked only where the record carries the key. An adapter that spells lineage some other way
+    contributes nothing here.
     """
     out: Record = {}
     for field_name, value in values_of(resource).items():
@@ -130,9 +89,20 @@ def parent_changes(resource: Any, found: Record) -> Record:
         wanted = instance_of(value).identity
         if wanted is None:
             continue
-        if not compare.matches(found.get(key), wanted):
+        if not same_value(found.get(key), wanted):
             out[key] = wanted
     return out
+
+
+def same_value(found: Any, declared: Any) -> bool:
+    """Whether a record already satisfies a declared value.
+
+    A field declared as nothing and found as nothing agrees with its declaration. `compare.matches`
+    answers a claim's question, where a record holding nothing has not returned the right record.
+    """
+    if declared is None:
+        return found is None
+    return compare.matches(found, declared)
 
 
 def diff(resource: Any, found: Record) -> Record:
@@ -140,7 +110,7 @@ def diff(resource: Any, found: Record) -> Record:
     changed = {
         name: value
         for name, value in comparable_values(resource).items()
-        if not compare.matches(found.get(name, None), value)
+        if not same_value(found.get(name, None), value)
     }
     return {**changed, **parent_changes(resource, found)}
 
@@ -213,8 +183,8 @@ def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Outcome:
 def _remember_identity(resource: Any, record: Record) -> None:
     """Keep what this resource was found as, so its children can be checked against it.
 
-    `provision` walks a closure parents-first, so by the time a child is reconciled its parents have
-    each been through here. Nothing else reads it, and nothing persists it between runs.
+    `provision` walks a closure parents-first, so a child's parents have each been through here.
+    Held for the process only.
     """
     instance_of(resource).identity = parent_identity(resource, record)
 
@@ -243,8 +213,7 @@ def provision(ground: Ground, resources: list[Any], *, dry_run: bool = False) ->
 def status(ground: Ground, resources: list[Any]) -> list[Outcome]:
     """Where each of these stands, changing nothing.
 
-    `atf status` never gates. Absence is reported as information, because naming a resource in a
-    scenario is precisely what makes ATF create it.
+    `atf status` never gates: absence is information, and the exit code is `0` or `2`.
     """
     _learn_parents(ground, resources)
     out: list[Outcome] = []
@@ -265,9 +234,7 @@ def status(ground: Ground, resources: list[Any]) -> list[Outcome]:
 def _learn_parents(ground: Ground, resources: list[Any]) -> None:
     """Find each parent, so a child can be compared against the one it should point at.
 
-    `status` reports on the resources it was asked about and no others, but it cannot tell whether a
-    child points at the right parent without knowing what that parent is. So the parents are asked
-    about and not reported — the closure minus what was requested.
+    The closure minus what was requested: asked about, and not reported on.
     """
     requested = [id(node) for node in resources]
     for node in graph.order(resources):
@@ -369,5 +336,5 @@ def ephemeral(resources: list[Any]) -> list[Any]:
 
 
 def unnamed(resource: Any) -> bool:
-    """Whether this resource came from a factory rather than from a variable in a module."""
+    """Whether a factory built this resource. `False` for one a module names."""
     return instance_of(resource).from_factory

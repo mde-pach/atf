@@ -92,9 +92,8 @@ The setup everything in that directory shares. It is usually one or two fixtures
 Convert the root of that chain first — `Owner` — then the thing that needs it:
 
 ```python
-@sqlite(table="lists", unique_by="slug")
+@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
 class TodoList:
-    owner: Owner          # the dependency, and the foreign key
     slug: str
 
 
@@ -193,7 +192,7 @@ an environment. Run it after each declaration you move.
 
 ## Where to go next
 
-- [Depend on another resource](depend-on-another-resource.md) — the typed field that replaces a
+- [Depend on another resource](depend-on-another-resource.md) — the `depends_on` that replaces a
   chain of fixtures calling one another.
 - [Make something fresh for each test](make-something-fresh-for-each-test.md) — what to do about the
   fixtures you converted that tests were mutating.

@@ -54,7 +54,7 @@ tenant, a signed-in account. `function` is for the records tests mutate. See
 ## Teardown
 
 Removal is the system's own delete, run in reverse of provisioning order — dependents first. You
-write neither it nor the ordering; the ordering follows the typed fields.
+write neither it nor the ordering; the ordering follows `depends_on`.
 
 **Teardown runs after a failing test**, so one failure does not become a run's worth of noise.
 
@@ -71,7 +71,7 @@ $ atf check
 lifetime inversion: TodoList (session) depends on Guest (function)
 ```
 
-`atf check` reads the scopes off the declarations and the ordering off the typed fields, so an
+`atf check` reads the scopes off the declarations and the ordering off `depends_on`, so an
 impossible pair is named before anything touches an environment.
 
 ## The check that actually proves it

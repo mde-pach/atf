@@ -120,7 +120,7 @@ so. The change set only ever names fields the declaration names.
 The spine of the editor rather than a page in it. Every resource, test and phrase is reachable by
 moving along an edge from wherever you already are; there is no node that only a search box finds.
 The edges are the ones the model already has. A resource reaches another through
-[lineage](arrange.md#lineage), a field typed as another resource. A test reaches the resources it
+[lineage](arrange.md#lineage), what its `depends_on` names. A test reaches the resources it
 asks for, as a parameter or as a `Given`. A scenario reaches a phrase by saying its sentence, and a
 phrase reaches another by nesting it. A resource reaches an action its adapter can perform.
 

@@ -15,7 +15,7 @@ setup turned into resources, and every existing test still working.
 [Add a resource](add-a-resource.md) takes something your tests need from not existing at all to being
 provisioned. [Give a resource a factory](give-a-resource-a-factory.md) is for when the identity does
 not matter and ATF should build one. [Depend on another resource](depend-on-another-resource.md) is
-the typed field that makes one resource bring another with it.
+the `depends_on` that makes one resource bring another with it.
 
 Then the awkward resources. [Vary a resource for one test](vary-a-resource-for-one-test.md) changes
 one field for one scenario and nothing else.

@@ -100,7 +100,7 @@ total grew is the thing the budget exists to catch. What did die is a claim ATF 
 declaring a resource costs four ideas. It costs seven, four of them visible on the class you type.
 
 Every candidate for a genuinely new concept here collapsed into one that already existed. A
-dependency is a typed field, so it is `lineage`, already spent at level 1. A default value is the
+dependency is `depends_on`, so it is `lineage`, already spent at level 1. A default value is the
 factory. Configuration sits on the system's decorator, or in the manifest at level 4.
 
 **Level 4 · Connect** — when it is not there, scope, report. Three.

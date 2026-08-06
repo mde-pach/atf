@@ -45,7 +45,7 @@ class Sqlite:
     def flatten(self, values) -> dict[str, Any]:
         record = {}
         for name, value in values.items():
-            if isinstance(value, dict):       # a field typed as another resource
+            if isinstance(value, dict):       # a parent, resolved to its record
                 record[f"{name}_id"] = value["id"]
             else:
                 record[name] = value
@@ -159,15 +159,14 @@ Here `.identity` is built from the fields the `key` template names, where sqlite
 `unique_by`. Declare against it exactly as you declare against sqlite:
 
 ```python
-@redis(key="guest:{nickname}", ttl=3600, scope="function")
+@redis(key="guest:{nickname}", ttl=3600, scope="function", depends_on=[TodoList])
 class Guest:
     nickname: str
-    todo_list: TodoList
 ```
 
-`scope` and `when_absent` are ATF's, available on every system decorator. `key` and `ttl` are this
-adapter's `Options`. `groceries` is provisioned first, by the sqlite adapter, because
-`todo_list: TodoList` is an edge like any other. Neither adapter knows the other exists.
+`scope`, `when_absent` and `depends_on` are ATF's, available on every system decorator. `key` and
+`ttl` are this adapter's `Options`. `groceries` is provisioned first, by the sqlite adapter, because
+`depends_on` is an edge like any other. Neither adapter knows the other exists.
 
 ## The two optional methods
 

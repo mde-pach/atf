@@ -40,7 +40,7 @@ accessibility claim: if ATF can find the button by its name, so can somebody usi
 and if it cannot, that is a finding rather than a flaky selector.
 
 **OpenLineage**, for the vocabulary of what depends on what. ATF's
-[lineage](../reference/arrange.md#lineage) is a field typed as another resource — dbt's `ref()`,
+[lineage](../reference/arrange.md#lineage) is `depends_on` — dbt's `ref()`,
 written as an annotation — and the graph it produces is described in the terms data tooling already
 uses, so a team with a catalogue does not have to learn a private format.
 

@@ -19,7 +19,7 @@ def test_c(groceries: TodoList):   # that list, and primary comes with it
 The name resolves and the annotation types. A resource takes the name of its variable, the same way
 a fixture takes the name of its function; `resources.py` is read by importing it, the way
 `conftest.py` is. A fixture body is code, so learning that `groceries` needs an owner means
-executing it. A resource's dependency is a typed field, so `atf status`, `atf impact groceries` and
+executing it. A resource's dependency is declared data, so `atf status`, `atf impact groceries` and
 `atf unused` answer without running a test.
 
 **Where it differs**
@@ -36,13 +36,12 @@ executing it. A resource's dependency is a typed field, so `atf status`, `atf im
 
 ## factory_boy
 
-**A resource's `factory` classmethod is factory_boy's factory, typed, with the dependency as a
-parameter rather than a `SubFactory` attribute.**
+**A resource's `factory` classmethod is factory_boy's factory, with the dependency declared once on
+the resource rather than as a `SubFactory` attribute.**
 
 ```python
-@sqlite(table="lists", unique_by="slug")
+@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
 class TodoList:
-    owner: Owner
     slug: str
 
     @classmethod
@@ -50,9 +49,9 @@ class TodoList:
         return cls(owner=owner, slug=faker.slug())
 ```
 
-`owner: Owner` is the `SubFactory`. A dependency it is not given is built by that resource's own
-factory, recursively — resolved by the type rather than by a class attribute. Faker is yours, and so
-is `@sqlite`: it comes from an adapter in the suite, not from ATF.
+`depends_on=[Owner]` is the `SubFactory`. A dependency the caller does not supply is built by that
+resource's own factory, recursively, and the factory is handed it by the name of its kind. Faker is
+yours, and so is `@sqlite`: it comes from an adapter in the suite, not from ATF.
 
 **Where it differs**
 
@@ -133,7 +132,7 @@ what trusting the environment over a record costs.
 
 ## dbt
 
-**`ref()` is a typed field.**
+**`ref()` is `depends_on`.**
 
 ```python
 class TodoList:

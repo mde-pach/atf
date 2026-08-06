@@ -22,9 +22,8 @@ from adapters.sqlite import sqlite      # this suite's adapter, not ATF's
 class Owner:
     email: str
 
-@sqlite(table="lists", unique_by="slug")
+@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
 class TodoList:
-    owner: Owner          # the dependency, and the foreign key
     slug: str
 
 primary   = Owner(email="primary@example.com")
@@ -56,7 +55,7 @@ and the closure follows the field. The two surfaces compile to the same thing: t
 the same order, the same failure messages.
 
 A resource *is* a pytest fixture — the parameter name resolves, the annotation types. Because its
-dependency is a typed field rather than a fixture body, these answer without running a test:
+dependency is declared rather than executed, these answer without running a test:
 
 ```sh
 atf status staging          what is present, absent or unreachable, right now

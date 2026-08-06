@@ -107,6 +107,6 @@ provisions runs at the wrong time and in the wrong order.
 - [Vary a resource for one test](vary-a-resource-for-one-test.md) — the judgement call between a
   factory, a variation and a second named instance, side by side.
 - [Depend on another resource](depend-on-another-resource.md) — what the dependency graph answers
-  once the typed fields are in place.
+  once `depends_on` is in place.
 - [Arrange](../reference/arrange.md#factory) — the resolution rules, including a factory given a
   dependency that was itself factory-built.

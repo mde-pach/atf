@@ -24,7 +24,7 @@ Pass `--select` more than once for a union:
 atf run --select +groceries --select +visitor
 ```
 
-The edges come from [lineage](../reference/arrange.md#lineage) — a field typed as another resource.
+The edges come from [lineage](../reference/arrange.md#lineage) — what a resource's `depends_on` names.
 `Task` has a `todo_list: TodoList` field, so every `Task` is downstream of `groceries`, and so is
 every test that asks for one. Nobody drew that edge.
 

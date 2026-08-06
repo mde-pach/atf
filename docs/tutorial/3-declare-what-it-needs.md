@@ -60,22 +60,22 @@ Feature: declarations
 
 Run it. The owner is in `todo.db` afterwards, because the test asked for it and it was not there.
 
-## A field typed as another resource
+## One resource that needs another
 
 A list has a slug, and it belongs to an owner:
 
 ```python
-@sqlite(table="lists", unique_by="slug")
+@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
 class TodoList:
-    owner: Owner
     slug: str
 
 
 groceries = TodoList(owner=primary, slug="groceries")
 ```
 
-`owner: Owner` is the foreign key, and the statement that a list cannot exist before its owner does.
-This is dbt's `ref()`, written as a field. Ask for the list, and only the list:
+`depends_on=[Owner]` is the statement that a list cannot exist before an owner does. `owner=primary`
+says which owner this one has, and is the value the adapter writes — so the requirement is answered
+by it rather than said twice. This is dbt's `ref()`. Ask for the list, and only the list:
 
 ```gherkin
 Scenario: a list shows up under its owner
@@ -86,7 +86,7 @@ Scenario: a list shows up under its owner
 ```
 
 Delete `todo.db` and run it. It passes. **Nothing in the scenario mentions `primary`.** ATF followed
-the typed field from `groceries` to `primary`, found the owner absent, made it, then made the list.
+the edge from `groceries` to `primary`, found the owner absent, made it, then made the list.
 What you pay is that no file shows you that order, so ask the graph instead: `atf impact primary`.
 [Declared, not executed](../explanation/declared-not-executed.md) is the trade in full, including
 where it loses.

@@ -11,11 +11,10 @@ adapter already has.
 ```python
 from adapters.sqlite import sqlite, Update
 
-@sqlite(table="tasks", unique_by="slug",
+@sqlite(table="tasks", unique_by="slug", depends_on=[TodoList],
         actions={"complete": Update(done=True),
                  "reopen":   Update(done=False)})
 class Task:
-    todo_list: TodoList
     slug: str
     done: bool = False
 ```

@@ -40,9 +40,9 @@ alone.
 
 A [resource](glossary.md#resource) is the centre of the band and the rest are angles on it. Its
 decorator is its [system](glossary.md#system). One of its fields is its
-[recognition](glossary.md#recognition). A field typed as another resource is
-[lineage](glossary.md#lineage) — the dependency and the foreign key at once, so the closure follows
-the field. [when it is not there](glossary.md#when-it-is-not-there) settles what happens when
+[recognition](glossary.md#recognition). What it needs to exist first is
+[lineage](glossary.md#lineage), written in `depends_on`, so the closure follows the declaration
+rather than the shape. [when it is not there](glossary.md#when-it-is-not-there) settles what happens when
 recognition finds nothing, and the default is to make it. [scope](glossary.md#scope) settles how long
 what was made lives, `persistent` unless you say otherwise.
 

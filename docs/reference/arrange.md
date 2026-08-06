@@ -22,9 +22,8 @@ class Owner:
         return cls(email=faker.email())
 
 
-@sqlite(table="lists", unique_by="slug")
+@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
 class TodoList:
-    owner: Owner          # the dependency, and the foreign key
     slug: str
 
 
@@ -64,17 +63,49 @@ state. An agent names a resource without reading the module that declares it.
 
 ## Lineage {#lineage}
 
-A resource depends on another by having a field typed as it — `TodoList.owner` above. This is dbt's
-`ref()`, written as a field, and **nobody writes a dependency twice**. The closure follows the
-field: asking for `groceries` arranges `primary` first, then `groceries`; asking for a `Task`
-arranges its list and that list's owner.
+A resource says what must exist before it with `depends_on` — `TodoList` above. This is dbt's
+`ref()`, and the closure follows it: asking for `groceries` arranges `primary` first, then
+`groceries`; asking for a `Task` arranges its list and that list's owner.
 
-ATF reads the graph off the annotations, and can answer questions the suite never stated.
+**An entry is read for what it is.** A kind means *any* of them, answered by whatever is already in
+scope and otherwise by the [factory](#factory). A particular resource means that one.
+
+```python
+@sqlite(table="lists", unique_by="slug", depends_on=[Owner])   # any owner
+class TodoList:
+    slug: str
+
+
+groceries = TodoList(owner=primary, slug="groceries")   # this one's is primary
+scratch   = TodoList(slug="scratch")                    # this one's is whatever the factory builds
+```
+
+**Nobody writes a dependency twice.** Where the shape has room for the parent, passing it as a value
+is the declaration — `owner=primary` above says which owner `groceries` needs, and the kind-level
+`depends_on=[Owner]` is answered by it rather than repeated.
+
+**A dependency does not need a field to live in.** A report written per owner that stores only its
+slug and a rendered body has nowhere to put an `owner`, and still needs one:
+
+```python
+@sqlite(table="reports", unique_by="slug", depends_on=[Owner])
+class Report:
+    slug: str
+    body: str
+
+
+quarterly = Report(slug="quarterly", body="<html/>", depends_on=[primary])
+```
+
+That is why the graph is not read off annotations. An annotation is the shape — what gets written —
+and the shape is not always where a dependency can be said.
+
+ATF reads the graph off `depends_on`, and can answer questions the suite never stated.
 `atf impact groceries` says what breaks if that resource changes, `atf run --select +groceries` runs
 what touches it, and `atf unused` lists what nothing asks for.
 
-The cost is that the dependency must be expressible as a typed field. A resource that needs another
-one only sometimes, or needs one of three types, has nowhere to say so.
+The cost is that a dependency must be one resource or one kind. A resource that needs one of three
+types, or several of a kind, has nowhere to say so.
 
 **In CI** — the graph decides the order things are made in, and `--select` uses it to run a slice of
 the suite for a change that touched one resource.
@@ -83,7 +114,7 @@ the suite for a change that touched one resource.
 it.
 
 **To an agent** — the edges are served as data, so an agent asks what depends on what instead of
-parsing annotations.
+reading declarations.
 
 ## Asking for one {#asking-for-one}
 
@@ -138,10 +169,11 @@ A factory says how to build a resource nobody named. It is a classmethod on the 
         return cls(owner=owner, slug=faker.slug())
 ```
 
-This is factory_boy's `SubFactory`, typed. The parameters are dependencies, and one the caller does
-not supply is built by that resource's own factory, recursively: `list: TodoList` with nothing in
-scope calls `TodoList.factory`, which calls `Owner.factory`, stopping at the first resource that
-needs nothing.
+This is factory_boy's `SubFactory`. **What a factory is given comes from the kind's
+[`depends_on`](#lineage), not from the factory's own signature** — each parent arrives under its
+kind's name, so `depends_on=[Owner]` hands it `owner`. One the caller does not supply is built by
+that resource's own factory, recursively: `todo_list: TodoList` with nothing in scope calls
+`TodoList.factory`, which calls `Owner.factory`, stopping at the first resource that needs nothing.
 
 A resource without a factory can only be asked for by name; asking for it by type, with nothing in
 scope, is an error saying the type has no factory.

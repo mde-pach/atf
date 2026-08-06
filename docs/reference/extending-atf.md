@@ -87,7 +87,7 @@ class Sqlite:
         return resource.options.get("table", resource.kind)
 
     def columns(self, values):
-        """A field typed as another resource arrives as that resource's record."""
+        """A parent arrives as that resource's record, already made."""
         for field, value in values.items():
             yield (f"{field}_id", value["id"]) if isinstance(value, dict) else (field, value)
 
@@ -150,9 +150,8 @@ class Owner:
     email: str
 
 
-@sqlite(table="lists", unique_by="slug")
+@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
 class TodoList:
-    owner: Owner
     slug: str
 ```
 

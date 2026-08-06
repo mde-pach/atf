@@ -113,9 +113,8 @@ class Notebook:
     name: str
 
 
-@filesystem(path="notes", unique_by="name")
+@filesystem(path="notes", unique_by="name", depends_on=[Notebook])
 class Note:
-    notebook: Notebook
     name: str
 
 
@@ -185,7 +184,7 @@ Read the last three lines upwards and the whole design is in them.
     [require something you cannot create](../how-to/require-something-you-cannot-create.md) for the
     other half of that idea.
 
-The lineage is the two typed fields. `Screen.editor` is an `Editor`; `Editor.workspace` is a
+The lineage is the two `depends_on` entries. A `Screen` needs an `Editor`; an `Editor` needs a
 `Workspace`. Nobody writes the chain out anywhere else, and one sentence pulls the whole of it:
 
 ```gherkin

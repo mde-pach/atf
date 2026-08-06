@@ -276,7 +276,7 @@ exit code is `0`. A typo must not go green. A correct selection with no work in 
 atf edit
 ```
 
-The editor draws the graph: every resource, every typed field between them, every test that asks for
+The editor draws the graph: every resource, every edge between them, every test that asks for
 one, and the verdict each carried out of the last run. Two commands read the same graph from the
 terminal — `atf impact <name>` for what breaks if that resource does, and `atf unused` for what
 nothing asks for.

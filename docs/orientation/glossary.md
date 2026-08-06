@@ -92,11 +92,15 @@ one accepts.
 
 ## Lineage {#lineage}
 
-A field typed as another resource, which is both the dependency and the foreign key. Declaring it
-once is what gives ATF the graph behind `atf impact`. It is not [recognition](#recognition):
-recognition asks whether this thing is already there, lineage says what has to be there first.
-[Arrange](../reference/arrange.md#lineage) shows how the closure follows the field and how it
-interacts with factories.
+What one resource needs to exist before it, declared with `depends_on`. Declaring it once is what
+gives ATF the graph behind `atf impact`. It is not [recognition](#recognition): recognition asks
+whether this thing is already there, lineage says what has to be there first.
+
+An entry is a kind or a particular resource, and which one it is says what is meant: a kind means
+any of them, a resource means that one. Where the shape has room for the parent, passing it as a
+value says which — so the dependency is still written once.
+[Arrange](../reference/arrange.md#lineage) shows how the closure follows it, including the case
+where a resource has nowhere to put its parent and needs one anyway.
 
 ## Marker {#marker}
 

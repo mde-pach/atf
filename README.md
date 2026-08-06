@@ -99,7 +99,7 @@ adapter of its own.
 
 ```console
 $ atf run
-52 passed
+62 passed
 ```
 
 Run it twice. One green run says nothing about residue.

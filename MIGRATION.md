@@ -20,7 +20,8 @@ wins, unless this document lists the disagreement as an open question in §1.
 holds the model, the exact syntax, the canonical domain and the two vocabularies in one file. Every
 page under `docs-next/` was written against it.
 
-**`docs/` is the old documentation.** It describes the design being replaced. Do not consult it.
+~~**`docs/` is the old documentation.**~~ **Done.** `docs-next/` replaced it, and `docs/` is now the
+design this document describes. `REFACTOR.md`, which briefed the work before this one, went with it.
 
 **Do not preserve backward compatibility.** There is no released version and no user to break.
 

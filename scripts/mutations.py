@@ -82,6 +82,13 @@ MUTATIONS = (
         "a claim that does not hold turns the run red and says what it wanted",
     ),
     Mutation(
+        what="a check the suite registered",
+        module="commands.py",
+        find="    for one in CHECKS:",
+        replace="    for one in []:",
+        caught_by="tests/specs/reading.feature::check exits 1 on its findings, because they are its answer",
+    ),
+    Mutation(
         what="--absent-only",
         module="commands.py",
         find="    shown = [o for o in report.outcomes if not absent_only or o.state is not State.PRESENT]",

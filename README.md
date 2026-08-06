@@ -106,7 +106,7 @@ Run it twice. One green run says nothing about residue.
 
 ## Conventions
 
-Four, and they are conventions rather than tests. Some were tests that read ATF's own source with a
+Five, and they are conventions rather than tests. Some were tests that read ATF's own source with a
 regular expression, which is a linter's job wearing a test's costume.
 
 - **No hardcoded credentials, and no blanket `type: ignore`.** Enforced by ruff (`S105`–`S107`,
@@ -115,6 +115,9 @@ regular expression, which is a linter's job wearing a test's costume.
   `*_env` pointer. Review's job.
 - **The scaffold must run green.** CI scaffolds a suite with `atf init` and runs it with nothing
   else set up, because that is what a newcomer is handed.
+- **Every command the documentation shows must exist, and every name it imports must be exported.**
+  Two checks this suite registers, so `atf check` enforces them and a page written tomorrow is
+  covered without anybody remembering to add it.
 - **A comment says what a scope is or what a function does.** Not why it is that way, not what it
   replaced, not what else was considered. A decision that needs recording is a commit message, where
   it is read by whoever asks why rather than by everyone who asks what. Enforced mechanically for

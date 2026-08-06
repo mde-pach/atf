@@ -95,13 +95,19 @@ def init(context: click.Context, **flags: Any) -> None:
 @globals_too
 @click.argument("env", required=False, default="")
 @click.argument("names", nargs=-1)
+@click.option("--absent-only", is_flag=True, help="list only what is not present")
 @click.pass_context
 def status(context: click.Context, **flags: Any) -> None:
     """Where each resource stands. Never gates: 0 or 2, and never 1."""
     _adopt(context, flags)
     _guarded(
         context,
-        lambda: commands.do_status(flags["env"], list(flags["names"]), config=context.obj.config),
+        lambda: commands.do_status(
+            flags["env"],
+            list(flags["names"]),
+            absent_only=flags["absent_only"],
+            config=context.obj.config,
+        ),
     )
 
 
@@ -204,11 +210,12 @@ def docs(context: click.Context, **flags: Any) -> None:
 
 @cli.command()
 @globals_too
+@click.option("--strict", is_flag=True, help="also treat an unused resource or phrase as a fault")
 @click.pass_context
 def check(context: click.Context, **flags: Any) -> None:
     """Every registered check, over this suite. Exits 1 on findings — they are its answer."""
     _adopt(context, flags)
-    _guarded(context, lambda: commands.do_check(config=context.obj.config))
+    _guarded(context, lambda: commands.do_check(strict=flags["strict"], config=context.obj.config))
 
 
 @cli.command("import-run")
@@ -216,6 +223,8 @@ def check(context: click.Context, **flags: Any) -> None:
 @click.argument("env")
 @click.argument("file", type=click.Path(exists=True, dir_okay=False))
 @click.option("--format", "format_", default="ctrf", help="which registered format (default ctrf)")
+@click.option("--label", default="imported", help="recorded on the run, so CI is told apart in history")
+@click.option("--revision", default="", help="override the revision; taken from the file by default")
 @click.pass_context
 def import_run(context: click.Context, **flags: Any) -> None:
     """Bring a run recorded elsewhere into this suite's history."""
@@ -223,7 +232,12 @@ def import_run(context: click.Context, **flags: Any) -> None:
     _guarded(
         context,
         lambda: commands.do_import_run(
-            flags["env"], flags["file"], flags["format_"], config=context.obj.config
+            flags["env"],
+            flags["file"],
+            flags["format_"],
+            label=flags["label"],
+            revision=flags["revision"],
+            config=context.obj.config,
         ),
     )
 

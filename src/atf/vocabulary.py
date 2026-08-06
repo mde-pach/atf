@@ -91,6 +91,34 @@ def _field_contains(kind: str, name: str, field: str, value: str, atf: Scope) ->
     claims.field_contains(record, field, value, subject=f'the {kind} "{name}"')
 
 
+@then('the {kind} "{name}" field "{field}" is not "{value}"')
+def _field_is_not(kind: str, name: str, field: str, value: str, atf: Scope) -> None:
+    record = atf.look_up(kind, name)
+    claims.exists(record, f'the {kind} "{name}"')
+    claims.field_is_not(record, field, value, subject=f'the {kind} "{name}"')
+
+
+@then('the {kind} "{name}" field "{field}" does not contain "{value}"')
+def _field_does_not_contain(kind: str, name: str, field: str, value: str, atf: Scope) -> None:
+    record = atf.look_up(kind, name)
+    claims.exists(record, f'the {kind} "{name}"')
+    claims.field_does_not_contain(record, field, value, subject=f'the {kind} "{name}"')
+
+
+@then('the {kind} "{name}" field "{field}" is empty')
+def _field_is_empty(kind: str, name: str, field: str, atf: Scope) -> None:
+    record = atf.look_up(kind, name)
+    claims.exists(record, f'the {kind} "{name}"')
+    claims.field_is_empty(record, field, subject=f'the {kind} "{name}"')
+
+
+@then('the {kind} "{name}" field "{field}" is not empty')
+def _field_is_not_empty(kind: str, name: str, field: str, atf: Scope) -> None:
+    record = atf.look_up(kind, name)
+    claims.exists(record, f'the {kind} "{name}"')
+    claims.field_is_not_empty(record, field, subject=f'the {kind} "{name}"')
+
+
 @then('the {slot} field "{field}" is {value}')
 def _slot_field_is(slot: str, field: str, value: str, atf: Scope) -> None:
     """`Then the result field "exit_code" is "0"` — a claim about what an action produced."""
@@ -100,6 +128,26 @@ def _slot_field_is(slot: str, field: str, value: str, atf: Scope) -> None:
 @then('the {slot} field "{field}" contains "{value}"')
 def _slot_field_contains(slot: str, field: str, value: str, atf: Scope) -> None:
     claims.field_contains(atf.recall(slot), field, value, subject=f"the {slot}")
+
+
+@then('the {slot} field "{field}" is not "{value}"')
+def _slot_field_is_not(slot: str, field: str, value: str, atf: Scope) -> None:
+    claims.field_is_not(atf.recall(slot), field, value, subject=f"the {slot}")
+
+
+@then('the {slot} field "{field}" does not contain "{value}"')
+def _slot_field_does_not_contain(slot: str, field: str, value: str, atf: Scope) -> None:
+    claims.field_does_not_contain(atf.recall(slot), field, value, subject=f"the {slot}")
+
+
+@then('the {slot} field "{field}" is empty')
+def _slot_field_is_empty(slot: str, field: str, atf: Scope) -> None:
+    claims.field_is_empty(atf.recall(slot), field, subject=f"the {slot}")
+
+
+@then('the {slot} field "{field}" is not empty')
+def _slot_field_is_not_empty(slot: str, field: str, atf: Scope) -> None:
+    claims.field_is_not_empty(atf.recall(slot), field, subject=f"the {slot}")
 
 
 @then("the environment has {count:d} {kind}")
@@ -177,6 +225,11 @@ def _click(role: str, name: str, atf: Scope) -> None:
 @when('I type "{text}" into the {role} "{name}"')
 def _type_into(text: str, role: str, name: str, atf: Scope) -> None:
     _page(atf).get_by_role(role, name=name).first.fill(text)
+
+
+@when('I choose "{option}" from the {role} "{name}"')
+def _choose(option: str, role: str, name: str, atf: Scope) -> None:
+    _page(atf).get_by_role(role, name=name).first.select_option(label=option)
 
 
 def _page(atf: Scope) -> Any:

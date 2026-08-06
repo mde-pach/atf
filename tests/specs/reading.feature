@@ -65,3 +65,29 @@ Feature: reading a suite without running it
     And I run "docs --out .workspaces/suite/plain --no-verdicts" as "plain"
     Then the plain field "exit_code" is "0"
     And "plain/notes.md" contains "Given"
+
+  @status
+  Scenario: the same field family reads a slot a test produced
+    Given the workspace "scaffolded"
+    When I run "status local" as "reading"
+    Then the reading field "output" is not empty
+    And the reading field "output" does not contain "unreachable"
+    And the reading field "exit_code" is not "1"
+    And the reading field "nothing" is empty
+
+  @status
+  Scenario: status can be asked for only what is not there
+    Given the workspace "scaffolded"
+    When I run "make local standup"
+    And I run "status local --absent-only" as "missing"
+    Then the missing field "output" does not contain "standup"
+    And the missing field "output" contains "absent"
+
+  @check
+  Scenario: check gates on what nothing asks for only when told to
+    Given the workspace "scaffolded"
+    When I run "--config .workspaces/suite/atf.yaml check" as "quiet"
+    And I run "--config .workspaces/suite/atf.yaml check --strict" as "gating"
+    Then the quiet field "exit_code" is "0"
+    And the gating field "exit_code" is "1"
+    And the gating field "output" contains "nothing asks for it"

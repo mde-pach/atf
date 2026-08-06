@@ -61,6 +61,48 @@ def field_contains(record: Any, field: str, written: str, *, subject: str = "") 
         fail(f'{about}field "{field}" is {_describe(actual)}, which does not contain "{written}"')
 
 
+def field_is_not(record: Any, field: str, written: str, *, subject: str = "") -> None:
+    """`Then the todo_list "groceries" field "slug" is not "grocery"`."""
+    about = f"{subject} " if subject else ""
+    actual = _get(record, field)
+    if actual is not MISSING and compare.written_matches(actual, written):
+        fail(f'{about}field "{field}" is {_describe(actual)}, and the claim wants anything else')
+
+
+def field_does_not_contain(record: Any, field: str, written: str, *, subject: str = "") -> None:
+    """`Then the result field "output" does not contain "traceback"`."""
+    about = f"{subject} " if subject else ""
+    actual = _get(record, field)
+    if actual is MISSING:
+        return
+    try:
+        held = compare.written_contains(actual, written)
+    except compare.Uncontainable:
+        return
+    if held:
+        fail(f'{about}field "{field}" is {_describe(actual)}, which contains "{written}"')
+
+
+def _is_empty(value: Any) -> bool:
+    """Absent, null, an empty string, or an empty list or object."""
+    return value is MISSING or value is None or value in ("", [], {}, ())
+
+
+def field_is_empty(record: Any, field: str, *, subject: str = "") -> None:
+    """`Then the todo_list "groceries" field "notes" is empty`."""
+    about = f"{subject} " if subject else ""
+    actual = _get(record, field)
+    if not _is_empty(actual):
+        fail(f'{about}field "{field}" is {_describe(actual)}, and the claim wants it empty')
+
+
+def field_is_not_empty(record: Any, field: str, *, subject: str = "") -> None:
+    """`Then the todo_list "groceries" field "slug" is not empty`."""
+    about = f"{subject} " if subject else ""
+    if _is_empty(_get(record, field)):
+        fail(f'{about}field "{field}" is empty, and the claim wants something in it')
+
+
 def exists(found: Any, subject: str) -> None:
     """`Then the todo_list "groceries" exists`."""
     if found is None:

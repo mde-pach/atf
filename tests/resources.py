@@ -110,6 +110,13 @@ Feature: notes
     Given the sketch "outline"
     Then the sketch "outline" exists
 
+  Scenario: the field family reads the negative and the empty as well as the positive
+    Given the note "standup"
+    Then the note "standup" field "text" is not "nothing"
+    And the note "standup" field "text" does not contain "zzz"
+    And the note "standup" field "text" is not empty
+    And the note "standup" field "nothing" is empty
+
   Scenario: a marker asks for a kind where a value would be wrong
     Given the note "standup"
     Then the note "standup" field "path" is #str
@@ -294,6 +301,27 @@ small_lineage = Screen(path="/graph/outline", depends_on=[editing])
 crowded = Screen(path="/graph/work", depends_on=[editing])
 
 
+CONTRARY = """\
+Feature: claims that do not hold
+
+  Scenario: a value that is what the claim says it is not
+    Given the note "standup"
+    Then the note "standup" field "path" is not "notebooks/work/standup.md"
+
+  Scenario: text that does contain what the claim says it does not
+    Given the note "standup"
+    Then the note "standup" field "text" does not contain "stand"
+
+  Scenario: a field with something in it, claimed empty
+    Given the note "standup"
+    Then the note "standup" field "text" is empty
+
+  Scenario: a field with nothing in it, claimed not empty
+    Given the note "standup"
+    Then the note "standup" field "nothing" is not empty
+"""
+
+
 broken = Workspace(
     path="broken",
     files={
@@ -303,5 +331,17 @@ broken = Workspace(
         "vocabulary.py": BAD_VOCABULARY,
         "specs/test_ambiguous.py": AMBIGUOUS,
         "specs/unknown.feature": UNKNOWN_SENTENCE,
+    },
+)
+
+
+contrary = Workspace(
+    path="contrary",
+    files={
+        "atf.yaml": MANIFEST,
+        "resources.py": RESOURCES,
+        "conftest.py": CONFTEST,
+        "vocabulary.py": INNER_VOCABULARY,
+        "specs/contrary.feature": CONTRARY,
     },
 )

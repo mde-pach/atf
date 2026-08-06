@@ -77,13 +77,14 @@ class Report:
     def unreachable(self) -> list[reconcile.Reconciliation]:
         return [outcome for outcome in self.outcomes if outcome.state is State.UNREACHABLE]
 
-    def lines(self) -> list[str]:
+    def lines(self, only: list[reconcile.Reconciliation] | None = None) -> list[str]:
         """One line per resource, widest column first, for a terminal."""
         if self.error:
             return [self.error]
-        width = max((len(outcome.name) for outcome in self.outcomes), default=0)
+        shown = self.outcomes if only is None else only
+        width = max((len(outcome.name) for outcome in shown), default=0)
         out = []
-        for outcome in self.outcomes:
+        for outcome in shown:
             note = f"  ({outcome.why})" if outcome.why else ""
             changes = f"  changes: {', '.join(sorted(outcome.changes))}" if outcome.changes else ""
             out.append(f"{outcome.name:<{width}}  {outcome.state}  {outcome.did}{changes}{note}")
@@ -180,18 +181,25 @@ def do_init(*, env: str = "local", force: bool = False) -> Answer:
     return Answer(lines=[f"wrote {path}" for path in written], data={"written": [str(p) for p in written]})
 
 
-def do_status(env: str = "", names: list[str] | None = None, *, config: str | None = None) -> Answer:
+def do_status(
+    env: str = "",
+    names: list[str] | None = None,
+    *,
+    absent_only: bool = False,
+    config: str | None = None,
+) -> Answer:
     """Where each resource stands. **Never gates** — `0` or `2`, and never `1`."""
     report = status(env, names or [], manifest=_manifest(config))
     if report.error:
         return fault(report.error, _classify(report.error))
+    shown = [o for o in report.outcomes if not absent_only or o.state is not State.PRESENT]
     return Answer(
         code=report.code,
-        lines=report.lines(),
+        lines=report.lines(shown) or ["nothing is absent"],
         data={
             "environment": report.env,
             "resources": [
-                {"name": o.name, "state": str(o.state), "would": str(o.did), "why": o.why} for o in report.outcomes
+                {"name": o.name, "state": str(o.state), "would": str(o.did), "why": o.why} for o in shown
             ],
         },
     )
@@ -386,7 +394,7 @@ def _tests_reaching(suite: Suite, names: set[str]) -> list[str]:
     return sorted(out)
 
 
-def do_check(*, config: str | None = None) -> Answer:
+def do_check(*, strict: bool = False, config: str | None = None) -> Answer:
     """Every registered check, over this suite. Exits `1` on findings, under `faults`."""
     from .registries import CHECKS  # noqa: PLC0415
 
@@ -403,6 +411,14 @@ def do_check(*, config: str | None = None) -> Answer:
     for one in CHECKS:
         for where, why in one.find(subject):
             faults.append({"check": one.description, "where": _name_of_subject(where), "why": why})
+
+    if strict:
+        loose = do_unused(config=config).data
+        faults += [
+            {"check": "nothing is unused", "where": one, "why": "nothing asks for it"}
+            for what, names in loose.items()
+            for one in names
+        ]
 
     lines = [f"{f['where']}: {f['why']}  ({f['check']})" for f in faults] or ["no faults"]
     return Answer(code=FAILED if faults else OK, lines=lines, data={"faults": faults})
@@ -470,7 +486,15 @@ def do_docs(
     )
 
 
-def do_import_run(env: str, file: str, format_: str = "ctrf", *, config: str | None = None) -> Answer:
+def do_import_run(
+    env: str,
+    file: str,
+    format_: str = "ctrf",
+    *,
+    label: str = "imported",
+    revision: str = "",
+    config: str | None = None,
+) -> Answer:
     """Bring a run recorded elsewhere into this suite's history."""
     try:
         suite = _suite(config)
@@ -483,6 +507,8 @@ def do_import_run(env: str, file: str, format_: str = "ctrf", *, config: str | N
     imported.id = record.new_id()
     imported.environment = env
     imported.source = "imported"
+    imported.label = label
+    imported.revision = revision or imported.revision
     imported.started = imported.started or record.now()
     imported.finished = imported.finished or imported.started
     path = record.save(_root(suite), imported)
@@ -503,7 +529,7 @@ def do_history(env: str = "", *, config: str | None = None) -> Answer:
     flaky = record.flaky(_root(suite), wanted)
     return Answer(
         lines=[
-            f"{run.id}  {run.started}  {run.source:<8} {str(run.verdict):<9} "
+            f"{run.id}  {run.started}  {run.source:<8} {run.label or '-':<10} {str(run.verdict):<9} "
             f"{run.counts[record.Outcome.PASSED]} passed, {run.counts[record.Outcome.FAILED]} failed"
             for run in runs
         ]

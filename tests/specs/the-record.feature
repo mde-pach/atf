@@ -34,6 +34,15 @@ Feature: what a run leaves behind for next time
     And "tally.txt" contains "passed"
 
   @run
+  Scenario: an imported run carries the label and revision it was given
+    Given the workspace "scaffolded"
+    When I run "run --report ctrf:.workspaces/suite/out.json"
+    And I run "import-run staging .workspaces/suite/out.json --label nightly --revision abc123" as "brought"
+    And I run "history --env staging" as "elsewhere"
+    Then the brought field "exit_code" is "0"
+    And the elsewhere field "output" contains "nightly"
+
+  @run
   Scenario: nothing is recorded when the run never starts
     Given the workspace "scaffolded"
     When I run "run --select +notabene" as "refused"

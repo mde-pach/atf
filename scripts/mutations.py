@@ -74,6 +74,21 @@ MUTATIONS = (
         "a node many things stand on is drawn, and the sentence becomes the caption",
     ),
     Mutation(
+        what="the negative half of the field family",
+        module="claims.py",
+        find="    if actual is not MISSING and compare.written_matches(actual, written):",
+        replace="    if False:",
+        caught_by="tests/specs/refusing.feature::"
+        "a claim that does not hold turns the run red and says what it wanted",
+    ),
+    Mutation(
+        what="--absent-only",
+        module="commands.py",
+        find="    shown = [o for o in report.outcomes if not absent_only or o.state is not State.PRESENT]",
+        replace="    shown = list(report.outcomes)",
+        caught_by="tests/specs/reading.feature::status can be asked for only what is not there",
+    ),
+    Mutation(
         what="the report registry",
         module="reports.py",
         find="        REGISTRY[name] = Format(name=name, write=write, read=read)",

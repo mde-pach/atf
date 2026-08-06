@@ -240,6 +240,10 @@ them, unless `--no-make` says otherwise.
 `--dry-run`
 :   Print the selected test identities and exit `0`. Nothing runs and no run is recorded.
 
+`-k EXPRESSION`
+:   Only tests whose identity matches, in pytest's own `-k` language. A selection over names, where
+    `--select` and `--tag` are selections over the graph.
+
 Exits `0` when no test failed, which includes a selection that legitimately matched nothing and one
 that was entirely skipped. Exits `1` when at least one test failed; a resource that could not be
 created is one of the ways a test fails. Exits `2` on bad flags, a `--select` naming a resource the
@@ -378,6 +382,9 @@ interactive subcommand, and it is documented in full in [the editor](the-editor.
 
 `--port NUMBER`
 :   Port for the editor. Defaults to `8765`. Ignored with `--mcp`.
+
+`--host ADDRESS`
+:   Where to serve. Defaults to `127.0.0.1`, which is reachable from this machine and no other.
 
 Exits `0` when the editor closed — interrupting it is how you close it, so that is a clean exit too
 — and `2` on bad flags or no such environment. `edit` does not exit `2` on an ill-formed suite; the

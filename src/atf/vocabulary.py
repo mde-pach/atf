@@ -113,11 +113,35 @@ def _counted(count: str, kind: str, atf: Scope) -> None:
 # and it is the thing worth claiming on — a CSS class is not.
 
 
-@then('the heading "{name}" is showing')
-def _heading_showing(name: str, atf: Scope) -> None:
-    page = _page(atf)
-    held = page.get_by_role("heading", name=name).count() > 0
-    claims.held((held, "it is not on the page"), subject=f'the heading "{name}"')
+@then('the {role} "{name}" is showing')
+def _showing(role: str, name: str, atf: Scope) -> None:
+    held = _page(atf).get_by_role(role, name=name).count() > 0
+    claims.held((held, _instead(atf, role)), subject=f'the {role} "{name}"')
+
+
+@then('the {role} "{name}" is not showing')
+def _not_showing(role: str, name: str, atf: Scope) -> None:
+    gone = _page(atf).get_by_role(role, name=name).count() == 0
+    claims.held((gone, "it is on the page"), subject=f'the {role} "{name}"')
+
+
+@then('the {role} "{name}" reads "{text}"')
+def _reads(role: str, name: str, text: str, atf: Scope) -> None:
+    control = _found(atf, role, name)
+    said = (control.first.text_content() or "").strip()
+    claims.held((said == text, f"it reads {said!r}"), subject=f'the {role} "{name}"')
+
+
+@then('the {role} "{name}" is disabled')
+def _disabled(role: str, name: str, atf: Scope) -> None:
+    control = _found(atf, role, name)
+    claims.held((not control.first.is_enabled(), "it is enabled"), subject=f'the {role} "{name}"')
+
+
+@then('the {role} "{name}" is enabled')
+def _enabled(role: str, name: str, atf: Scope) -> None:
+    control = _found(atf, role, name)
+    claims.held((control.first.is_enabled(), "it is disabled"), subject=f'the {role} "{name}"')
 
 
 @then('the words "{words}" are showing')
@@ -126,12 +150,23 @@ def _words_showing(words: str, atf: Scope) -> None:
     claims.held((held, f'"{words}" is not on the page'), subject="")
 
 
-@then('the button "{name}" is disabled')
-def _button_disabled(name: str, atf: Scope) -> None:
-    button = _page(atf).get_by_role("button", name=name)
-    if button.count() == 0:
-        claims.fail(f'there is no button called "{name}"')
-    claims.held((not button.first.is_enabled(), "it is enabled"), subject=f'the button "{name}"')
+def _found(atf: Scope, role: str, name: str) -> Any:
+    """The control, or a failure naming what was there instead."""
+    control = _page(atf).get_by_role(role, name=name)
+    if control.count() == 0:
+        claims.fail(f'no {role} "{name}" on the page\n    {_instead(atf, role)}')
+    return control
+
+
+def _instead(atf: Scope, role: str) -> str:
+    """What is on the page with that role, which is what a wrong name most wants to know."""
+    named = [
+        (one.get_attribute("aria-label") or (one.text_content() or "").strip())
+        for one in _page(atf).get_by_role(role).all()
+    ]
+    if not named:
+        return f"there is no {role} on the page at all"
+    return f"{role}s on the page: " + ", ".join(f'"{one}"' for one in named if one)
 
 
 @when('I click the {role} "{name}"')

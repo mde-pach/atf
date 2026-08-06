@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,10 @@ from .loader import SuiteError, load_suite
 from .manifest import load
 
 VIEWS = ("overview", "catalogue", "graph", "tests", "composer", "activity", "environments")
+
+
+def _as_node(node: core.Node) -> dict[str, Any]:
+    return {"id": node.id, "label": node.label, "kind": node.kind, "needs": node.needs}
 
 
 class Editor:
@@ -76,10 +81,21 @@ class Editor:
         }
 
     def graph(self) -> list[dict[str, Any]]:
-        return [
-            {"id": node.id, "label": node.label, "kind": node.kind, "needs": node.needs}
-            for node in core.spine(self.suite, self.features, self.phrases)
-        ]
+        return [_as_node(node) for node in core.spine(self.suite, self.features, self.phrases)]
+
+    def node(self, id: str) -> dict[str, Any]:
+        """One node and every edge touching it. `KeyError` where the spine has no such node."""
+        here = core.around(self.suite, self.features, self.phrases, id)
+        return {
+            "id": here.id,
+            "label": here.label,
+            "kind": here.kind,
+            "sentence": here.sentence,
+            "needs": [_as_node(one) for one in here.needs],
+            "needed_by": [_as_node(one) for one in here.needed_by],
+            "actions": here.actions,
+            "layers": [[_as_node(one) for one in layer] for layer in here.layers],
+        }
 
     def tests(self) -> list[dict[str, Any]]:
         return [
@@ -126,6 +142,13 @@ class Editor:
         path.write_text("\n".join(body) + "\n", encoding="utf-8")
         self.reload()
         return path
+
+    def unused(self) -> dict[str, list[str]]:
+        """What nothing asks for. **The same call the command makes**, with the same answer."""
+        from .commands import do_unused  # noqa: PLC0415 - the editor reaches one command, as `make` does
+
+        found = do_unused(config=str(self.manifest_path) if self.manifest_path else None)
+        return {key: [str(one) for one in value] for key, value in found.data.items()}
 
     def activity(self) -> list[dict[str, Any]]:
         return [run.as_json() for run in core.activity(self.root, self.ground.config.name)]
@@ -250,13 +273,106 @@ def _section(title: str, value: Any) -> str:
     return f"<h2>{html.escape(title)}</h2><pre>{html.escape(json.dumps(value, indent=2, default=str))}</pre>"
 
 
+# Small lineage is stated in words and anything larger is drawn. Both numbers are rendering
+# decisions: no answer changes with them, only how much of one is a sentence.
+WORDS_UPTO = 3
+MANY_DEPENDANTS = 3
+
+
 def render_graph(editor: Editor) -> str:
+    """Every node, each one a link. There is no node here that only a search box finds."""
+    nodes = editor.graph()
     rows = "".join(
-        f"<tr><td>{html.escape(node['label'])}</td><td>{html.escape(node['kind'])}</td>"
-        f"<td>{html.escape(', '.join(node['needs']) or '-')}</td></tr>"
-        for node in editor.graph()
+        f"<tr><td>{_node_link(node['id'], node['label'])}</td><td>{html.escape(node['kind'])}</td>"
+        f"<td>{', '.join(_node_link(one, one) for one in node['needs']) or '-'}</td></tr>"
+        for node in nodes
     )
-    return page("The graph", f"<table><tr><th>node<th>kind<th>needs</tr>{rows}</table>", "graph")
+    entries = (
+        "<p>Two questions have their own entry points: "
+        "<strong>what breaks if this does</strong> is on every node below, and "
+        "<a href=/unused>what nothing asks for</a> is the resources no test reaches.</p>"
+    )
+    return page("The graph", f"{entries}<table><tr><th>node<th>kind<th>needs</tr>{rows}</table>", "graph")
+
+
+def _node_link(id: str, label: str) -> str:
+    return f"<a href='/graph/{urllib.parse.quote(id, safe='')}'>{html.escape(label)}</a>"
+
+
+def render_node(editor: Editor, id: str) -> str:
+    """One node, its lineage in words, and every edge out of it as a link.
+
+    Past `WORDS_UPTO`, or where many things stand on this one, the lineage is drawn and the
+    sentence becomes the drawing's caption.
+    """
+    here = editor.node(id)
+    drawn = len(here["layers"]) > WORDS_UPTO or len(here["needed_by"]) >= MANY_DEPENDANTS
+    parts = [f"<p>{html.escape(here['kind'])}</p>"]
+    if here["sentence"] and not drawn:
+        parts.append(f"<p>{html.escape(here['sentence'])}</p>")
+    if drawn and here["layers"]:
+        parts.append(_drawing(here["layers"]))
+        parts.append(f"<p><small>{html.escape(here['sentence'])}</small></p>")
+    parts.append(_edges("needs", here["needs"]))
+    parts.append(_edges("what breaks if this does", here["needed_by"]))
+    if here["actions"]:
+        performed = " ".join(f"<code>{html.escape(one)}</code>" for one in here["actions"])
+        parts.append(f"<h2>actions</h2><p>{performed}</p>")
+    return page(here["label"], "".join(parts), "graph")
+
+
+def _edges(title: str, nodes: list[dict[str, Any]]) -> str:
+    if not nodes:
+        return f"<h2>{title}</h2><p>nothing</p>"
+    items = "".join(f"<li>{_node_link(one['id'], one['label'])}</li>" for one in nodes)
+    return f"<h2>{title}</h2><ul>{items}</ul>"
+
+
+ROW, COLUMN, BOX, WIDE = 64, 200, 26, 156
+
+
+def _drawing(layers: list[list[dict[str, Any]]]) -> str:
+    """The lineage as SVG, one column per depth, parents on the left.
+
+    Every box is the same link its row in the table is, so the drawing is moved through like the
+    rest of the view.
+    """
+    at = {
+        one["id"]: (column * COLUMN + 4, row * ROW + 4)
+        for column, layer in enumerate(layers)
+        for row, one in enumerate(layer)
+    }
+    height = max((len(layer) for layer in layers), default=0) * ROW + 8
+    lines = "".join(
+        f'<line x1="{at[one["id"]][0]}" y1="{at[one["id"]][1] + BOX // 2}" '
+        f'x2="{at[parent][0] + WIDE}" y2="{at[parent][1] + BOX // 2}" stroke="#999" />'
+        for layer in layers
+        for one in layer
+        for parent in one["needs"]
+        if parent in at
+    )
+    boxes = "".join(
+        f'<a href="/graph/{urllib.parse.quote(one["id"], safe="")}">'
+        f'<rect x="{at[one["id"]][0]}" y="{at[one["id"]][1]}" width="{WIDE}" height="{BOX}" '
+        f'fill="#fff" stroke="#333" rx="4" />'
+        f'<text x="{at[one["id"]][0] + 8}" y="{at[one["id"]][1] + 18}" font-size="13">'
+        f"{html.escape(one['label'])}</text></a>"
+        for layer in layers
+        for one in layer
+    )
+    width = len(layers) * COLUMN + 8
+    return f'<svg role="img" aria-label="Lineage" width="{width}" height="{height}">{lines}{boxes}</svg>'
+
+
+def render_unused(editor: Editor) -> str:
+    """The graph's second entry point: what nothing asks for."""
+    found = editor.unused()
+    blocks = ""
+    for what in ("resources", "phrases", "steps"):
+        loose = found.get(what, [])
+        items = "".join(f"<li>{html.escape(one)}</li>" for one in loose)
+        blocks += f"<h2>{what}</h2>" + (f"<ul>{items}</ul>" if loose else "<p>nothing</p>")
+    return page("What nothing asks for", f"<p><a href=/graph>The graph</a></p>{blocks}", "graph")
 
 
 def render_tests(editor: Editor) -> str:
@@ -343,6 +459,32 @@ def build_app(editor: Editor) -> Any:
             return HTMLResponse(render(editor))
 
         app.get(f"/{view}", response_class=HTMLResponse)(_view)
+
+    @app.get("/unused", response_class=HTMLResponse)
+    def _unused() -> Any:
+        editor.reload()
+        return HTMLResponse(render_unused(editor))
+
+    @app.get("/graph/{id:path}", response_class=HTMLResponse)
+    def _node(id: str) -> Any:
+        editor.reload()
+        try:
+            return HTMLResponse(render_node(editor, id))
+        except KeyError:
+            return HTMLResponse(page("Not found", f"<p>no node {html.escape(id)}</p>", "graph"), status_code=404)
+
+    @app.get("/api/graph/{id:path}")
+    def _node_json(id: str) -> Any:
+        editor.reload()
+        try:
+            return JSONResponse(editor.node(id))
+        except KeyError:
+            return JSONResponse({"error": f"no node {id}"}, status_code=404)
+
+    @app.get("/api/unused")
+    def _unused_json() -> Any:
+        editor.reload()
+        return JSONResponse(editor.unused())
 
     @app.get("/catalogue/{kind}", response_class=HTMLResponse)
     def _kind(kind: str) -> Any:

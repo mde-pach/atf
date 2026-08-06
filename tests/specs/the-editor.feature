@@ -42,3 +42,28 @@ Feature: the editor shows the same graph
     Then the answer contains "impact"
     And the answer contains "unused"
     And the answer contains "make"
+
+  @edit
+  Scenario: every node of the spine is a link, so nothing is found only by searching
+    Given the screen "spine"
+    Then the heading "The graph" is showing
+    And the link "Notebook work" is showing
+    And the link "what nothing asks for" is showing
+
+  @edit
+  Scenario: small lineage is said in words rather than drawn
+    Given the screen "small_lineage"
+    Then the words "outline needs pad" are showing
+    And the img "Lineage" is not showing
+
+  @edit
+  Scenario: a node many things stand on is drawn, and the sentence becomes the caption
+    Given the screen "crowded"
+    Then the img "Lineage" is showing
+    And the words "needs nothing" are showing
+
+  @edit
+  Scenario: what breaks if a resource does is on the resource, not in a separate report
+    Given the screen "small_lineage"
+    When I read "/api/graph/pad" from the editor
+    Then the answer contains "Sketch outline"

@@ -58,6 +58,22 @@ MUTATIONS = (
         caught_by="tests/specs/refusing.feature::two of a kind in scope is refused before any test body runs",
     ),
     Mutation(
+        what="what breaks if this does",
+        module="core.py",
+        find="        needed_by=[node for node in nodes if id in node.needs],",
+        replace="        needed_by=[],",
+        caught_by="tests/specs/the-editor.feature::"
+        "what breaks if a resource does is on the resource, not in a separate report",
+    ),
+    Mutation(
+        what="lineage laid out to be drawn",
+        module="core.py",
+        find='        layers=_layers(suite, id, by_id) if here.kind == "resource" else [],',
+        replace="        layers=[],",
+        caught_by="tests/specs/the-editor.feature::"
+        "a node many things stand on is drawn, and the sentence becomes the caption",
+    ),
+    Mutation(
         what="the report registry",
         module="reports.py",
         find="        REGISTRY[name] = Format(name=name, write=write, read=read)",

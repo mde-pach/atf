@@ -237,6 +237,9 @@ class Node:
     label: str
     kind: str
     needs: list[str] = field(default_factory=list)
+    #: What an adapter can perform on this one. A resource reaches an action the same way it reaches
+    #: a parent.
+    actions: list[str] = field(default_factory=list)
 
 
 def spine(suite: Suite, features: list[Any], phrases: dict[str, Any]) -> list[Node]:
@@ -251,25 +254,79 @@ def spine(suite: Suite, features: list[Any], phrases: dict[str, Any]) -> list[No
             label=f"{declaration_of(node).kind} {name_of(node)}",
             kind="resource",
             needs=[name_of(parent) for parent in graph.parents(node)],
+            actions=sorted(declaration_of(node).actions),
         )
         for node in suite.instances.values()
     ]
     for feature in features:
         for scenario in feature.scenarios:
-            if scenario.is_phrase:
-                nodes.append(Node(id=scenario.name, label=scenario.name, kind="phrase"))
-                continue
-            said = {word for line in scenario.lines for word in line.text.replace('"', " ").split()}
             nodes.append(
                 Node(
-                    id=f"{feature.path}::{scenario.name}",
+                    id=scenario.name if scenario.is_phrase else f"{feature.path}::{scenario.name}",
                     label=scenario.name,
-                    kind="test",
-                    needs=sorted(said & set(suite.instances))
-                    + sorted(p for p in phrases if any(phrases[p].match(li.text) for li in scenario.lines)),
+                    kind="phrase" if scenario.is_phrase else "test",
+                    needs=_reached(scenario, suite, phrases),
                 )
             )
     return nodes
+
+
+def _reached(scenario: Any, suite: Suite, phrases: dict[str, Any]) -> list[str]:
+    """What one scenario or phrase reaches: the resources it names, and the phrases it says."""
+    said = {word for line in scenario.lines for word in line.text.replace('"', " ").split()}
+    nested = sorted(
+        name
+        for name, phrase in phrases.items()
+        if name != scenario.name and any(phrase.match(line.text) for line in scenario.lines)
+    )
+    return sorted(said & set(suite.instances)) + nested
+
+
+@dataclass
+class Neighbourhood:
+    """One node and every edge touching it, which is how the graph is moved through."""
+
+    id: str
+    label: str
+    kind: str
+    sentence: str
+    needs: list[Node] = field(default_factory=list)
+    needed_by: list[Node] = field(default_factory=list)
+    actions: list[str] = field(default_factory=list)
+    #: The closure laid out by depth, parents first. What a view draws when words are not enough.
+    layers: list[list[Node]] = field(default_factory=list)
+
+
+def around(suite: Suite, features: list[Any], phrases: dict[str, Any], id: str) -> Neighbourhood:
+    """One node of the spine, with what it reaches and what reaches it."""
+    nodes = spine(suite, features, phrases)
+    here = next((node for node in nodes if node.id == id), None)
+    if here is None:
+        raise KeyError(id)
+    by_id = {node.id: node for node in nodes}
+    return Neighbourhood(
+        id=here.id,
+        label=here.label,
+        kind=here.kind,
+        sentence=in_words(suite, id) if here.kind == "resource" else "",
+        needs=[by_id[name] for name in here.needs if name in by_id],
+        needed_by=[node for node in nodes if id in node.needs],
+        actions=here.actions,
+        layers=_layers(suite, id, by_id) if here.kind == "resource" else [],
+    )
+
+
+def _layers(suite: Suite, name: str, by_id: dict[str, Node]) -> list[list[Node]]:
+    """Every node in the lineage above this one, grouped by how far down it sits."""
+    depth: dict[str, int] = {}
+    for node in graph.closure(suite.resource(name)):
+        parents = [name_of(parent) for parent in graph.parents(node)]
+        depth[name_of(node)] = 1 + max((depth.get(parent, 0) for parent in parents), default=-1)
+    grouped: list[list[Node]] = [[] for _ in range(max(depth.values(), default=-1) + 1)]
+    for one, level in depth.items():
+        if one in by_id:
+            grouped[level].append(by_id[one])
+    return grouped
 
 
 def in_words(suite: Suite, name: str) -> str:

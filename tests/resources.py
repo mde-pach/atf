@@ -289,6 +289,9 @@ class Screen:
 
 editing = Editor(depends_on=[scaffolded])
 catalogue = Screen(path="/catalogue", depends_on=[editing])
+spine = Screen(path="/graph", depends_on=[editing])
+small_lineage = Screen(path="/graph/outline", depends_on=[editing])
+crowded = Screen(path="/graph/work", depends_on=[editing])
 
 
 broken = Workspace(

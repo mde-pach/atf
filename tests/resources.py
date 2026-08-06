@@ -24,7 +24,7 @@ environments:
 RESOURCES = '''\
 """A small, ordinary suite: lineage, every scope, and something the environment owns."""
 
-from atf import filesystem
+from atf import Update, filesystem
 
 
 @filesystem(unique_by="path")
@@ -34,6 +34,14 @@ class Notebook:
 
 @filesystem(unique_by="path", depends_on=[Notebook])
 class Note:
+    path: str
+    text: str
+
+
+@filesystem(unique_by="path", actions={"tick": Update(text="done\\n")})
+class Card:
+    """A field a declared action writes. Reconciliation must not undo what the action did."""
+
     path: str
     text: str
 
@@ -58,6 +66,8 @@ class Archive:
 
 
 work = Notebook(path="notebooks/work")
+spare = Notebook(path="notebooks/spare")
+todo = Card(path="cards/today.md", text="todo\\n")
 standup = Note(path="notebooks/work/standup.md", text="stand up\\n", depends_on=[work])
 retro = Note(path="notebooks/work/retro.md", text="retro\\n", depends_on=[work])
 scratch = Draft(path="drafts/scratch.md", text="scratch\\n")

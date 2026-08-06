@@ -145,6 +145,14 @@ def build_ground(suite: Suite, env: str = "") -> Ground:
         except Exception as exc:  # noqa: BLE001
             problems.append(str(exc))
 
+    # An adapter may refuse a declaration it cannot honour — a lifetime it has no way to observe,
+    # say. Optional, and asked before a run rather than discovered inside one.
+    for node in suite.instances.values():
+        adapter = adapters.get(declaration_of(node).system)
+        say = getattr(adapter, "check", None)
+        if callable(say) and (problem := say(node)):
+            problems.append(problem)
+
     if problems:
         raise GroundError(
             f"the {config.name!r} environment is not ready:\n  - " + "\n  - ".join(problems)

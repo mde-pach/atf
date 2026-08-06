@@ -209,6 +209,11 @@ def varied(resource: Any, patch: dict[str, str]) -> Any:
     The patch is applied **before** recognition, so patching a recognised field names a different
     resource rather than renaming the one declared. `"null"` removes the field, and removing one
     that carries lineage drops that edge — which is how a test about a list with no owner is written.
+
+    **Patching a recognised field makes the copy function-scoped**, whatever the declaration says.
+    A new resource that nothing declared and nothing removes fills the environment a row per run,
+    and it is not a leak anything catches: a `persistent` resource is supposed to survive. Patching
+    any other field adjusts the resource already there, and leaves its lifetime alone.
     """
     original: Instance = instance_of(resource)
     values = dict(original.values)
@@ -221,8 +226,11 @@ def varied(resource: Any, patch: dict[str, str]) -> Any:
             values[name] = written
 
     copy = type(resource)(**values, depends_on=explicit)
-    instance_of(copy).name = original.name
-    instance_of(copy).from_factory = original.from_factory
+    record = instance_of(copy)
+    record.name = original.name
+    record.from_factory = original.from_factory
+    record.ephemeral = original.ephemeral or bool(set(patch) & set(declaration_of(resource).unique_by))
+    record.varied = original.varied | frozenset(patch)
     return copy
 
 

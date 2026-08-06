@@ -80,6 +80,16 @@ class Instance:
     depends_on: list[Any] = field(default_factory=list)
     name: str = ""
     from_factory: bool = False
+    #: What this resource was last found as, so a child can be checked against the parent it points
+    #: at. Set when the resource is reconciled, and never read from anywhere else.
+    identity: Any = None
+    #: A copy a scenario made by patching a recognised field. It is a *different* resource from the
+    #: one declared, so it is torn down with the scenario rather than inheriting a lifetime nobody
+    #: chose for it.
+    ephemeral: bool = False
+    #: Fields a scenario named in a variation. An explicit value always holds, even where the field
+    #: would otherwise be left to whatever an action made of it.
+    varied: frozenset[str] = frozenset()
 
 
 # --- Reading a declared object -------------------------------------------------------------------

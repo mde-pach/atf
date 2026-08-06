@@ -88,6 +88,23 @@ class Process:
             time.sleep(0.05)
         raise Unreachable(f"port {port} did not answer within {self.timeout:g}s")
 
+    def check(self, resource: Any) -> str:
+        """Why this declaration cannot be honoured, or nothing.
+
+        `persistent` means a resource outlives the process that made it, and without a port this
+        system has no way to tell whether it did. Rather than quietly behaving like `session`, it
+        says so before a run rather than inside one.
+        """
+        declaration = declaration_of(resource)
+        if declaration.scope == "persistent" and not self._port(resource):
+            return (
+                f"{declaration.kind} is scope=persistent and declares no port. A process is "
+                f"recognised by the port it answers on; without one, a process an earlier run "
+                f"started cannot be told from one that is gone. Declare a port, or use "
+                f"scope=session."
+            )
+        return ""
+
     def _key(self, resource: Any) -> str:
         return name_of(resource) or f"{declaration_of(resource).kind}:{self._command(resource)}"
 
@@ -101,13 +118,24 @@ class Process:
         return str(written)
 
     def find(self, resource: Any) -> Record | None:
+        """Whether this process is running.
+
+        **A declared port is observed; a bare command is only remembered.** Where a port is given,
+        recognition is the port answering — which is what every other system does, and what lets a
+        server an earlier run started be recognised rather than started a second time. Where no port
+        is given there is nothing to observe, so this falls back to the handles this adapter started
+        — and `check` refuses `persistent` on that basis rather than pretending.
+        """
+        port = self._port(resource)
         handle = self.running.get(self._key(resource))
+        if port:
+            if not self._answers(port):
+                return None
+            pid = handle.pid if handle is not None and handle.poll() is None else 0
+            return {"command": self._command(resource), "pid": pid, "port": port, "running": True}
         if handle is None or handle.poll() is not None:
             return None
-        port = self._port(resource)
-        if port and not self._answers(port):
-            return None
-        return {"command": self._command(resource), "pid": handle.pid, "port": port, "running": True}
+        return {"command": self._command(resource), "pid": handle.pid, "port": 0, "running": True}
 
     def create(self, resource: Any) -> Record:
         command = self._command(resource)

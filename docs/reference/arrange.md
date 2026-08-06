@@ -303,6 +303,21 @@ recreating it.
 the adapter's job is to apply it, so the editor can show what pressing the button *would* alter,
 field by field, before anything is pressed.
 
+**A parent is checked too.** A resource repointed at a different parent has drifted from its
+declaration as surely as one with a changed field, and reporting it `unchanged` would mean a suite
+passing against a graph nobody declared. ATF compares the record's `<field>_id` against the parent's
+own identity — a convention, which an adapter changes with `parent_suffix` and `id_field`. Where the
+record carries no such key the adapter spells lineage some other way, and ATF says nothing rather
+than something false.
+
+**A field a declared action writes is not held to its declaration.** `Task` declaring `done: False`
+and an action setting it true is a contradiction, and reconciliation would otherwise undo whatever
+the action did on the next run that touched the resource. So the declared value is what a resource
+is *created* with, and an action is free to change it afterwards. The cost is that the effect of an
+action outlives the test that performed it: a scenario that completes something and expects to find
+it open again should put it back, or arrange a `scope="function"` resource. A field a scenario
+[varies](#variation) is always held, because naming a value is an instruction rather than drift.
+
 **A declaration is a partial specification.** The fields you named must hold; fields you did not
 name are left alone, so a `created_at` the system set and a `colour` somebody picked in the product
 survive untouched. The cost is the other side of that: an undeclared field can drift to anything and
@@ -434,6 +449,12 @@ the declaration gave them.
 `NOT NULL` column rejects it, and the test fails with the system's own message. Removing a field
 that carries [lineage](#lineage) drops that edge for this scenario, so the parent is not arranged
 either — which is how you write a test about a list with no owner.
+
+**Patching a recognised field makes the copy live for the scenario.** It is a different resource
+from the one declared, so it is removed when the scenario ends rather than inheriting a lifetime
+nobody chose for it — otherwise every run would leave a row behind that nothing declared and nothing
+would ever tidy. Patching any other field adjusts the resource already there and leaves its scope
+alone.
 
 The patch is applied before [recognition](#recognition), so patching a recognised field names a
 different resource: `groceries` with `slug` set to `weekly` is a second row, not the `groceries` row

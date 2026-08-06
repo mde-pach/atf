@@ -46,11 +46,12 @@ Feature: showing a person's lists
     Then the tenant "acme" field "region" is "eu"
     And the tenant "acme_us" field "region" is "us"
 
-  Scenario: a domain verb is performed by the adapter
+  Scenario: a domain verb is performed by the adapter, and its effect lasts
     Given the task "laundry"
-    Then the task "laundry" field "done" is "0"
     When I complete the task "laundry"
     Then the task "laundry" field "done" is "1"
+    When I reopen the task "laundry"
+    Then the task "laundry" field "done" is "0"
 
   Scenario: the environment can be counted
     Given the report "quarterly"

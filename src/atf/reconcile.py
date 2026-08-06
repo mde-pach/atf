@@ -59,23 +59,90 @@ class Outcome:
         return name_of(self.resource) or declaration_of(self.resource).kind
 
 
-def declared_values(resource: Any) -> Record:
-    """The fields ATF compares and writes: everything declared that is not another resource.
+def acted_fields(resource: Any) -> set[str]:
+    """Fields a declared action writes, which reconciliation must not undo.
 
-    A field holding a parent is left out on purpose. What a parent means in the child's row — a
-    foreign key, an embedded document, a path segment — is the system's business, and the adapter
-    is the only thing that knows. The cost is that a changed parent is not reconciled by this diff.
+    A declaration is a partial specification and an action's whole purpose is to change state, so a
+    field named by both is a contradiction. `Task` declaring `done: False` and an action setting it
+    true means the next pass would revert whatever the action did — on whichever run touched the
+    resource next, silently.
+
+    ATF can see the contradiction, because `actions=` names the fields, so it resolves it rather
+    than asking an author to know. The cost is that the diff is narrower than "the fields you
+    named": a field an action writes is declared for its *initial* value and never held to it.
+    """
+    return {field for action in declaration_of(resource).actions.values() for field in action.values}
+
+
+def declared_values(resource: Any) -> Record:
+    """The fields ATF writes when it creates: everything declared that is not another resource.
+
+    A field holding a parent is left out. What a parent means in the child's record — a foreign key,
+    an embedded document, a path segment — is the system's business, and the adapter is the only
+    thing that knows. [comparable_values](#comparable_values) is what a *diff* is taken over.
     """
     return {name: value for name, value in values_of(resource).items() if not is_resource(value)}
 
 
+def comparable_values(resource: Any) -> Record:
+    """What the diff is taken over: the declared scalars, minus what an action is free to change.
+
+    **A field a scenario varied is always compared**, even when an action writes it. Excluding it
+    would mean `but "text" is "varied"` quietly did nothing — the author named a value, so the value
+    holds. The exclusion is about drift nobody asked for, not about an instruction.
+    """
+    loose = acted_fields(resource) - instance_of(resource).varied
+    return {name: value for name, value in declared_values(resource).items() if name not in loose}
+
+
+def parent_key(resource: Any, field_name: str) -> str:
+    """What a record calls the parent held in this field.
+
+    `owner` is written as `owner_id` unless the adapter says otherwise, which it does by naming a
+    `parent_suffix` option. A convention rather than a method on the SPI: ATF has to compute the
+    diff — the editor's "what would change" depends on it — so the alternative was asking the
+    adapter a question it would answer the same way every time.
+    """
+    suffix = declaration_of(resource).options.get("parent_suffix", "_id")
+    return f"{field_name}{suffix}"
+
+
+def parent_identity(parent: Any, record: Record) -> Any:
+    """What a parent's record is known by, so a child can be checked against it."""
+    return record.get(str(declaration_of(parent).options.get("id_field", "id")))
+
+
+def parent_changes(resource: Any, found: Record) -> Record:
+    """Parents this record no longer points at.
+
+    Without this a resource can be repointed at a different parent and reported `unchanged`, which
+    is the expensive kind of wrong: the suite passes against a graph nobody declared. It is checked
+    only where the record carries the key — an adapter that spells lineage some other way is not
+    second-guessed, and says nothing rather than something false.
+    """
+    out: Record = {}
+    for field_name, value in values_of(resource).items():
+        if not is_resource(value):
+            continue
+        key = parent_key(resource, field_name)
+        if key not in found:
+            continue
+        wanted = instance_of(value).identity
+        if wanted is None:
+            continue
+        if not compare.matches(found.get(key), wanted):
+            out[key] = wanted
+    return out
+
+
 def diff(resource: Any, found: Record) -> Record:
     """The declared fields the found record does not already satisfy."""
-    return {
+    changed = {
         name: value
-        for name, value in declared_values(resource).items()
+        for name, value in comparable_values(resource).items()
         if not compare.matches(found.get(name, None), value)
     }
+    return {**changed, **parent_changes(resource, found)}
 
 
 def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Outcome:
@@ -90,6 +157,7 @@ def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Outcome:
         return Outcome(resource, state, Did.LEFT_ALONE, why=f"the {declaration.system} system could not be reached")
 
     if state is State.PRESENT and found is not None:
+        _remember_identity(resource, found)
         changes = diff(resource, found)
         if not changes:
             return Outcome(resource, State.PRESENT, Did.UNCHANGED, record=found)
@@ -138,7 +206,17 @@ def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Outcome:
         record = ground.adapter_for(resource).create(resource)
     except Unreachable as exc:
         return Outcome(resource, State.UNREACHABLE, Did.LEFT_ALONE, why=str(exc))
+    _remember_identity(resource, record)
     return Outcome(resource, State.PRESENT, Did.CREATED, record=record, changes=declared_values(resource))
+
+
+def _remember_identity(resource: Any, record: Record) -> None:
+    """Keep what this resource was found as, so its children can be checked against it.
+
+    `provision` walks a closure parents-first, so by the time a child is reconciled its parents have
+    each been through here. Nothing else reads it, and nothing persists it between runs.
+    """
+    instance_of(resource).identity = parent_identity(resource, record)
 
 
 def _apply(ground: Ground, resource: Any, found: Record, changes: Record) -> Record:
@@ -168,6 +246,7 @@ def status(ground: Ground, resources: list[Any]) -> list[Outcome]:
     `atf status` never gates. Absence is reported as information, because naming a resource in a
     scenario is precisely what makes ATF create it.
     """
+    _learn_parents(ground, resources)
     out: list[Outcome] = []
     for node in resources:
         state, found = ground.find(node)
@@ -181,6 +260,22 @@ def status(ground: Ground, resources: list[Any]) -> list[Outcome]:
         else:
             out.append(Outcome(node, State.ABSENT, _would(ground, node)))
     return out
+
+
+def _learn_parents(ground: Ground, resources: list[Any]) -> None:
+    """Find each parent, so a child can be compared against the one it should point at.
+
+    `status` reports on the resources it was asked about and no others, but it cannot tell whether a
+    child points at the right parent without knowing what that parent is. So the parents are asked
+    about and not reported — the closure minus what was requested.
+    """
+    requested = [id(node) for node in resources]
+    for node in graph.order(resources):
+        if id(node) in requested:
+            continue
+        state, found = ground.find(node)
+        if state is State.PRESENT and found is not None:
+            _remember_identity(node, found)
 
 
 def _would(ground: Ground, resource: Any) -> Did:
@@ -243,7 +338,7 @@ def teardown(ground: Ground, resources: list[Any]) -> list[Outcome]:
     """
     out: list[Outcome] = []
     for node in graph.teardown_order(resources):
-        if declaration_of(node).scope == "persistent":
+        if scope_of(node) == "persistent":
             continue
         state, found = ground.find(node)
         if state is not State.PRESENT or found is None:
@@ -258,14 +353,19 @@ def teardown(ground: Ground, resources: list[Any]) -> list[Outcome]:
     return out
 
 
+def scope_of(resource: Any) -> str:
+    """How long this resource lives. A copy varied on a recognised field lives for the test."""
+    return "function" if instance_of(resource).ephemeral else declaration_of(resource).scope
+
+
 def scoped(resources: list[Any], scope: str) -> list[Any]:
     """Just the resources of one scope, for whoever owns that scope's end."""
-    return [node for node in resources if declaration_of(node).scope == scope]
+    return [node for node in resources if scope_of(node) == scope]
 
 
 def ephemeral(resources: list[Any]) -> list[Any]:
     """Everything ATF will take away again — anything not `persistent`."""
-    return [node for node in resources if declaration_of(node).scope != "persistent"]
+    return [node for node in resources if scope_of(node) != "persistent"]
 
 
 def unnamed(resource: Any) -> bool:

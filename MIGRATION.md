@@ -271,7 +271,7 @@ anything kept. **This is a rewrite that reuses parts, not a refactor.**
 | 2 · adapter SPI, engine, scopes, `filesystem`/`process`/`command` | built |
 | 3 · step registry, feature reader, phrases, claims, plugin | built |
 | 4 · command line, record, history, reports | built |
-| 5 · ATF's own suite | 49 scenarios over ten features, three times clean |
+| 5 · ATF's own suite | 52 scenarios over ten features, twice clean |
 | 6 · the editor | built — seven views and the composer, all reading one core |
 | 7 · `rest` | built — `import openapi` dropped, see below |
 | the cutover — the deletes, and `tests/` | done |
@@ -650,7 +650,11 @@ import. If an importer is ever wanted back, that idea is the part to bring, not 
 1. ~~**Typed-field lineage silently losing an edge** (§1.1). No error, wrong result.~~ **Closed, not
    mitigated.** Lineage is declared with `depends_on`, so there is nothing to resolve and nothing to
    resolve wrongly. This was the worst failure mode in the system and it no longer exists.
-2. **The reconciliation diff has no safe default.** `compare.matches` is deliberately loose —
+2. **The reconciliation diff has no safe default.** **Three concrete failures found and fixed**, each
+   reproduced against the running suite before it was believed: a resource repointed at a different
+   parent reported `unchanged`; a declared action was undone by the next pass; and a variation on a
+   recognised field left a permanent row per run. What is left of this risk is the looseness itself —
+   `compare.matches` is deliberately loose —
    `str(actual) == str(expected)`, `same_instant`. Reuse it and `"1"` versus `1` is correctly
    unchanged; tighten it and every run writes to the real environment; loosen it and real drift goes
    uncorrected. This lands on shared environments where a wrong answer is expensive.

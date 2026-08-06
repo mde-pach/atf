@@ -451,6 +451,39 @@ def _name_of_subject(where: Any) -> str:
     return getattr(where, "name", None) or str(where)
 
 
+def do_docs(
+    *, out: str = "./atf-docs", env: str = "", no_verdicts: bool = False, config: str | None = None
+) -> Answer:
+    """Render the specs as markdown, carrying the verdict history gives each scenario."""
+    from . import rendering  # noqa: PLC0415
+    from .plugin import Loaded  # noqa: PLC0415
+
+    try:
+        suite = _suite(config)
+        vocabulary = Loaded(_root(suite))
+    except (ManifestError, SuiteError, GroundError) as exc:
+        return fault(str(exc), INVALID)
+
+    environment = env or suite.manifest.default_env
+    try:
+        written = rendering.write(
+            suite, vocabulary.features, Path(out), environment, with_verdicts=not no_verdicts
+        )
+    except OSError as exc:
+        return fault(str(exc), USAGE)
+
+    return Answer(
+        lines=[rendering.summary(entry) for entry in written] or ["no scenarios to render"],
+        data={
+            "environment": environment,
+            "pages": [
+                {"path": str(path), "scenarios": total, "verdicts": counts}
+                for path, total, counts in written
+            ],
+        },
+    )
+
+
 def do_import_run(env: str, file: str, format_: str = "ctrf", *, config: str | None = None) -> Answer:
     """Bring a run recorded elsewhere into this suite's history."""
     try:

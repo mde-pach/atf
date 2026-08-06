@@ -105,7 +105,7 @@ def _expand_lines(lines: list[Line], phrases: dict[str, Phrase], trail: tuple[st
             way_round = " -> ".join([*trail, phrase.pattern])
             raise PhraseError(f"a phrase cannot say itself: {way_round}")
         inner = [
-            Line(keyword=step.keyword, text=_fill(step.text, values), number=line.number)
+            Line(keyword=step.keyword, text=_fill(step.text, values), number=line.number, written=step.written)
             for step in phrase.lines
         ]
         out.extend(_expand_lines(inner, phrases, (*trail, phrase.pattern)))

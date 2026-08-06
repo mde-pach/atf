@@ -154,6 +154,30 @@ def catalogue(ground: Ground) -> list[KindSummary]:
     return out
 
 
+def instances(ground: Ground, kind: str) -> list[dict[str, Any]]:
+    """The instances of one kind, with what the environment holds for each.
+
+    Opening a kind is the second step of the catalogue: kinds first, then the particular resources,
+    then one of them. Nothing is navigated by a flat list of every resource in the suite.
+    """
+    cls = ground.suite.kinds.get(kind)
+    if cls is None:
+        known = ", ".join(sorted(ground.suite.kinds)) or "none"
+        raise KeyError(f"no resource kind called {kind!r} (declared: {known})")
+    mine = [node for node in ground.suite.instances.values() if type(node) is cls]
+    return [
+        {
+            "name": name_of(node),
+            "state": str(outcome.state),
+            "changes": sorted(outcome.changes),
+            "recognised_by": {
+                key: values_of(node).get(key) for key in declaration_of(node).unique_by
+            },
+        }
+        for node, outcome in zip(mine, reconcile.status(ground, mine), strict=True)
+    ]
+
+
 def detail(ground: Ground, name: str) -> ResourceDetail:
     """One resource, including what would be sent to create it and what would be changed.
 

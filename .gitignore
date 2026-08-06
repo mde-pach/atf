@@ -21,3 +21,4 @@ site/
 # and files they provision are not.
 examples/**/*.db
 examples/shipped/tmp/
+atf-docs/

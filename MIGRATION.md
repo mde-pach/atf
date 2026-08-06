@@ -274,6 +274,7 @@ anything kept. **This is a rewrite that reuses parts, not a refactor.**
 | 6 · the editor | built — seven views, all reading one core |
 | 7 · `rest` | built — `import openapi` dropped, see below |
 | the cutover — the deletes, and `tests/` | done |
+| the command list, whole | done — `docs` was the last one with nothing behind it |
 
 **There is one stack now.** 202 files went; `src/atf` is 7,000 lines against 15,885, and `tests/`
 is 303 lines of ATF suite in place of 892 Python tests. `atf` is `atf.entry:main`, and `pytest-bdd`

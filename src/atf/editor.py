@@ -17,13 +17,14 @@ is what a scenario claims on — `Then the heading "Catalogue" is showing`.
 from __future__ import annotations
 
 import html
+import json
 from pathlib import Path
 from typing import Any
 
 from . import core, record
 from .commands import make as make_resources
 from .environment import build_ground
-from .loader import load_suite
+from .loader import SuiteError, load_suite
 from .manifest import load
 
 VIEWS = ("overview", "catalogue", "graph", "tests", "composer", "activity", "environments")
@@ -68,6 +69,9 @@ class Editor:
             {"kind": one.kind, "system": one.system, "scope": one.scope, "declared": one.declared, "states": one.states}
             for one in core.catalogue(self.ground)
         ]
+
+    def instances(self, kind: str) -> list[dict[str, Any]]:
+        return core.instances(self.ground, kind)
 
     def resource(self, name: str) -> dict[str, Any]:
         found = core.detail(self.ground, name)
@@ -175,6 +179,63 @@ def render_catalogue(editor: Editor) -> str:
     return page("Catalogue", f"<table>{rows}</table>", "catalogue")
 
 
+def render_kind(editor: Editor, kind: str) -> str:
+    """Opening a kind lists its instances with what the environment holds for each."""
+    rows = "".join(
+        f"<tr><td><a href='/catalogue/{kind}/{one['name']}'>{html.escape(one['name'])}</a></td>"
+        f"<td>{html.escape(one['state'])}</td>"
+        f"<td>{html.escape(', '.join(f'{k}={v}' for k, v in one['recognised_by'].items()))}</td>"
+        f"<td>{html.escape(', '.join(one['changes']) or '-')}</td></tr>"
+        for one in editor.instances(kind)
+    )
+    body = (
+        f"<p><a href=/catalogue>Catalogue</a></p>"
+        f"<table><tr><th>resource<th>state<th>recognised by<th>would change</tr>{rows}</table>"
+    )
+    return page(kind, body, "catalogue")
+
+
+def render_resource(editor: Editor, name: str) -> str:
+    """The five things opening one resource shows, and the one button.
+
+    None of this is a preview the editor assembles. The create body is what the adapter's `create`
+    would receive; the change set is the diff ATF computed and would hand to `update`.
+    """
+    one = editor.resource(name)
+    parts = [
+        f"<p>{html.escape(one['name'])} · {html.escape(one['kind'])} · "
+        f"{html.escape(one['state'])} in {html.escape(editor.ground.config.name)}</p>",
+        _section("the declaration", one["declaration"]),
+        _section("what it is recognised by", one["recognised_by"]),
+        _section("what the environment holds", one["found"] or "nothing"),
+    ]
+    if one["would_create"] is not None:
+        parts.append(_section("would create with", one["would_create"]))
+    if one["would_change"]:
+        rows = "".join(
+            f"<tr><td>{html.escape(field)}</td><td>{html.escape(str(sides['found']))}</td>"
+            f"<td>-&gt;</td><td>{html.escape(str(sides['declared']))}</td></tr>"
+            for field, sides in one["would_change"].items()
+        )
+        parts.append(f"<h2>would change</h2><table>{rows}</table>")
+
+    if one["can_make"]:
+        parts.append(
+            f"<form method=post action='/make/{name}'>"
+            f"<button type=submit>Make</button></form>"
+        )
+    else:
+        parts.append(
+            f"<p><button type=button disabled>Make</button> "
+            f"disabled — {html.escape(one['why_not'])}</p>"
+        )
+    return page(f"{one['name']} · {one['kind']}", "".join(parts), "catalogue")
+
+
+def _section(title: str, value: Any) -> str:
+    return f"<h2>{html.escape(title)}</h2><pre>{html.escape(json.dumps(value, indent=2, default=str))}</pre>"
+
+
 def render_graph(editor: Editor) -> str:
     rows = "".join(
         f"<tr><td>{html.escape(node['label'])}</td><td>{html.escape(node['kind'])}</td>"
@@ -240,7 +301,7 @@ RENDERERS = {
 def build_app(editor: Editor) -> Any:
     """A FastAPI app over the editor. Every route is one call into `core`, through `Editor`."""
     from fastapi import FastAPI  # noqa: PLC0415 - only the editor needs a web framework
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
     app = FastAPI(title="atf edit", docs_url=None, redoc_url=None)
 
@@ -256,6 +317,28 @@ def build_app(editor: Editor) -> Any:
             return HTMLResponse(render(editor))
 
         app.get(f"/{view}", response_class=HTMLResponse)(_view)
+
+    @app.get("/catalogue/{kind}", response_class=HTMLResponse)
+    def _kind(kind: str) -> Any:
+        editor.reload()
+        try:
+            return HTMLResponse(render_kind(editor, kind))
+        except KeyError as exc:
+            return HTMLResponse(page("Not found", f"<p>{html.escape(str(exc))}</p>", "catalogue"), status_code=404)
+
+    @app.get("/catalogue/{kind}/{name}", response_class=HTMLResponse)
+    def _one(kind: str, name: str) -> Any:
+        editor.reload()
+        try:
+            return HTMLResponse(render_resource(editor, name))
+        except SuiteError as exc:
+            return HTMLResponse(page("Not found", f"<p>{html.escape(str(exc))}</p>", "catalogue"), status_code=404)
+
+    @app.post("/make/{name}")
+    def _make_button(name: str) -> Any:
+        """The Make button. **The same call the command makes** — there is no privileged path."""
+        editor.make(name)
+        return RedirectResponse(f"/catalogue/{editor.resource(name)['kind']}/{name}", status_code=303)
 
     @app.get("/api/{view}")
     def _api(view: str) -> Any:

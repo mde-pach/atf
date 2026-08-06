@@ -200,6 +200,26 @@ def unused(context: click.Context, **flags: Any) -> None:
 
 @cli.command()
 @globals_too
+@click.option("--out", default="./atf-docs", metavar="DIRECTORY", help="where to write; created if absent")
+@click.option("--env", default="", help="whose history supplies the verdicts")
+@click.option("--no-verdicts", is_flag=True, help="render the specs alone; do not read history")
+@click.pass_context
+def docs(context: click.Context, **flags: Any) -> None:
+    """Render the specs as markdown, with the verdict each scenario last had."""
+    _adopt(context, flags)
+    _guarded(
+        context,
+        lambda: commands.do_docs(
+            out=flags["out"],
+            env=flags["env"],
+            no_verdicts=flags["no_verdicts"],
+            config=context.obj.config,
+        ),
+    )
+
+
+@cli.command()
+@globals_too
 @click.pass_context
 def check(context: click.Context, **flags: Any) -> None:
     """Every registered check, over this suite. Exits 1 on findings — they are its answer."""

@@ -33,16 +33,26 @@ class FeatureError(Exception):
 
 @dataclass
 class Line:
-    """One sentence, with its keyword already resolved through any `And`."""
+    """One sentence, with its keyword already resolved through any `And`.
+
+    `written` keeps the word the author actually typed. Running a sentence needs the resolved
+    keyword; *reading* one back — in `atf docs`, in the editor — needs the original, because a
+    scenario that reads `Then, Then, Then` is not the scenario anybody wrote.
+    """
 
     keyword: str
     text: str
     number: int
+    written: str = ""
+
+    @property
+    def said(self) -> str:
+        return self.written or self.keyword.title()
 
     def filled(self, values: dict[str, str]) -> Line:
         """This sentence with its `<placeholders>` replaced by one row of an `Examples` table."""
         text = OUTLINE_HOLE.sub(lambda hole: values.get(hole.group(1), hole.group(0)), self.text)
-        return Line(keyword=self.keyword, text=text, number=self.number)
+        return Line(keyword=self.keyword, text=text, number=self.number, written=self.written)
 
 
 @dataclass
@@ -137,7 +147,7 @@ def read(path: Path) -> Feature:
             # A phrase is vocabulary, not a test, so it does not inherit the background a test gets.
             if not scenario.is_phrase:
                 scenario.lines.extend(
-                    Line(keyword=step.keyword, text=step.text, number=step.number)
+                    Line(keyword=step.keyword, text=step.text, number=step.number, written=step.written)
                     for step in feature.background
                 )
             # An outline is a template, not a test. It is held here and one scenario per `Examples`
@@ -180,7 +190,7 @@ def read(path: Path) -> Feature:
                 f"Given, When, Then, And or But"
             )
 
-        sentence = Line(keyword=keyword, text=rest.strip(), number=number)
+        sentence = Line(keyword=keyword, text=rest.strip(), number=number, written=word)
         if in_background:
             feature.background.append(sentence)
         elif scenario is not None:

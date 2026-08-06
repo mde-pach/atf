@@ -696,6 +696,8 @@ Playwright's aria snapshot; do not keep `control.py` for it.
 - **Why a decision was made** — `docs-next/explanation/`, each page naming what was rejected
 - **What Phase 0 decided, and what it measured to get there** —
   [`prototypes/phase0/FINDINGS.md`](prototypes/phase0/FINDINGS.md)
+- **Where the specification stopped short and somebody chose** — six judgements, each with what it
+  does now and the alternative: <https://claude.ai/code/artifact/0ee0bcdc-f9be-4493-9b12-ea22bf3bf8b9>
 - **The new stack, working** — `examples/todo` (a suite with its own adapter, both surfaces),
   `examples/shipped` (`filesystem` and `process`, no adapter), `selftest/` (ATF testing ATF)
 - **Read it served** — `uv run --group docs mkdocs serve -f mkdocs-next.yml -a 127.0.0.1:8001`

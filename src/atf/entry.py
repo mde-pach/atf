@@ -246,7 +246,6 @@ def import_run(context: click.Context, **flags: Any) -> None:
 @cli.command()
 @globals_too
 @click.option("--env", default="", help="environment to open on; default_env unless given")
-@click.option("--host", default="127.0.0.1", show_default=True, help="where to serve, and nowhere else")
 @click.option("--port", default=8765, type=int, show_default=True, help="which port")
 @click.option("--mcp", is_flag=True, help="serve the same operations to an agent instead")
 @click.pass_context
@@ -267,7 +266,7 @@ def edit(context: click.Context, **flags: Any) -> None:
             message = str(exc)
             _guarded(context, lambda: fault(message, USAGE))
         return
-    serve(manifest, flags["env"], flags["host"], flags["port"])
+    serve(manifest, flags["env"], flags["port"])
 
 
 @cli.command()

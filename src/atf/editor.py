@@ -132,9 +132,7 @@ class Editor:
         found = core.detail_of_test(
             self.suite, self.features, self.root, self.ground.config.name, id
         )
-        kinds = {
-            name: type(node).__name__.lower() for name, node in self.suite.instances.items()
-        }
+        kinds = {name: type(node).__name__ for name, node in self.suite.instances.items()}
         return {
             "id": found.id,
             "label": found.label,
@@ -380,10 +378,23 @@ def render_catalogue(editor: Editor) -> str:
         f"<tr><td>{link('/catalogue/' + one['kind'], one['kind'])}</td>"
         f"<td>{one['declared']} declared</td>"
         f"<td>{html.escape(' · '.join(f'{n} {w}' for w, n in one['states'].items()))}</td>"
-        f"<td><code>{html.escape(one['system'])}</code></td></tr>"
+        f"<td><code>{html.escape(one['system'])}</code></td>"
+        f"<td>{html.escape(_scope(one['scope']))}</td></tr>"
         for one in editor.catalogue()
     )
     return page("Catalogue", f"<table>{rows}</table>", "catalogue")
+
+
+#: What a scope means for a resource that is absent when you look: it is made when a test asks.
+_SCOPES = {
+    "function": "function scope — made per test",
+    "session": "session scope — made once per run",
+    "persistent": "",
+}
+
+
+def _scope(scope: str) -> str:
+    return _SCOPES.get(scope, scope)
 
 
 def render_kind(editor: Editor, kind: str) -> str:
@@ -941,11 +952,17 @@ def build_app(editor: Editor) -> Any:
     return app
 
 
-def serve(manifest: Path | None, env: str, host: str, port: int) -> None:
-    """Start the server. Blocks until interrupted."""
+#: The only interface `atf edit` binds. There is no flag that changes it: with no authentication,
+#: the loopback interface is the boundary.
+LOOPBACK = "127.0.0.1"
+
+
+def serve(manifest: Path | None, env: str, port: int) -> None:
+    """Start the server on loopback, and print where. Blocks until interrupted."""
     import uvicorn  # noqa: PLC0415
 
-    uvicorn.run(build_app(Editor(manifest, env)), host=host, port=port, log_level="warning")
+    print(f"atf edit on http://{LOOPBACK}:{port}")  # noqa: T201 - the port is the whole message
+    uvicorn.run(build_app(Editor(manifest, env)), host=LOOPBACK, port=port, log_level="warning")
 
 
 def last_run(root: Path, environment: str) -> record.Run | None:

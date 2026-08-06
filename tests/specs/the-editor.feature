@@ -42,6 +42,8 @@ Feature: the editor shows the same graph
     Then the answer contains "impact"
     And the answer contains "unused"
     And the answer contains "make"
+    And the answer contains "run"
+    And the answer contains "docs"
 
   @edit
   Scenario: every node of the spine is a link, so nothing is found only by searching

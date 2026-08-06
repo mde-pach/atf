@@ -344,8 +344,8 @@ interactive subcommand, and it is documented in full in [the editor](the-editor.
     :depth: 2
     :list_subcommands: False
 
-`--port` is ignored with `--mcp`, which speaks on stdio. `--host` defaults to an address reachable
-from this machine and no other.
+`--port` is ignored with `--mcp`, which speaks on stdio. There is no `--host`: the editor binds
+loopback and there is no flag that changes it — see [security](the-editor.md#security).
 
 Exits `0` when the editor closed — interrupting it is how you close it, so that is a clean exit too
 — and `2` on bad flags or no such environment. `edit` does not exit `2` on an ill-formed suite; the

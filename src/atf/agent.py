@@ -41,6 +41,20 @@ TOOLS: dict[str, dict[str, Any]] = {
         "description": "Every sentence this suite can say, so an agent writes what it can run.",
         "arguments": {},
     },
+    "run": {
+        "description": "Run tests and record a run. `tests` names identities; without it, everything.",
+        "arguments": {
+            "env": "which environment",
+            "tests": "which test identities, or all of them",
+            "tag": "only tests carrying these tags",
+            "select": "only tests naming this resource",
+            "failed": "only tests whose last outcome here was failed",
+        },
+    },
+    "docs": {
+        "description": "The specs as markdown, carrying the verdict each scenario last had.",
+        "arguments": {"env": "whose history supplies the verdicts", "out": "where to write"},
+    },
 }
 
 
@@ -77,6 +91,26 @@ def answer(editor: Editor, tool: str, arguments: dict[str, Any] | None = None) -
         return editor.overview()
     if tool == "sentences":
         return {"sentences": core.sayable(editor.suite), "subjects": core.subjects(editor.suite)}
+    if tool == "run":
+        from .entry import Options, do_run  # noqa: PLC0415 - one command, reached the same way
+
+        answered = do_run(
+            Options(config=config, quiet=True),
+            env=str(given.get("env", "")),
+            tag=tuple(given.get("tag") or ()),
+            select=str(given.get("select", "")),
+            failed=bool(given.get("failed")),
+            keyword="",
+            tests=tuple(given.get("tests") or ()),
+            report=(),
+            no_make=False,
+            dry_run=False,
+        )
+        return {"code": answered.code, **answered.data}
+    if tool == "docs":
+        return commands.do_docs(
+            out=str(given.get("out", "./atf-docs")), env=str(given.get("env", "")), config=config
+        ).data
     raise KeyError(f"no tool called {tool!r} (offered: {', '.join(sorted(TOOLS))})")
 
 

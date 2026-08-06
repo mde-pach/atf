@@ -26,7 +26,12 @@ atf = "atf.entry:main"
 
 [dependency-groups]
 dev = ["ruff", "ty"]
-docs = ["mkdocs>=1.6", "mkdocs-material>=9.5"]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-click>=0.9.0",
+    "mkdocs-material>=9.5",
+    "tesh>=0.3.2",
+]
 # What the `browser` system needs, and what ATF's own suite needs to run its editor scenarios:
 #   uv sync --group browser && uv run playwright install chromium
 browser = ["playwright>=1.40"]

@@ -102,10 +102,6 @@ nav:
       - advanced/index.md
       - How ATF tests itself: advanced/how-atf-tests-itself.md
 
-  - Advanced:
-      - advanced/index.md
-      - How ATF tests itself: advanced/how-atf-tests-itself.md
-
   - Explanation:
       - explanation/index.md
       - One engine, two surfaces: explanation/one-engine-two-surfaces.md
@@ -117,6 +113,9 @@ nav:
 
 markdown_extensions:
   - admonition
+  # The option lists in reference/the-command.md are rendered from the Click group itself, so
+  # there is no second copy of a flag to go stale.
+  - mkdocs-click
   - attr_list
   - def_list
   - md_in_html
@@ -134,3 +133,5 @@ markdown_extensions:
 
 exclude_docs: |
   _context/
+  # Setup scripts for tesh, which must sit beside the page that names them.
+  *.sh

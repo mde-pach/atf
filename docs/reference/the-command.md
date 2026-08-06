@@ -45,20 +45,12 @@ An interrupt exits `2`. Partial work is not recorded as a run, so there is no ve
 
 Accepted by every subcommand. A flag that takes no argument is off unless it is given.
 
-`--json`
-:   Emit the answer as JSON on stdout, errors as JSON on stderr.
+`--json` puts the answer on stdout and an error on stderr, both as JSON. `--config PATH` is the
+manifest to read, `./atf.yaml` by default. `--quiet` suppresses progress and leaves the exit code
+and any written file alone. `--version` and `--help` print and exit `0`.
 
-`--config PATH`
-:   The manifest to read. Defaults to `./atf.yaml`.
-
-`--quiet`, `-q`
-:   Suppress progress. The exit code and any written files remain.
-
-`--version`
-:   Print the version and exit `0`.
-
-`--help`, `-h`
-:   Print usage and exit `0`.
+Each is accepted before the subcommand and after it, and each appears in the generated options
+below, on every command that takes it.
 
 Commands that name an environment take it as a positional argument. Commands that merely use one
 take `--env`, defaulting to `default_env` from the manifest.
@@ -86,22 +78,22 @@ environments:
 Scaffolds nothing but ATF itself: an `atf.yaml` with one environment, an empty `resources.py`, and
 an empty `specs/` directory. It does not generate tests, resources or example code.
 
-`--env NAME`
-:   Name of the single environment written into the manifest. Defaults to `local`.
-
-`--force`
-:   Overwrite an existing `atf.yaml`.
+::: mkdocs-click
+    :module: atf.entry
+    :command: init
+    :prog_name: atf init
+    :depth: 2
+    :list_subcommands: False
 
 Exits `0` when the files were written, `1` when `atf.yaml` already exists and `--force` was not
 given — nothing is written — and `2` on bad flags or a directory that is not writable.
 
-```console
+```console tesh-session="init" tesh-exitcodes="0" tesh-setup="empty.sh"
 $ atf init
 wrote atf.yaml
 wrote resources.py
-wrote specs/
-$ echo $?
-0
+wrote conftest.py
+wrote specs
 ```
 
 - **In CI** — not shown. A pipeline runs against a suite that already exists.
@@ -119,8 +111,12 @@ atf status <env> [name]
 
 The optional `name` narrows the question to one resource and everything it depends on.
 
-`--absent-only`
-:   List only what is not present.
+::: mkdocs-click
+    :module: atf.entry
+    :command: status
+    :prog_name: atf status
+    :depth: 2
+    :list_subcommands: False
 
 Exits `0` when the question was answered, whatever the answer was, and `2` on bad flags, no such
 environment, an ill-formed suite, or an environment that could not be reached.
@@ -128,24 +124,18 @@ environment, an ill-formed suite, or an environment that could not be reached.
 **`status` is not a gate, and never exits `1`.** Absence is information: a resource ATF is going to
 create is expected to be absent beforehand. The gate is [`atf run`](#run).
 
-```console
+```console tesh-session="status" tesh-exitcodes="0" tesh-setup="todo.sh"
 $ atf status local
-present    Owner      primary     primary@example.com
-absent     TodoList   groceries   slug=groceries
-$ echo $?
-0
+primary    absent  created
+secondary  absent  created
+groceries  absent  created
+...
 ```
 
-```console
-$ atf status local groceries --json
-{
-  "environment": "local",
-  "mutable": true,
-  "resources": [
-    {"name": "primary",   "type": "Owner",    "state": "present", "when_absent": "make"},
-    {"name": "groceries", "type": "TodoList", "state": "absent",  "when_absent": "make"}
-  ]
-}
+```console tesh-session="status" tesh-exitcodes="0"
+$ atf status local groceries
+primary    absent  created
+groceries  absent  created
 ```
 
 Asking about `groceries` also answers about `primary`. A resource is never reported without the
@@ -170,36 +160,34 @@ atf make <env> [name] [--dry-run]
 that is there but whose fields differ from the declaration is updated to match. A declaration is a
 partial specification, so only the fields it names are touched.
 
-`--dry-run`
-:   Print what would be created and what would be changed, in order. Change nothing.
+::: mkdocs-click
+    :module: atf.entry
+    :command: make
+    :prog_name: atf make
+    :depth: 2
+    :list_subcommands: False
 
 Exits `0` when the environment matches the declaration, `1` when it does not and ATF may not fix it
 — a resource declared `when_absent="require"` is absent — and `2` on bad flags, no such environment,
 an ill-formed suite, an unreachable environment, or one that is not `mutable`.
 
-```console
-$ atf make local
-present  Owner     primary
-made     TodoList  groceries
-$ echo $?
-0
+```console tesh-session="make" tesh-exitcodes="0" tesh-setup="todo.sh"
+$ atf make local groceries
+primary    present  created  changes: email
+groceries  present  created  changes: slug
 ```
 
-```console
-$ atf make local --dry-run
-would make    TodoList  groceries    slug=groceries
-would change  Owner     primary      email: "old@example.com" → "primary@example.com"
-$ echo $?
-0
+```console tesh-session="dry" tesh-exitcodes="0" tesh-setup="todo.sh"
+$ atf make local groceries --dry-run
+primary    absent  created  changes: email  (dry run)
+groceries  absent  created  changes: slug  (dry run)
 ```
 
 The change line is the diff ATF computes, not the adapter, which is why it can be shown first.
 
-```console
-$ atf make staging
-refused: environment "staging" is not mutable
-$ echo $?
-2
+```console tesh-session="refused" tesh-exitcodes="2" tesh-setup="todo.sh"
+$ atf make readonly
+the readonly environment is not mutable, so nothing was made. Add `mutable: true` to it, or point at one that has it.
 ```
 
 `mutable` is false unless stated, so the third example is what an unconfigured environment does. It
@@ -215,34 +203,19 @@ refuses before touching anything.
 Runs tests and records a [run](the-record.md#a-run). Resources a test names are made as it asks for
 them, unless `--no-make` says otherwise.
 
-`--env NAME`
-:   Environment to run against. Defaults to `default_env` from the manifest.
+::: mkdocs-click
+    :module: atf.entry
+    :command: run
+    :prog_name: atf run
+    :depth: 2
+    :list_subcommands: False
 
-`--tag NAME`
-:   Only tests carrying this tag. Repeatable; repeats are OR. Every test runs when it is not given.
-
-`--select NAME`
-:   Only tests that name this resource, which the suite must declare. A leading `+` widens it to
-    anything downstream: `+groceries` also takes tests naming a resource that depends on
-    `groceries`. Every test runs when it is not given.
-
-`--failed`
-:   Only tests whose last outcome in this environment's history was `failed`. Selects nothing on an
-    empty history.
-
-`--report FORMAT:PATH`
-:   Write a report. Repeatable; nothing is written when it is not given. See
-    [report](the-record.md#report).
-
-`--no-make`
-:   Do not make missing resources. A test needing an absent resource fails.
-
-`--dry-run`
-:   Print the selected test identities and exit `0`. Nothing runs and no run is recorded.
-
-`-k EXPRESSION`
-:   Only tests whose identity matches, in pytest's own `-k` language. A selection over names, where
-    `--select` and `--tag` are selections over the graph.
+A selection is a narrowing, and the narrowings compose. `--tag` repeats as OR. `--select` takes a
+leading `+` to widen downstream, so `+groceries` also takes tests naming a resource that depends on
+`groceries`. `--failed` reads this environment's [history](the-record.md#history) rather than the
+graph, and selects nothing where there is none. `-k` is pytest's own language, a selection over
+names where the other three are selections over the graph. `--report` takes
+`format:path` and repeats; see [report](the-record.md#report).
 
 Exits `0` when no test failed, which includes a selection that legitimately matched nothing and one
 that was entirely skipped. Exits `1` when at least one test failed; a resource that could not be
@@ -268,8 +241,6 @@ specs/lists.feature::a list belongs to its owner .. failed
   field "slug" is "grocery", expected "groceries"
 
 1 failed, 13 passed
-$ echo $?
-1
 ```
 
 The two halves of the split, in order:
@@ -282,8 +253,6 @@ $ echo $?
 
 $ atf run --select +visitor
 0 tests selected
-$ echo $?
-0
 ```
 
 `--failed` selects from this environment's history rather than from the graph, and `--report` writes
@@ -291,8 +260,6 @@ the run out for a pipeline to collect:
 
 ```console
 $ atf run --failed --report ctrf:out.json
-$ echo $?
-0
 ```
 
 - **In CI** — the gate: one invocation, one exit code, and `--report` for what the code cannot carry.
@@ -308,8 +275,12 @@ answers the questions that would otherwise surface as `error.code: suite_invalid
 command: unknown steps, dependency cycles, duplicate resource names, a `specs` path that is not
 there.
 
-`--strict`
-:   Also treat warnings — an unused resource, an unused phrase — as faults.
+::: mkdocs-click
+    :module: atf.entry
+    :command: check
+    :prog_name: atf check
+    :depth: 2
+    :list_subcommands: False
 
 Exits `0` when the suite is well formed, `1` when it is not — the faults are the answer, listed
 under `faults` — and `2` on bad flags or an unreadable manifest.
@@ -318,8 +289,6 @@ under `faults` — and `2` on bad flags or an unreadable manifest.
 $ atf check
 14 scenarios, 4 resources, 3 phrases
 ok
-$ echo $?
-0
 ```
 
 ```console
@@ -328,8 +297,6 @@ $ atf check --json
   {"code": "unknown_step", "file": "specs/lists.feature", "line": 9,
    "text": "When I archive the todo_list \"groceries\""}
 ]}
-$ echo $?
-1
 ```
 
 - **In CI** — the pull-request gate; it needs no infrastructure and exits `1` on findings, which is
@@ -343,14 +310,12 @@ $ echo $?
 Renders the specs as markdown, carrying the last [verdict](the-record.md#verdict) for each scenario
 from history. A scenario nobody has run is rendered as `never run` rather than left blank.
 
-`--out DIRECTORY`
-:   Where to write. Created if absent. Defaults to `./atf-docs`.
-
-`--env NAME`
-:   Whose history supplies the verdicts. Defaults to `default_env` from the manifest.
-
-`--no-verdicts`
-:   Render the specs alone. Do not read history.
+::: mkdocs-click
+    :module: atf.entry
+    :command: docs
+    :prog_name: atf docs
+    :depth: 2
+    :list_subcommands: False
 
 Exits `0` when the markdown was written, and `2` on bad flags, an output directory that is not
 writable, or an ill-formed suite. A `failing` verdict on the page does not change the code: `docs`
@@ -359,8 +324,6 @@ reports, it does not judge.
 ```console
 $ atf docs --out site/specs --env local
 wrote site/specs/lists.md      14 scenarios   13 passing   1 failing
-$ echo $?
-0
 ```
 
 - **In CI** — publishes what the suite claims, verdicts attached, wherever the team reads
@@ -374,17 +337,15 @@ $ echo $?
 Opens the editor, or with `--mcp` the agent interface onto the same engine. This is the one
 interactive subcommand, and it is documented in full in [the editor](the-editor.md).
 
-`--env NAME`
-:   Environment the editor works against. Defaults to `default_env` from the manifest.
+::: mkdocs-click
+    :module: atf.entry
+    :command: edit
+    :prog_name: atf edit
+    :depth: 2
+    :list_subcommands: False
 
-`--mcp`
-:   Speak MCP on stdio instead of opening the editor. Non-interactive.
-
-`--port NUMBER`
-:   Port for the editor. Defaults to `8765`. Ignored with `--mcp`.
-
-`--host ADDRESS`
-:   Where to serve. Defaults to `127.0.0.1`, which is reachable from this machine and no other.
+`--port` is ignored with `--mcp`, which speaks on stdio. `--host` defaults to an address reachable
+from this machine and no other.
 
 Exits `0` when the editor closed — interrupting it is how you close it, so that is a clean exit too
 — and `2` on bad flags or no such environment. `edit` does not exit `2` on an ill-formed suite; the
@@ -413,14 +374,14 @@ atf impact [name]
 Named, it answers about one resource. Bare, it prints the whole graph: every resource, what each one
 stands on, and the tests that reach it.
 
-`--tests-only`
-:   List the affected tests, not the resources between.
+::: mkdocs-click
+    :module: atf.entry
+    :command: impact
+    :prog_name: atf impact
+    :depth: 2
+    :list_subcommands: False
 
-`--resources-only`
-:   List the affected resources, not the tests.
-
-`--depth NUMBER`
-:   Follow lineage this many steps. `--depth 1` is direct dependents only. Unlimited by default.
+`--depth 1` is direct dependents only; lineage is followed the whole way when it is not given.
 
 Exits `0` when the question was answered, including when the answer is nothing, and `2` on bad
 flags, no resource of that name in the suite, or an ill-formed suite. Nothing depending on the named
@@ -434,8 +395,6 @@ tests
   specs/lists.feature::a list belongs to its owner
   specs/tasks.feature::completing a task
   tests/test_lists.py::test_c
-$ echo $?
-0
 ```
 
 ```console
@@ -458,12 +417,14 @@ $ atf impact primary --tests-only --json
 Lists what nothing asks for: resources no test names and nothing depends on, phrases no scenario
 says, steps no scenario reaches.
 
-`--strict`
-:   Exit `1` when anything is unused, so CI can gate on it.
+::: mkdocs-click
+    :module: atf.entry
+    :command: unused
+    :prog_name: atf unused
+    :depth: 2
+    :list_subcommands: False
 
-`--kind KIND`
-:   Restrict to one kind: `resources`, `phrases` or `steps`. Repeatable; every kind is listed when
-    it is not given.
+`--kind` repeats, and every kind is listed when it is not given.
 
 Exits `0` when the question was answered — unused things were listed, and without `--strict` that is
 not a failure — `1` under `--strict` when something is unused, and `2` on bad flags or an ill-formed
@@ -474,15 +435,11 @@ environment to require, waiting for the test that will name it.
 $ atf unused
 resource  Guest visitor          nothing asks for it
 phrase    "a customer who has already paid"   said by nothing
-$ echo $?
-0
 ```
 
 ```console
 $ atf unused --kind resources --strict
 resource  Guest visitor          nothing asks for it
-$ echo $?
-1
 ```
 
 - **In CI** — a hygiene step, and with `--strict` a gate a team can opt into.
@@ -499,14 +456,12 @@ report in a registered format — `ctrf` unless told otherwise — which is the 
 atf import-run <env> <file>
 ```
 
-`--label TEXT`
-:   Recorded on the run, so a CI run is distinguishable in history. Defaults to `imported`.
-
-`--format NAME`
-:   The registered format to read the file as. Defaults to `ctrf`.
-
-`--revision TEXT`
-:   Override the revision the run is recorded against. Taken from the file by default.
+::: mkdocs-click
+    :module: atf.entry
+    :command: import_run
+    :prog_name: atf import-run
+    :depth: 2
+    :list_subcommands: False
 
 Exits `0` when the run was stored — failures inside the imported run do not change that, since
 importing is what succeeded — and `2` on bad flags, no such environment, an unreadable file, or a
@@ -525,8 +480,6 @@ $ atf run --env staging --failed
 specs/lists.feature::a list belongs to its owner .. passed
 
 1 passed
-$ echo $?
-0
 ```
 
 `--failed` selects from CI's outcomes exactly as it selects from a laptop's. A local pass over an

@@ -71,7 +71,7 @@ def _guarded(context: click.Context, work: Any) -> None:
 @click.option("--json", "as_json", is_flag=True, help="emit the answer as JSON, errors as JSON on stderr")
 @click.option("--config", metavar="PATH", help="the manifest to read (default ./atf.yaml)")
 @click.option("--quiet", "-q", is_flag=True, help="suppress progress; the exit code and files remain")
-@click.version_option(__version__, "--version", message="%(version)s")
+@click.version_option(__version__, "--version", message="atf %(version)s")
 @click.pass_context
 def cli(context: click.Context, as_json: bool, config: str | None, quiet: bool) -> None:
     """Declared resources, and the tests that need them."""
@@ -82,7 +82,7 @@ def cli(context: click.Context, as_json: bool, config: str | None, quiet: bool) 
 
 @cli.command()
 @globals_too
-@click.option("--env", default="local", help="name of the single environment written")
+@click.option("--env", default="local", show_default=True, help="name of the single environment written")
 @click.option("--force", is_flag=True, help="overwrite an existing atf.yaml")
 @click.pass_context
 def init(context: click.Context, **flags: Any) -> None:
@@ -130,7 +130,7 @@ def make(context: click.Context, **flags: Any) -> None:
 
 @cli.command()
 @globals_too
-@click.option("--env", default="", help="environment to run against")
+@click.option("--env", default="", help="environment to run against; default_env unless given")
 @click.option("--tag", multiple=True, help="only tests carrying this tag; repeatable, OR")
 @click.option("--select", default="", help="only tests naming this resource; a leading + widens downstream")
 @click.option("--failed", is_flag=True, help="only tests whose last outcome here was failed")
@@ -190,8 +190,8 @@ def unused(context: click.Context, **flags: Any) -> None:
 
 @cli.command()
 @globals_too
-@click.option("--out", default="./atf-docs", metavar="DIRECTORY", help="where to write; created if absent")
-@click.option("--env", default="", help="whose history supplies the verdicts")
+@click.option("--out", default="./atf-docs", show_default=True, metavar="DIRECTORY", help="where to write")
+@click.option("--env", default="", help="whose history supplies the verdicts; default_env unless given")
 @click.option("--no-verdicts", is_flag=True, help="render the specs alone; do not read history")
 @click.pass_context
 def docs(context: click.Context, **flags: Any) -> None:
@@ -222,8 +222,8 @@ def check(context: click.Context, **flags: Any) -> None:
 @globals_too
 @click.argument("env")
 @click.argument("file", type=click.Path(exists=True, dir_okay=False))
-@click.option("--format", "format_", default="ctrf", help="which registered format (default ctrf)")
-@click.option("--label", default="imported", help="recorded on the run, so CI is told apart in history")
+@click.option("--format", "format_", default="ctrf", show_default=True, help="which registered format")
+@click.option("--label", default="imported", show_default=True, help="recorded on the run, so CI is told apart")
 @click.option("--revision", default="", help="override the revision; taken from the file by default")
 @click.pass_context
 def import_run(context: click.Context, **flags: Any) -> None:
@@ -244,9 +244,9 @@ def import_run(context: click.Context, **flags: Any) -> None:
 
 @cli.command()
 @globals_too
-@click.option("--env", default="", help="which environment to open on")
-@click.option("--host", default="127.0.0.1", help="where to serve; local by default, and on purpose")
-@click.option("--port", default=8765, type=int, help="which port")
+@click.option("--env", default="", help="environment to open on; default_env unless given")
+@click.option("--host", default="127.0.0.1", show_default=True, help="where to serve, and nowhere else")
+@click.option("--port", default=8765, type=int, show_default=True, help="which port")
 @click.option("--mcp", is_flag=True, help="serve the same operations to an agent instead")
 @click.pass_context
 def edit(context: click.Context, **flags: Any) -> None:

@@ -251,7 +251,7 @@ A report format turns a run into a file. `atf run --report <format>:<path>` sele
 for a chat message are registered here, and the name becomes one `--report` and `atf import-run`
 both accept. The function receives the run record and the destination path.
 
-The function receives a [run](the-record.md#run) and a `Path`. The run's shape is owned by that
+The function receives a [run](the-record.md#a-run) and a `Path`. The run's shape is owned by that
 page and not restated here: `run.environment`, `run.started`, `run.finished`, and `run.outcomes` —
 one [outcome](the-record.md#outcome) per test, each with `test`, `outcome`, `duration_ms` and
 `failed_at`. `failed_at` is `None` on anything that did not fail, and carries the file, the line,

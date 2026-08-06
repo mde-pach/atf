@@ -55,6 +55,11 @@ jobs:
       - name: Docs build with no broken links
         run: uv run mkdocs build --strict
 
+      # Every console block carrying `tesh-session` is run and its output compared. The command
+      # reference's option lists are generated from the Click group, so they cannot drift at all.
+      - name: The documentation's shell sessions still run
+        run: uv run tesh docs/
+
       # No `--config` anywhere: `atf.yaml` is at the root of this repository, so the command finds
       # it the way it finds any project's.
       - name: The feature files are well formed

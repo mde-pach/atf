@@ -92,10 +92,19 @@ class Report:
 
 
 def _select(suite: Suite, names: list[str]) -> list[Any]:
-    """The resources a command was pointed at, or all of them."""
+    """The resources a command was pointed at with the lineage they stand on, or all of them.
+
+    A resource is never reported without what it needs: asking about `groceries` answers about
+    `primary` as well.
+    """
     if not names:
         return list(suite.instances.values())
-    return [suite.resource(name) for name in names]
+    wanted: list[Any] = []
+    for name in names:
+        for node in graph.closure(suite.resource(name)):
+            if not any(seen is node for seen in wanted):
+                wanted.append(node)
+    return wanted
 
 
 def status(env: str = "", names: list[str] | None = None, *, manifest: Any = None) -> Report:
@@ -175,10 +184,14 @@ def do_init(*, env: str = "local", force: bool = False) -> Answer:
     try:
         written = scaffold.init(Path.cwd(), env=env, force=force)
     except FileExistsError as exc:
-        return Answer(code=FAILED, error=str(exc), error_code=USAGE)
+        return Answer(code=FAILED, error=str(exc).replace(f"{Path.cwd()}/", ""), error_code=USAGE)
     except OSError as exc:
         return fault(str(exc))
-    return Answer(lines=[f"wrote {path}" for path in written], data={"written": [str(p) for p in written]})
+    here = Path.cwd()
+    return Answer(
+        lines=[f"wrote {path.relative_to(here)}" for path in written],
+        data={"written": [str(path) for path in written]},
+    )
 
 
 def do_status(

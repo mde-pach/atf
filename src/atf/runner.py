@@ -87,6 +87,16 @@ class Collected:
     def pytest_collection_modifyitems(self, items: list[pytest.Item]) -> None:
         self.collected = [item.nodeid for item in items]
 
+    def pytest_deselected(self, items: list[pytest.Item]) -> None:
+        """A test nobody selected is not a test that failed to report.
+
+        `finish` marks anything collected and never heard from as stranded, which is right for a
+        killed subprocess and wrong for `-k`. Without this a filtered run records every test it
+        deliberately skipped as failed.
+        """
+        dropped = {item.nodeid for item in items}
+        self.collected = [nodeid for nodeid in self.collected if nodeid not in dropped]
+
     def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
         """Fold every phase of a test into one word, and keep where it failed."""
         existing = self.outcomes.get(report.nodeid)

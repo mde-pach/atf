@@ -270,7 +270,7 @@ anything kept. **This is a rewrite that reuses parts, not a refactor.**
 | 2 · adapter SPI, engine, scopes, `filesystem`/`process`/`command` | built |
 | 3 · step registry, feature reader, phrases, claims, plugin | built |
 | 4 · command line, record, history, reports | built |
-| 5 · ATF's own suite | built — five scenarios, four clean runs in a row |
+| 5 · ATF's own suite | 35 scenarios over nine features, twice clean |
 | 6 · the editor | built — seven views, all reading one core |
 | 7 · `rest` | built — `import openapi` dropped, see below |
 | the cutover — the deletes, and `tests/` | done |
@@ -547,7 +547,7 @@ That property is the whole point of running it twice — one green run says noth
 with the workspace function-scoped a survivor would be found by recognition on the next run and
 tested instead of made.
 
-#### It found four bugs, which is the argument for doing it at all
+#### It found five bugs, which is the argument for doing it at all
 
 None of these were visible from reading the code, and all four are the shape that only appears when
 one suite drives another.
@@ -564,6 +564,10 @@ one suite drives another.
 4. **A directory resource could not own its tree.** Teardown would only remove an empty directory, so
    a workspace the thing under test had written into could never be removed. A resource declaring
    `files` now owns what is under it.
+5. **A deselected test was recorded as failed.** The run collector marks anything collected and never
+   heard from as stranded, which is right for a killed subprocess and wrong for `-k` or `--tag`. Any
+   filtered run reported every test it deliberately skipped as a failure. Found by the first
+   scenario that filtered one.
 
 #### The phase order has 5 depending on 6
 

@@ -21,7 +21,7 @@ environments:
 """
 
 RESOURCES = '''\
-"""Two resources with lineage between them, and one scoped to a single test."""
+"""A small, ordinary suite: lineage, every scope, and something the environment owns."""
 
 from atf import filesystem
 
@@ -43,18 +43,78 @@ class Draft:
     text: str
 
 
+@filesystem(unique_by="path", scope="session")
+class Meeting:
+    path: str
+    text: str
+
+
+@filesystem(unique_by="path", when_absent="require")
+class Archive:
+    """Somebody else's job. ATF names it rather than making one."""
+
+    path: str
+
+
 work = Notebook(path="notebooks/work")
 standup = Note(path="notebooks/work/standup.md", text="stand up\\n", depends_on=[work])
+retro = Note(path="notebooks/work/retro.md", text="retro\\n", depends_on=[work])
 scratch = Draft(path="drafts/scratch.md", text="scratch\\n")
+weekly = Meeting(path="meetings/weekly.md", text="weekly\\n")
+archived = Archive(path="archive/2025.md")
 '''
 
 SPEC = """\
 Feature: notes
 
+  @phrase
+  Scenario: the notebook is there
+    Then the notebook "work" exists
+
+  @phrase
+  Scenario: the working notebook holds a note
+    Then the notebook is there
+    And the note "standup" exists
+
   Scenario: a draft is arranged for one test
     Given the draft "scratch"
     Then the draft "scratch" exists
+
+  Scenario: a phrase says what several sentences say
+    Given the note "standup"
+    Then the working notebook holds a note
+
+  Scenario: one field is changed for the length of one scenario
+    Given the note "standup" but "text" is "varied"
+    Then the note "standup" field "text" is "varied"
+
+  Scenario: a continuation names one more field
+    Given the note "standup" but "text" is "twice"
+    And "path" is "notebooks/work/twice.md"
+    Then the note "standup" field "path" is "notebooks/work/twice.md"
+
+  Scenario Outline: every notebook is arranged the same way
+    Given the notebook "<which>"
+    Then the notebook "<which>" exists
+
+    Examples:
+      | which |
+      | work  |
 """
+
+PYTEST_SIDE = '''\
+"""The same behaviour as a scenario, as a pytest function. One engine behind both."""
+
+from resources import Note, Notebook
+
+
+def test_lineage_comes_along(standup: Note):
+    assert standup.path == "notebooks/work/standup.md"
+
+
+def test_asking_by_kind_gets_the_one_in_scope(work: Notebook, notebook: Notebook):
+    assert notebook is work
+'''
 
 CONFTEST = 'pytest_plugins = ["atf.plugin"]\n'
 
@@ -73,6 +133,39 @@ class Workspace:
     files: dict[str, str]
 
 
+BROKEN_RESOURCES = '''\
+"""A suite that is wrong on purpose, one mistake per name."""
+
+from atf import filesystem
+
+
+@filesystem(unique_by="path")
+class Notebook:
+    path: str
+
+
+work = Notebook(path="notebooks/work")
+spare = Notebook(path="notebooks/spare")
+'''
+
+AMBIGUOUS = '''\
+"""Two notebooks in scope, and a parameter that cannot say which."""
+
+from resources import Notebook
+
+
+def test_two_of_a_kind(work: Notebook, spare: Notebook, notebook: Notebook):
+    raise AssertionError("this body must never run")
+'''
+
+UNKNOWN_SENTENCE = """\
+Feature: a sentence nobody taught
+
+  Scenario: it says something ATF was never told
+    Given the notebook "work"
+    Then it does the thing
+"""
+
 scaffolded = Workspace(
     path="suite",
     files={
@@ -80,6 +173,7 @@ scaffolded = Workspace(
         "resources.py": RESOURCES,
         "conftest.py": CONFTEST,
         "specs/notes.feature": SPEC,
+        "specs/test_both_surfaces.py": PYTEST_SIDE,
     },
 )
 
@@ -110,3 +204,15 @@ class Screen:
 
 editing = Editor(depends_on=[scaffolded])
 catalogue = Screen(path="/catalogue", depends_on=[editing])
+
+
+broken = Workspace(
+    path="broken",
+    files={
+        "atf.yaml": MANIFEST,
+        "resources.py": BROKEN_RESOURCES,
+        "conftest.py": CONFTEST,
+        "specs/test_ambiguous.py": AMBIGUOUS,
+        "specs/unknown.feature": UNKNOWN_SENTENCE,
+    },
+)

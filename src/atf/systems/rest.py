@@ -6,6 +6,7 @@ from typing import Any, TypedDict
 
 import httpx
 
+from .. import reconcile
 from ..declare import Unreachable, adapter, declaration_of, is_resource, values_of
 from ..model import compare
 from ..spi import Record
@@ -86,7 +87,7 @@ class Rest:
                 parent = self.find(value)
                 if parent is None:
                     raise Unreachable(f"{field}: the resource it points at has not been made")
-                out[f"{field}_id"] = parent.get(self._id_field(value))
+                out[reconcile.parent_key(resource, field)] = parent.get(self._id_field(value))
             else:
                 out[field] = value
         return out

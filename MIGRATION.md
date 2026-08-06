@@ -270,11 +270,11 @@ anything kept. **This is a rewrite that reuses parts, not a refactor.**
 | 2 · adapter SPI, engine, scopes, `filesystem`/`process`/`command` | built |
 | 3 · step registry, feature reader, phrases, claims, plugin | built |
 | 4 · command line, record, history, reports | built |
-| 5 · ATF's own suite | 35 scenarios over nine features, twice clean |
-| 6 · the editor | built — seven views, all reading one core |
+| 5 · ATF's own suite | 49 scenarios over ten features, three times clean |
+| 6 · the editor | built — seven views and the composer, all reading one core |
 | 7 · `rest` | built — `import openapi` dropped, see below |
 | the cutover — the deletes, and `tests/` | done |
-| the command list, whole | done — `docs` was the last one with nothing behind it |
+| the command list, whole | done — including `atf edit --mcp`, ten tools over the same core |
 
 **There is one stack now.** 202 files went; `src/atf` is 7,000 lines against 15,885, and `tests/`
 is 303 lines of ATF suite in place of 892 Python tests. `atf` is `atf.entry:main`, and `pytest-bdd`

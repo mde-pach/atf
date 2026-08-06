@@ -21,7 +21,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from . import core, record
+from . import core, markers, record
 from .commands import make as make_resources
 from .environment import build_ground
 from .loader import SuiteError, load_suite
@@ -109,9 +109,37 @@ class Editor:
             for one in core.tests(self.suite, self.features, self.root, self.ground.config.name)
         ]
 
-    def composer(self) -> dict[str, Any]:
-        """The one view with no command behind it: it writes Gherkin, and performs nothing."""
-        return {"sentences": core.sayable(self.suite), "subjects": core.subjects(self.suite)}
+    def composer(self, so_far: list[tuple[str, str]] | None = None) -> dict[str, Any]:
+        """The one view with no command behind it: it writes Gherkin, and performs nothing.
+
+        What it offers depends on what is already written, so ordering the steps differently
+        re-answers the offer. That is not decoration: a claim about a result nothing has produced
+        cannot be offered, and the composer is what knows it.
+        """
+        offered = core.offers(self.ground, self.phrases, so_far or [])
+        return {
+            "offers": [
+                {"keyword": one.keyword, "sentence": one.sentence, "why": one.why} for one in offered
+            ],
+            "markers": sorted(f"#{name}" for name in markers.REGISTRY),
+            "quiet": core.why_no_when(self.ground, self.suite),
+            "subjects": core.subjects(self.suite),
+        }
+
+    def compose(self, name: str, scenario: str, lines: list[tuple[str, str]]) -> Path:
+        """Write a feature file under the specs directory, and perform nothing.
+
+        There is no editor-only syntax, no generated header, and nothing in the file saying it was
+        composed. What comes out is Gherkin somebody could have typed.
+        """
+        specs = self.suite.manifest.specs
+        specs.mkdir(parents=True, exist_ok=True)
+        path = specs / (name if name.endswith(".feature") else f"{name}.feature")
+        body = [f"Feature: {name.removesuffix('.feature')}", "", f"  Scenario: {scenario}"]
+        body += [f"    {keyword} {sentence}" for keyword, sentence in lines]
+        path.write_text("\n".join(body) + "\n", encoding="utf-8")
+        self.reload()
+        return path
 
     def activity(self) -> list[dict[str, Any]]:
         return [run.as_json() for run in core.activity(self.root, self.ground.config.name)]
@@ -257,12 +285,24 @@ def render_tests(editor: Editor) -> str:
 
 def render_composer(editor: Editor) -> str:
     offered = editor.composer()
-    blocks = "".join(
-        f"<h2>{keyword.title()}</h2><ul>"
-        + "".join(f"<li><code>{html.escape(pattern)}</code></li>" for pattern in patterns)
-        + "</ul>"
-        for keyword, patterns in offered["sentences"].items()
-        if patterns
+    blocks = ""
+    for keyword in ("Given", "When", "Then"):
+        mine = [one for one in offered["offers"] if one["keyword"] == keyword]
+        if not mine:
+            continue
+        rows = "".join(
+            f"<li><code>{html.escape(one['sentence'])}</code> "
+            f"<small>{html.escape(one['why'])}</small></li>"
+            for one in mine
+        )
+        blocks += f"<h2>{keyword}</h2><ul>{rows}</ul>"
+    if offered["quiet"]:
+        quiet = "".join(f"<li>{html.escape(one)}</li>" for one in offered["quiet"])
+        blocks += f"<h2>Contributing no When</h2><ul>{quiet}</ul>"
+    blocks += (
+        "<h2>Markers</h2><p>"
+        + " ".join(f"<code>{html.escape(one)}</code>" for one in offered["markers"])
+        + "</p>"
     )
     return page("The composer", blocks, "composer")
 
@@ -340,14 +380,34 @@ def build_app(editor: Editor) -> Any:
         editor.make(name)
         return RedirectResponse(f"/catalogue/{editor.resource(name)['kind']}/{name}", status_code=303)
 
-    @app.get("/api/{view}")
-    def _api(view: str) -> Any:
-        """The same answers as data. `atf edit --mcp` serves these to an agent."""
+    @app.post("/api/compose")
+    def _compose(body: dict[str, Any]) -> Any:
+        """Write a feature file. **This performs nothing** — it is text, and only text."""
         editor.reload()
-        reader = getattr(editor, view, None)
-        if reader is None or view not in VIEWS:
-            return JSONResponse({"error": f"no view called {view!r}"}, status_code=404)
-        return JSONResponse(reader())
+        path = editor.compose(
+            str(body.get("name", "composed")),
+            str(body.get("scenario", "a scenario")),
+            [(str(k), str(v)) for k, v in body.get("lines", [])],
+        )
+        return JSONResponse({"wrote": str(path)})
+
+    @app.post("/api/composer")
+    def _offers(body: dict[str, Any]) -> Any:
+        """What can be said next, given what is written above it."""
+        editor.reload()
+        so_far = [(str(k).lower(), str(v)) for k, v in body.get("lines", [])]
+        return JSONResponse(editor.composer(so_far))
+
+    @app.get("/api/tools")
+    def _tools() -> Any:
+        """What `atf edit --mcp` offers, readable without the SDK installed.
+
+        Which tools exist decides what an agent can write, so the list is data rather than
+        something only a running MCP client can discover.
+        """
+        from .agent import TOOLS  # noqa: PLC0415
+
+        return JSONResponse(TOOLS)
 
     @app.get("/api/resource/{name}")
     def _resource(name: str) -> Any:
@@ -358,6 +418,17 @@ def build_app(editor: Editor) -> Any:
     def _make(name: str) -> Any:
         answer = editor.make(name)
         return JSONResponse(answer, status_code=200 if answer["code"] == 0 else 409)
+
+    # Registered last on purpose: `/api/{view}` matches any single segment, so it would shadow
+    # `/api/tools` and `/api/compose` if it came first.
+    @app.get("/api/{view}")
+    def _api(view: str) -> Any:
+        """The same answers as data. `atf edit --mcp` serves these to an agent."""
+        editor.reload()
+        reader = getattr(editor, view, None)
+        if reader is None or view not in VIEWS:
+            return JSONResponse({"error": f"no view called {view!r}"}, status_code=404)
+        return JSONResponse(reader())
 
     return app
 

@@ -46,6 +46,16 @@ Feature: showing a person's lists
     Then the tenant "acme" field "region" is "eu"
     And the tenant "acme_us" field "region" is "us"
 
+  Scenario: a domain verb is performed by the adapter
+    Given the task "laundry"
+    Then the task "laundry" field "done" is "0"
+    When I complete the task "laundry"
+    Then the task "laundry" field "done" is "1"
+
+  Scenario: the environment can be counted
+    Given the report "quarterly"
+    Then the environment has 1 report
+
   @phrase
   Scenario: the output names "{words}"
     Then the result field "exit_code" is "0"

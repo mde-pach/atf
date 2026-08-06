@@ -257,9 +257,18 @@ def edit(context: click.Context, **flags: Any) -> None:
     from .editor import serve  # noqa: PLC0415 - only this command needs a web server
 
     config = context.obj.config
+    manifest = Path(config) if config else None
     if flags["mcp"]:
-        click.echo("`--mcp` is not built yet; the same answers are under /api/<view>.", err=True)
-    serve(Path(config) if config else None, flags["env"], flags["host"], flags["port"])
+        from .agent import serve as serve_agent  # noqa: PLC0415
+        from .editor import Editor  # noqa: PLC0415
+
+        try:
+            serve_agent(Editor(manifest, flags["env"]))
+        except RuntimeError as exc:
+            message = str(exc)
+            _guarded(context, lambda: fault(message, USAGE))
+        return
+    serve(manifest, flags["env"], flags["host"], flags["port"])
 
 
 @cli.command()

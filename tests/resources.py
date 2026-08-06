@@ -10,6 +10,7 @@ from atf import browser, filesystem, process
 MANIFEST = """\
 resources: [./resources.py]
 specs: ./specs
+extensions: [./vocabulary.py]
 default_env: local
 
 environments:
@@ -80,6 +81,16 @@ Feature: notes
     Given the draft "scratch"
     Then the draft "scratch" exists
 
+  Scenario: a marker asks for a kind where a value would be wrong
+    Given the note "standup"
+    Then the note "standup" field "path" is #str
+    And the note "standup" field "text" is #markdown
+    And the note "standup" field "nothing" is #absent
+
+  Scenario: a claim this suite registered holds like a built-in
+    Given the note "standup"
+    Then the note "standup" reads like a note
+
   Scenario: a phrase says what several sentences say
     Given the note "standup"
     Then the working notebook holds a note
@@ -133,6 +144,43 @@ class Workspace:
     files: dict[str, str]
 
 
+INNER_VOCABULARY = '''\
+"""What the scaffolded suite registers: one marker, one claim, one check."""
+
+from atf import check, claim, marker
+
+
+@marker("markdown")
+def _(value):
+    return str(value).endswith("\\n"), "it does not end in a newline"
+
+
+@claim('the {kind} "{name}" reads like a note')
+def _(record):
+    text = (record or {}).get("text", "")
+    return bool(text.strip()), "it is empty"
+
+
+@check("every note lives under a notebook")
+def _(suite):
+    for name, node in suite.suite.instances.items():
+        if type(node).__name__ == "Note" and not str(node.path).startswith("notebooks/"):
+            yield name, "it is not under notebooks/"
+'''
+
+BAD_VOCABULARY = '''\
+"""A check that always finds something, so `atf check` can be seen to gate."""
+
+from atf import check
+
+
+@check("every notebook is called work")
+def _(suite):
+    for name, node in suite.suite.instances.items():
+        if type(node).__name__ == "Notebook" and name != "work":
+            yield name, "it is not called work"
+'''
+
 BROKEN_RESOURCES = '''\
 """A suite that is wrong on purpose, one mistake per name."""
 
@@ -172,6 +220,7 @@ scaffolded = Workspace(
         "atf.yaml": MANIFEST,
         "resources.py": RESOURCES,
         "conftest.py": CONFTEST,
+        "vocabulary.py": INNER_VOCABULARY,
         "specs/notes.feature": SPEC,
         "specs/test_both_surfaces.py": PYTEST_SIDE,
     },
@@ -212,6 +261,7 @@ broken = Workspace(
         "atf.yaml": MANIFEST,
         "resources.py": BROKEN_RESOURCES,
         "conftest.py": CONFTEST,
+        "vocabulary.py": BAD_VOCABULARY,
         "specs/test_ambiguous.py": AMBIGUOUS,
         "specs/unknown.feature": UNKNOWN_SENTENCE,
     },

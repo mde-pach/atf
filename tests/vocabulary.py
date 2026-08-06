@@ -6,6 +6,7 @@ no backend here and there never was.
 """
 
 from pathlib import Path
+from typing import Any
 
 from atf import check, claim, claims, then, when
 
@@ -62,6 +63,50 @@ def _(path: str, text: str, atf) -> None:
         claims.fail(f"{path} is not there at all")
     found = where.read_text(encoding="utf-8")
     claims.held((found == text.replace("\\n", "\n"), f"it holds {found!r}"), subject=f'"{path}"')
+
+
+@when('I run "{command}" in an empty directory')
+def _(command: str, atf) -> Any:
+    """Run `atf` somewhere with no manifest, which is what `init` is for.
+
+    The directory is inside the workspace, so it is taken away with everything else.
+    """
+    import subprocess  # noqa: PLC0415
+
+    where = _workspace(atf) / "fresh"
+    where.mkdir(parents=True, exist_ok=True)
+    finished = subprocess.run(  # noqa: S603
+        ["uv", "run", "atf", *command.split()], cwd=where, capture_output=True, text=True, check=False
+    )
+    return atf.remember("result", {
+        "command": command,
+        "exit_code": finished.returncode,
+        "output": finished.stdout + finished.stderr,
+        "ok": finished.returncode == 0,
+    })
+
+
+@when('I read "{path}" from the editor')
+def _(path: str, atf) -> Any:
+    """Ask the running editor for one of its answers, as data.
+
+    The editor is a client of the same core the command is, so a scenario can claim that both say
+    the same thing — which is what stops the two drifting apart.
+    """
+    import json  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    base = atf.ground.adapters["browser"].base_url
+    with urllib.request.urlopen(f"{base}{path}", timeout=10) as answer:  # noqa: S310
+        return atf.remember("answer", json.loads(answer.read()))
+
+
+@then('the answer contains "{text}"')
+def _(text: str, atf) -> None:
+    import json  # noqa: PLC0415
+
+    body = json.dumps(atf.recall("answer"), default=str)
+    claims.held((text in body, "it does not"), subject="the editor's answer")
 
 
 @then('"{path}" contains "{text}"')

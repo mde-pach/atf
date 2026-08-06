@@ -346,6 +346,107 @@ def tests(suite: Suite, features: list[Any], root: Path, environment: str) -> li
 # --- The composer -------------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Offer:
+    """One sentence that can be said at this point, and why it is on offer."""
+
+    keyword: str
+    sentence: str
+    why: str = ""
+
+
+def offers(
+    ground: Ground,
+    phrases: dict[str, Any],
+    so_far: list[tuple[str, str]],
+) -> list[Offer]:
+    """What can be said *next*, given what has been said above.
+
+    Three rules, and every one of them is read from the registries and the graph rather than from a
+    list of known systems:
+
+    - a `Given` for any resource the suite declares, by name or by kind;
+    - a `When` **only where the adapter can perform it** — an `act` sentence needs the kind to
+      declare that action *and* its adapter to implement `act`; `list every` needs `browse`;
+    - a `Then` **only once something above it has produced what the claim reads**.
+
+    Ordering the steps differently re-answers the offer, which is the whole point: the composer
+    cannot offer a claim about a result nothing has produced.
+    """
+    suite = ground.suite
+    arranged = {name for keyword, text in so_far if keyword == "given" for name in _named(text, suite)}
+    slots = {"result"} if any(keyword == "when" for keyword, _ in so_far) else set()
+    slots |= {slot for _, text in so_far for slot in _slots(text)}
+
+    out: list[Offer] = []
+    for name, node in sorted(suite.instances.items()):
+        kind = fixture_name(declaration_of(node).kind)
+        out.append(Offer("Given", f'the {kind} "{name}"', "declared by this suite"))
+    for kind, cls in sorted(suite.kinds.items()):
+        if hasattr(cls, "factory"):
+            out.append(Offer("Given", f"a {fixture_name(kind)}", "it has a factory"))
+
+    for name in sorted(arranged):
+        node = suite.instances[name]
+        declaration = declaration_of(node)
+        kind = fixture_name(declaration.kind)
+        if declaration.actions and ground.can(node, "act"):
+            for action in sorted(declaration.actions):
+                why = f"{declaration.kind} declares it and its adapter acts"
+                out.append(Offer("When", f'I {action} the {kind} "{name}"', why))
+        if ground.can(node, "browse"):
+            out.append(Offer("When", f"I list every {kind}", "the adapter browses"))
+        out.append(Offer("Then", f'the {kind} "{name}" exists', "it is arranged above"))
+        for field_name in sorted(values_of(node)):
+            if not is_resource(values_of(node)[field_name]):
+                out.append(
+                    Offer("Then", f'the {kind} "{name}" field "{field_name}" is ""', "it is arranged above")
+                )
+
+    if "command" in ground.adapters:
+        out.append(Offer("When", 'I run ""', "this environment configures a command prefix"))
+    for slot in sorted(slots):
+        out.append(Offer("Then", f'the {slot} field "exit_code" is "0"', f"{slot} was produced above"))
+        out.append(Offer("Then", f'the {slot} field "output" contains ""', f"{slot} was produced above"))
+
+    for pattern in sorted(phrases):
+        keyword = _phrase_keyword(phrases[pattern])
+        out.append(Offer(keyword, pattern, "a phrase this suite teaches"))
+    return out
+
+
+def _named(text: str, suite: Suite) -> list[str]:
+    return [word.strip('"') for word in text.split() if word.strip('"') in suite.instances]
+
+
+def _slots(text: str) -> list[str]:
+    import re  # noqa: PLC0415
+
+    return re.findall(r'as "([^"]+)"', text)
+
+
+def _phrase_keyword(phrase: Any) -> str:
+    """A phrase is offered under the verb its own body uses, undistinguished from a built-in."""
+    keywords = {line.keyword for line in getattr(phrase, "lines", [])}
+    if keywords == {"given"}:
+        return "Given"
+    if keywords == {"then"}:
+        return "Then"
+    return "When" if "when" in keywords else "Then"
+
+
+def why_no_when(ground: Ground, suite: Suite) -> list[str]:
+    """Systems that contribute no `When`, and why — an adapter with neither `act` nor `browse`."""
+    quiet: list[str] = []
+    for kind, cls in sorted(suite.kinds.items()):
+        node = next((one for one in suite.instances.values() if type(one) is cls), None)
+        if node is None:
+            continue
+        if not ground.can(node, "act") and not ground.can(node, "browse"):
+            quiet.append(f"{kind}: its adapter implements neither `act` nor `browse`")
+    return quiet
+
+
 def sayable(suite: Suite) -> dict[str, list[str]]:
     """Every sentence this suite can say, grouped by keyword.
 

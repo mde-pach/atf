@@ -50,3 +50,18 @@ Feature: reading a suite without running it
     And I run "docs --out .workspaces/suite/rendered" as "rendering"
     Then the rendering field "exit_code" is "0"
     And "rendered/notes.md" contains "passing"
+
+  @check
+  Scenario: check exits 1 on its findings, because they are its answer
+    Given the workspace "broken"
+    When I run "--config .workspaces/broken/atf.yaml check"
+    Then the result field "exit_code" is "1"
+    And the result field "output" contains "it is not called work"
+
+  @docs
+  Scenario: docs can render the specs alone, reading no history
+    Given the workspace "scaffolded"
+    When I run "run"
+    And I run "docs --out .workspaces/suite/plain --no-verdicts" as "plain"
+    Then the plain field "exit_code" is "0"
+    And "plain/notes.md" contains "Given"

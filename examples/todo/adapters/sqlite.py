@@ -94,6 +94,20 @@ class Sqlite:
         self.db.execute(f"DELETE FROM {self._table(resource)} WHERE id = ?", (found["id"],))  # noqa: S608
         self.db.commit()
 
+    def act(self, resource: Any, found: Record, action: Any) -> Record:
+        """A declared verb: write the fields the action names onto this row.
+
+        Optional, and what it unlocks is a sentence — `When I complete the task "laundry"`. An
+        adapter without it can still be arranged and claimed about; it has no verbs of its own.
+        """
+        changes = dict(getattr(action, "values", {}))
+        return self.update(resource, found, changes)
+
+    def browse(self, resource: Any) -> list[Record]:
+        """Every row of this kind — what `the environment has 2 todo_list` counts."""
+        rows = self.db.execute(f"SELECT * FROM {self._table(resource)}").fetchall()  # noqa: S608
+        return [dict(row) for row in rows]
+
     def _columns(self, resource: Any) -> Record:
         """The declared fields, with a parent resolved to the id of the row it was made as."""
         columns: Record = {}

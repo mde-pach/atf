@@ -10,6 +10,8 @@ field for its owner and `Report` has nowhere to put one, and both are the same e
 
 from adapters.sqlite import sqlite
 
+from atf import Update
+
 
 @sqlite(table="owners", unique_by="email")
 class Owner:
@@ -29,8 +31,11 @@ class TodoList:
         return cls(owner=owner, slug="generated")
 
 
-@sqlite(table="tasks", unique_by="slug", depends_on=[TodoList])
+@sqlite(table="tasks", unique_by="slug", depends_on=[TodoList],
+        actions={"complete": Update(done=True), "reopen": Update(done=False)})
 class Task:
+    """Two domain verbs. `actions` is ATF's; performing one is the adapter's `act`."""
+
     slug: str
     done: bool
 

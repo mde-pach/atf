@@ -131,8 +131,6 @@ The documentation is MkDocs Material, organised by [Diátaxis](https://diataxis.
 - [`docs/advanced/how-atf-tests-itself.md`](docs/advanced/how-atf-tests-itself.md) — the suite above,
   shown whole
 - [`examples/`](examples) — a SQLite suite, the same domain over HTTP, and the shipped systems alone
-- [`MIGRATION.md`](MIGRATION.md) — how the current design replaced the previous one, and what each
-  decision cost
 
 ```console
 $ uv run --group docs mkdocs serve

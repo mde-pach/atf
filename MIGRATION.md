@@ -2,6 +2,9 @@
 
 **Read this first, in a fresh context. It is self-contained.**
 
+**`docs-next/` is `docs/` now.** The migration is done, and this document is the record of it: it
+keeps the names things had while the work was in flight, and every path in §9 is the path today.
+
 `docs-next/` is a complete, verified specification for a new version of ATF — 49 pages, written
 from scratch. `src/atf/` implements an older, different design. This document measures the distance
 between them and says how to cross it.
@@ -276,6 +279,7 @@ anything kept. **This is a rewrite that reuses parts, not a refactor.**
 | 7 · `rest` | built — `import openapi` dropped, see below |
 | the cutover — the deletes, and `tests/` | done |
 | the command list, whole | done — including `atf edit --mcp`, ten tools over the same core |
+| the checks | done — CI, the prose convention, and a mutation guard that is not a test |
 
 **There is one stack now.** 202 files went; `src/atf` is 7,000 lines against 15,885, and `tests/`
 is 303 lines of ATF suite in place of 892 Python tests. `atf` is `atf.entry:main`, and `pytest-bdd`
@@ -686,22 +690,50 @@ import. If an importer is ever wanted back, that idea is the part to bring, not 
 
 ## 8. Known bug in the current code, unrelated to the migration
 
-`adapters/browser.py:139` sets `name=name or text`, echoing the requested name rather than computing
-the accessible one — so an unfiltered read returns element text, not the ARIA name. Fix with
-Playwright's aria snapshot; do not keep `control.py` for it.
+~~`adapters/browser.py:139` sets `name=name or text`, echoing the requested name rather than
+computing the accessible one.~~ **Closed by the rewrite rather than fixed.** `vocabulary.py` asks
+Playwright directly — `page.get_by_role(role, name=name)` — so the accessible name is computed by
+the thing that owns the accessibility tree, and there is no name-matching code of ATF's to be
+wrong. `control.py` is gone with the rest of the old adapter layer.
+
+---
+
+## 8b. What guards the repository, and where it lives
+
+Four checks run in CI beside `ruff` and `ty`, and two of them are not tests:
+
+- **`scripts/prose.py`** — a module docstring is at most two lines, and no docstring or comment
+  argues why the code is this way. The rewrite violated it in 143 places before anybody ran it.
+- **`scripts/mutations.py`** — breaks ATF in five places, each on a copy of `src/`, and requires the
+  one scenario that watches that place to go red: teardown order, function scope, the `mutable`
+  gate, two of a kind in scope, and a field a declared action writes. A green suite proves nothing
+  until it can go red, and this lives in `scripts/` rather than in `tests/` because `tests/` is an
+  ATF suite and has no Python tests to hide it among.
+- **`atf check`** over this repository's own `atf.yaml`, and **`atf run`** — the suite, run the way
+  a user runs one.
+- **`atf init` into an empty directory, then `atf run`** — what a newcomer is handed, with nothing
+  else set up.
+
+The editor scenarios drive a real page, so CI installs the `browser` group and chromium. An
+unreachable system fails the test that asked for it, which is what
+`explanation/every-failure-names-your-sentence.md` specifies; there is no `@browser` tag and nothing
+skips.
 
 ---
 
 ## 9. Where to look things up
 
-- **The model, the syntax, the canonical domain** — `docs-next/_context/DESIGN.md`
-- **What each concept is** — `docs-next/reference/`, one page per band, every definition owned once
-- **The whole suite, shown whole** — `docs-next/advanced/how-atf-tests-itself.md`
-- **Why a decision was made** — `docs-next/explanation/`, each page naming what was rejected
+`docs-next/` is `docs/` now, and the old `docs/` is deleted. Everything below is its path today.
+
+- **The model, the syntax, the canonical domain** — `docs/_context/DESIGN.md`
+- **What each concept is** — `docs/reference/`, one page per band, every definition owned once
+- **The whole suite, shown whole** — `docs/advanced/how-atf-tests-itself.md`
+- **Why a decision was made** — `docs/explanation/`, each page naming what was rejected
 - **What Phase 0 decided, and what it measured to get there** —
   [`prototypes/phase0/FINDINGS.md`](prototypes/phase0/FINDINGS.md)
 - **Where the specification stopped short and somebody chose** — six judgements, each with what it
   does now and the alternative: <https://claude.ai/code/artifact/0ee0bcdc-f9be-4493-9b12-ea22bf3bf8b9>
 - **The new stack, working** — `examples/todo` (a suite with its own adapter, both surfaces),
-  `examples/shipped` (`filesystem` and `process`, no adapter), `selftest/` (ATF testing ATF)
-- **Read it served** — `uv run --group docs mkdocs serve -f mkdocs-next.yml -a 127.0.0.1:8001`
+  `examples/rest` (the same domain over HTTP), `examples/shipped` (`filesystem` and `process`, no
+  adapter), and `atf.yaml` with `tests/` (ATF testing ATF)
+- **Read it served** — `uv run --group docs mkdocs serve`

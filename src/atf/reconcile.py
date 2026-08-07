@@ -218,8 +218,9 @@ def status(ground: Ground, resources: list[Any]) -> list[Reconciliation]:
     """
     _learn_parents(ground, resources)
     out: list[Reconciliation] = []
+    asked = ground.find_all(resources)
     for node in resources:
-        state, found = ground.find(node)
+        state, found = asked[id(node)]
         if state is State.UNREACHABLE:
             out.append(Reconciliation(node, state, Did.LEFT_ALONE, why=f"the {declaration_of(node).system} system"))
         elif state is State.PRESENT and found is not None:
@@ -238,10 +239,10 @@ def _learn_parents(ground: Ground, resources: list[Any]) -> None:
     The closure minus what was requested: asked about, and not reported on.
     """
     requested = [id(node) for node in resources]
-    for node in graph.order(resources):
-        if id(node) in requested:
-            continue
-        state, found = ground.find(node)
+    parents = [node for node in graph.order(resources) if id(node) not in requested]
+    asked = ground.find_all(parents)
+    for node in parents:
+        state, found = asked[id(node)]
         if state is State.PRESENT and found is not None:
             _remember_identity(node, found)
 
@@ -295,18 +296,58 @@ def browse(ground: Ground, resource: Any) -> list[Record]:
         raise
 
 
+def restore(ground: Ground, resources: list[Any], undone: list[str] | None = None) -> list[Reconciliation]:
+    """Put back what an action changed, so a declaration holds after a test as well as before it.
+
+    Only the fields a declared action writes, and only on resources ATF will not take away. A
+    resource that is torn down needs nothing put back, a field no action names was never loosed, and
+    a system named in `undone` put everything back itself.
+    """
+    rolled_back = set(undone or ())
+    out: list[Reconciliation] = []
+    for node in resources:
+        if scope_of(node) != "persistent" or not ground.mutable:
+            continue
+        if declaration_of(node).system in rolled_back:
+            continue
+        loosed = acted_fields(node)
+        if not loosed:
+            continue
+        state, found = ground.find(node)
+        if state is not State.PRESENT or found is None:
+            continue
+        changes = {
+            name: value
+            for name, value in declared_values(node).items()
+            if name in loosed and not same_value(found.get(name, None), value)
+        }
+        if not changes:
+            continue
+        try:
+            written = _apply(ground, node, found, changes)
+        except (ProvisionError, Unreachable) as exc:
+            out.append(Reconciliation(node, state, Did.LEFT_ALONE, record=found, changes=changes, why=str(exc)))
+            continue
+        out.append(
+            Reconciliation(node, State.PRESENT, Did.UPDATED, record=written, changes=changes, why="restored")
+        )
+    return out
+
+
 # --- Teardown -------------------------------------------------------------------------------------
 
 
-def teardown(ground: Ground, resources: list[Any]) -> list[Reconciliation]:
+def teardown(ground: Ground, resources: list[Any], undone: list[str] | None = None) -> list[Reconciliation]:
     """Remove these, **always in reverse lineage order**, so a list goes before its owner.
 
     It runs after a failure too. A `persistent` resource is never passed here: outliving the process
-    is what makes re-runs cheap and recognition worth having.
+    is what makes re-runs cheap and recognition worth having. A system named in `undone` rolled the
+    whole test back, and has nothing left to delete.
     """
+    rolled_back = set(undone or ())
     out: list[Reconciliation] = []
     for node in graph.teardown_order(resources):
-        if scope_of(node) == "persistent":
+        if scope_of(node) == "persistent" or declaration_of(node).system in rolled_back:
             continue
         state, found = ground.find(node)
         if state is not State.PRESENT or found is None:

@@ -301,7 +301,10 @@ small_lineage = Screen(path="/graph/outline", depends_on=[editing])
 crowded = Screen(path="/graph/work", depends_on=[editing])
 faults = Screen(path="/faults", depends_on=[editing])
 listing = Screen(path="/tests", depends_on=[editing])
-one_test = Screen(path="/tests/notes.feature%3A%3Aa%20draft%20is%20arranged%20for%20one%20test", depends_on=[editing])
+one_test = Screen(
+    path="/tests/specs%2Fnotes.feature%3A%3Aa%20draft%20is%20arranged%20for%20one%20test",
+    depends_on=[editing],
+)
 runs = Screen(path="/activity", depends_on=[editing])
 readonly_screen = Screen(path="/catalogue?env=readonly", depends_on=[editing])
 composing = Screen(

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import graph, reconcile, record, steps
+from . import footprint, graph, reconcile, record, steps
 from .declare import declaration_of, instance_of, is_resource, name_of, values_of
 from .environment import Ground
 from .loader import Suite, fixture_name
@@ -277,14 +277,13 @@ def spine(suite: Suite, features: list[Any], phrases: dict[str, Any]) -> list[No
 
 
 def _reached(scenario: Any, suite: Suite, phrases: dict[str, Any]) -> list[str]:
-    """What one scenario or phrase reaches: the resources it names, and the phrases it says."""
-    said = {word for line in scenario.lines for word in line.text.replace('"', " ").split()}
+    """What one scenario or phrase reaches: the resources it touches, and the phrases it says."""
     nested = sorted(
         name
         for name, phrase in phrases.items()
         if name != scenario.name and any(phrase.match(line.text) for line in scenario.lines)
     )
-    return sorted(said & set(suite.instances)) + nested
+    return footprint.arranged(suite, footprint.of_scenario(suite, scenario, phrases)) + nested
 
 
 @dataclass
@@ -319,6 +318,27 @@ def around(suite: Suite, features: list[Any], phrases: dict[str, Any], id: str) 
         actions=here.actions,
         layers=_layers(suite, id, by_id) if here.kind == "resource" else [],
     )
+
+
+def layered(suite: Suite) -> list[list[Node]]:
+    """Every declared resource, grouped by how far down the lineage it sits, parents first.
+
+    The whole graph at once, which is what the graph view draws before it lists anything.
+    """
+    by_id = {
+        node.id: node
+        for node in spine(suite, [], {})
+        if node.kind == "resource"
+    }
+    depth: dict[str, int] = {}
+    for node in graph.order(suite.instances.values()):
+        parents = [name_of(parent) for parent in graph.parents(node)]
+        depth[name_of(node)] = 1 + max((depth.get(parent, 0) for parent in parents), default=-1)
+    grouped: list[list[Node]] = [[] for _ in range(max(depth.values(), default=-1) + 1)]
+    for one, level in sorted(depth.items()):
+        if one in by_id:
+            grouped[level].append(by_id[one])
+    return grouped
 
 
 def _layers(suite: Suite, name: str, by_id: dict[str, Node]) -> list[list[Node]]:
@@ -361,12 +381,15 @@ class TestEntry:
     arranges: list[str] = field(default_factory=list)
 
 
-def tests(suite: Suite, features: list[Any], root: Path, environment: str) -> list[TestEntry]:
+def tests(
+    suite: Suite, features: list[Any], root: Path, environment: str, phrases: dict[str, Any] | None = None
+) -> list[TestEntry]:
     """Every behaviour the suite describes, in one list, with the verdict history gives it.
 
     A scenario and a pytest function appear the same way. `form` says which one you are looking at
     and nothing else treats them differently.
     """
+    said = phrases or {}
     latest: dict[str, Outcome] = {}
     for run in record.runs_for(root, environment):
         for outcome in run.outcomes:
@@ -374,14 +397,14 @@ def tests(suite: Suite, features: list[Any], root: Path, environment: str) -> li
     flaky = record.flaky(root, environment)
 
     def entry(identity: str, label: str, form: str, tags: list[str], arranges: list[str]) -> TestEntry:
-        seen = next((word for test, word in latest.items() if test.endswith(label)), None)
+        seen = latest.get(identity)
         return TestEntry(
             id=identity,
             label=label,
             form=form,
             tags=tags,
             verdict=str(record.verdict([seen] if seen else [])),
-            flaky=any(test.endswith(label) for test in flaky),
+            flaky=identity in flaky,
             arranges=arranges,
         )
 
@@ -390,22 +413,22 @@ def tests(suite: Suite, features: list[Any], root: Path, environment: str) -> li
         for scenario in feature.scenarios:
             if scenario.is_phrase:
                 continue
-            words = {w for line in scenario.lines for w in line.text.replace('"', " ").split()}
-            identity = f"{feature.path.name}::{scenario.name}" if feature.path else scenario.name
-            out.append(
-                entry(identity, scenario.name, "scenario", list(scenario.tags), sorted(words & set(suite.instances)))
+            reach = footprint.arranged(suite, footprint.of_scenario(suite, scenario, said))
+            identity = (
+                record.identity(feature.path, scenario.name, root) if feature.path else scenario.name
             )
+            out.append(entry(identity, scenario.name, "scenario", list(scenario.tags), reach))
     for path, name, asks in _functions(suite):
-        arranges = sorted(set(asks) & set(suite.instances))
-        out.append(entry(f"{path}::{name}", name, "function", [], arranges))
+        reach = footprint.arranged(suite, footprint.of_function(suite, asks))
+        out.append(entry(record.identity(path, name, root), name, "function", [], reach))
     return out
 
 
-def _functions(suite: Suite) -> list[tuple[str, str, list[str]]]:
+def _functions(suite: Suite) -> list[tuple[Path, str, list[str]]]:
     """Every `test_` function under the specs directory, with the fixtures it asks for by name."""
     import ast  # noqa: PLC0415 - only this reads a test module without importing it
 
-    found: list[tuple[str, str, list[str]]] = []
+    found: list[tuple[Path, str, list[str]]] = []
     specs = suite.manifest.specs
     if not specs.is_dir():
         return found
@@ -417,7 +440,7 @@ def _functions(suite: Suite) -> list[tuple[str, str, list[str]]]:
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name.startswith("test_"):
                 asks = [one.arg for one in node.args.args]
-                found.append((path.name, node.name, asks))
+                found.append((path, node.name, asks))
     return found
 
 
@@ -439,27 +462,34 @@ class TestDetail:
 
 
 def detail_of_test(
-    suite: Suite, features: list[Any], root: Path, environment: str, id: str
+    suite: Suite,
+    features: list[Any],
+    root: Path,
+    environment: str,
+    id: str,
+    phrases: dict[str, Any] | None = None,
 ) -> TestDetail:
     """One test, its sentences, and its outcomes newest first. `KeyError` where there is no such test."""
-    listed = next((one for one in tests(suite, features, root, environment) if one.id == id), None)
+    listed = next((one for one in tests(suite, features, root, environment, phrases) if one.id == id), None)
     if listed is None:
         raise KeyError(id)
 
     lines: list[tuple[str, str]] = []
     where = ""
     for feature in features:
+        if feature.path is None:
+            continue
         for scenario in feature.scenarios:
-            if scenario.name != listed.label or scenario.is_phrase:
+            if scenario.is_phrase or record.identity(feature.path, scenario.name, root) != id:
                 continue
             lines = [(line.keyword.title(), line.text) for line in scenario.lines]
-            where = f"{feature.path.name}:{scenario.number}" if feature.path else ""
+            where = f"{feature.path.name}:{scenario.number}"
 
     outcomes = [
         outcome
         for run in record.runs_for(root, environment)
         for outcome in run.outcomes
-        if outcome.test.endswith(listed.label)
+        if outcome.test == listed.id
     ]
     return TestDetail(
         id=listed.id,

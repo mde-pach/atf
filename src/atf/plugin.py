@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
-import re
+import random
 import sys
 from pathlib import Path
 from typing import Any
@@ -12,13 +12,15 @@ import pytest
 from typing_extensions import override
 
 from . import feature as feature_reader
-from . import phrases as phrase_reader
 from . import (
+    footprint,
     reconcile,
+    record,
     runtime,
     steps,
     vocabulary,  # noqa: F401 - imported so its sentences are registered
 )
+from . import phrases as phrase_reader
 from .declare import declaration_of
 from .environment import Ground, build_ground
 from .loader import Suite, fixture_name, load_suite
@@ -87,6 +89,41 @@ SELECTION: Any = None
 NO_MAKE: bool = False
 #: Which manifest this run is against, when something other than the nearest one was named.
 MANIFEST: Any = None
+#: `--shard i/n`: which slice of the laid-out run this process takes. `None` is all of it.
+SHARD: tuple[int, int] | None = None
+#: `--seed`: the order the selected tests are run in. `None` leaves collection order alone.
+SEED: int | None = None
+#: The node ids this process is confined to, which is how a worker is told what to run.
+ONLY: set[str] | None = None
+#: The layout collection worked out, for `--explain` and for `--jobs` to read back.
+SCHEDULE: Any = None
+#: Node id to the resources a test actually reached, filled in as each test ends.
+OBSERVED: dict[str, set[str]] = {}
+
+
+def observed(nodeid: str, state: Scope) -> None:
+    """Keep what a test reached, beside what its sentences said it would."""
+    from .declare import name_of  # noqa: PLC0415
+
+    reached = {name_of(node) for node in state.arranged} | {name_of(node) for node in state.acted}
+    OBSERVED[nodeid] = {name for name in reached if name}
+
+
+def undeclared() -> dict[str, list[str]]:
+    """Resources each test reached that its own sentences never named.
+
+    The declared footprint is what `atf impact` and the schedule are built on. What this reports is
+    the distance between that and what the run did.
+    """
+    out: dict[str, list[str]] = {}
+    for nodeid, reached in OBSERVED.items():
+        said = FOOTPRINTS.get(nodeid)
+        if said is None:
+            continue
+        beyond = sorted(reached - said.touches)
+        if beyond:
+            out[nodeid] = beyond
+    return out
 
 
 def loaded() -> Loaded:
@@ -141,13 +178,67 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 @pytest.fixture
-def atf() -> Any:
+def atf(request: pytest.FixtureRequest) -> Any:
     """What this test is holding: what it arranged, and what its actions produced."""
     state = runtime.start(Scope(suite=loaded().suite, ground=loaded().ground, run=loaded().made))
+    undone = state.ground.begin()
     yield state
+    observed(request.node.nodeid, state)
     # Function scope ends here; session scope ends with the run. Persistent is never torn down.
-    reconcile.teardown(state.ground, reconcile.scoped(state.made, "function"))
+    reconcile.teardown(state.ground, reconcile.scoped(state.made, "function"), undone)
+    reconcile.restore(state.ground, state.acted, undone)
+    state.ground.rollback(undone)
     runtime.finish()
+
+
+ARTEFACTS_DIR = ".atf/artefacts"
+
+
+def _slug(nodeid: str) -> str:
+    """One test's node id as a directory name."""
+    return "".join(one if one.isalnum() or one in "-._" else "-" for one in nodeid).strip("-")[:120]
+
+
+def capture(nodeid: str) -> list[str]:
+    """Whatever each system can show of a test that has just gone red.
+
+    An adapter with no `capture` shows nothing, which is most of them.
+    """
+    if _LOADED is None:
+        return []
+    ground = _LOADED.ground
+    where = Path(_LOADED.suite.manifest.root) / ARTEFACTS_DIR / _slug(nodeid)
+    written: list[str] = []
+    for adapter in ground.adapters.values():
+        taking = getattr(adapter, "capture", None)
+        if not callable(taking):
+            continue
+        try:
+            written += [str(one) for one in taking(where)]
+        except Exception:  # noqa: BLE001 - a system that cannot show itself is not a second failure
+            continue
+    return written
+
+
+#: Node id to what was captured while it was failing, taken before anything is torn down.
+ARTEFACTS: dict[str, list[str]] = {}
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item: pytest.Item) -> Any:
+    """Capture from a failing pytest function, while its fixtures are still standing."""
+    outcome = yield
+    if outcome.excinfo is not None and item.nodeid not in ARTEFACTS:
+        ARTEFACTS[item.nodeid] = capture(item.nodeid)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: Any) -> Any:
+    """Carry what was captured onto the report, for the record and the report writers."""
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call" and report.failed:
+        report.atf_artefacts = ARTEFACTS.pop(item.nodeid, [])
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
@@ -213,11 +304,19 @@ class ScenarioItem(pytest.Item):
     @override
     def runtest(self) -> None:
         state = runtime.start(Scope(suite=loaded().suite, ground=loaded().ground, run=loaded().made))
+        undone = state.ground.begin()
         try:
             for sentence in self.sentences or self.resolve():
                 _run_sentence(state, sentence)
+        except Exception:
+            # Before teardown: a page a scenario was looking at is closed the moment its Screen goes.
+            ARTEFACTS[self.nodeid] = capture(self.nodeid)
+            raise
         finally:
-            reconcile.teardown(state.ground, reconcile.scoped(state.made, "function"))
+            observed(self.nodeid, state)
+            reconcile.teardown(state.ground, reconcile.scoped(state.made, "function"), undone)
+            reconcile.restore(state.ground, state.acted, undone)
+            state.ground.rollback(undone)
             runtime.finish()
 
     @override
@@ -278,16 +377,15 @@ def _test_name(title: str) -> str:
     """A scenario's identity is its own title.
 
     `the-record.md` writes it as `specs/lists.feature::a list belongs to its owner`, so that is what
-    a report, history and `--failed` all carry. Only the characters pytest uses to build a node id
-    are replaced.
+    a report, history and `--failed` all carry.
     """
-    cleaned = re.sub(r"[\[\]:]+", " ", title.strip()).strip()
-    return cleaned or "scenario"
+    return record.test_name(title)
 
 
 # --- The collection pass ------------------------------------------------------------------------
 
 
+@pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Narrow to what was selected, then decide every kind parameter in what is left.
 
@@ -298,6 +396,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         if dropped:
             config.hook.pytest_deselected(items=dropped)
             items[:] = kept
+
+    _lay_out(config, items)
 
     problems: list[str] = []
     kinds = loaded().kinds
@@ -335,6 +435,32 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         )
 
 
+def _lay_out(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Work out what can go beside what, then narrow to this process's share and order it.
+
+    The layout is worked out over everything the selection kept, so a shard is a slice of the same
+    answer every other shard is slicing.
+    """
+    global SCHEDULE  # noqa: PLW0603 - one layout per collection is one process-wide fact
+    SCHEDULE = footprint.schedule({item.nodeid: footprint_of(item) for item in items})
+
+    mine: set[str] | None = None
+    if ONLY is not None:
+        mine = set(ONLY)
+    elif SHARD is not None:
+        mine = set(footprint.shard(SCHEDULE, *SHARD))
+
+    if mine is not None:
+        kept = [item for item in items if item.nodeid in mine]
+        dropped = [item for item in items if item.nodeid not in mine]
+        if dropped:
+            config.hook.pytest_deselected(items=dropped)
+            items[:] = kept
+
+    if SEED is not None:
+        random.Random(SEED).shuffle(items)
+
+
 def _apply_selection(items: list[pytest.Item]) -> tuple[list[pytest.Item], list[pytest.Item]]:
     """Split the collected tests into what this run asked for and what it did not."""
     suite = loaded().suite
@@ -359,14 +485,25 @@ def _chosen(item: pytest.Item, wanted: set[str] | None) -> bool:
         return False
     if SELECTION.failed and item.nodeid not in SELECTION.failed_ids:
         return False
-    if wanted is not None:
-        try:
-            _, arranged = _asked_and_arranged(item)
-        except Exception:  # noqa: BLE001 - a test that cannot be read is not one this slice chose
-            return False
-        if not wanted & set(arranged):
-            return False
-    return True
+    return wanted is None or bool(wanted & footprint_of(item).touches)
+
+
+#: One footprint per collected test, worked out once and read by selection, sharding and the schedule.
+FOOTPRINTS: dict[str, footprint.Footprint] = {}
+
+
+def footprint_of(item: pytest.Item) -> footprint.Footprint:
+    """What this test touches. Computed once per node id and held for the session."""
+    held = FOOTPRINTS.get(item.nodeid)
+    if held is not None:
+        return held
+    suite = loaded().suite
+    if isinstance(item, ScenarioItem):
+        found = footprint.of_scenario(suite, item.scenario, loaded().phrases)
+    else:
+        found = footprint.of_function(suite, list(getattr(item, "fixturenames", [])))
+    FOOTPRINTS[item.nodeid] = found
+    return found
 
 
 def _kind_of(name: str) -> str:

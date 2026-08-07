@@ -98,6 +98,26 @@ what the test arranged. Name the one you mean.
 unique — a fixed prefix, a small enumeration — ATF recognises the second one as the first and hands
 back the record that already exists. Generate from something with room in it.
 
+`atf.within` is that something, and it is what to reach for once anything runs at the same time:
+
+```python
+import atf
+
+
+@sqlite(table="guests", unique_by="nickname", scope="function")
+class Guest:
+    nickname: str
+
+    @classmethod
+    def factory(cls) -> "Guest":
+        return cls(nickname=atf.within("guest"))
+```
+
+`within("guest")` is `guest-3f9a1c04`, where the second half is this run's token. Every worker of an
+`atf run --jobs` run is handed a different one, so two of them cannot generate the same name. Name it
+yourself with `atf run --namespace pr-1234` or `ATF_NAMESPACE`, which is what a branch running
+against a shared environment wants — every name that branch writes then carries the branch in it.
+
 **A factory that touches a system.** A factory returns a declaration. It must not create anything,
 open a connection, or read the environment. Provisioning happens after resolution, and a factory that
 provisions runs at the wrong time and in the wrong order.

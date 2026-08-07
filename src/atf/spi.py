@@ -41,7 +41,9 @@ class Adapter(Protocol):
 
 
 REQUIRED = ("find", "create", "update", "delete")
-OPTIONAL = ("act", "browse")
+# `act` and `browse` add sentences. `find_many` answers about several resources in one question,
+# and `begin`/`rollback` wrap a test so a short-lived resource costs no create and no delete.
+OPTIONAL = ("act", "browse", "find_many", "begin", "rollback", "capture", "describe")
 
 
 class SpiError(Exception):

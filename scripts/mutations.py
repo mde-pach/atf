@@ -39,7 +39,7 @@ MUTATIONS = (
     Mutation(
         what="function scope ends with the test",
         module="plugin.py",
-        find='reconcile.teardown(state.ground, reconcile.scoped(state.made, "function"))',
+        find='reconcile.teardown(state.ground, reconcile.scoped(state.made, "function"), undone)',
         replace="pass",
         caught_by="tests/specs/lifetimes.feature::a resource scoped to one test is gone when the run ends",
     ),
@@ -107,7 +107,7 @@ MUTATIONS = (
     Mutation(
         what="a pytest function in the tests list",
         module="core.py",
-        find='        out.append(entry(f"{path}::{name}", name, "function", [], arranges))',
+        find='        out.append(entry(record.identity(path, name, root), name, "function", [], reach))',
         replace="        pass",
         caught_by="tests/specs/the-editor.feature::"
         "a scenario and a pytest function are listed the same way",
@@ -127,6 +127,67 @@ MUTATIONS = (
         replace="    return set()",
         caught_by="tests/specs/making-resources.feature::"
         "a field a declared action writes is not reverted by the next pass",
+    ),
+    Mutation(
+        what="drift reporting a record that moved",
+        module="commands.py",
+        find="        if outcome.state is State.PRESENT and outcome.changes",
+        replace="        if False",
+        caught_by="tests/specs/reconciling.feature::"
+        "a record changed by hand is reported against its declaration",
+    ),
+    Mutation(
+        what="drift gating when asked",
+        module="commands.py",
+        find="        code=FAILED if (strict and moved) else OK,",
+        replace="        code=OK,",
+        caught_by="tests/specs/reconciling.feature::drift gates only when it is asked to",
+    ),
+    Mutation(
+        what="the contract standing in for the resource it is asked about",
+        module="conformance.py",
+        find='        patch[field] = f"{value}-{MARK}"',
+        replace="        patch[field] = value",
+        caught_by="tests/specs/reconciling.feature::"
+        "what the contract wrote is gone, and the resource it stood in for is untouched",
+    ),
+    Mutation(
+        what="a shard index outside the run",
+        module="entry.py",
+        find="    if not 1 <= one <= many:",
+        replace="    if False:",
+        caught_by="tests/specs/scheduling.feature::a shard index outside the run never starts",
+    ),
+    Mutation(
+        what="the seed a shuffled run recorded",
+        module="entry.py",
+        find='        lines[0] += f"   seed {selection.seed}"',
+        replace="        pass",
+        caught_by="tests/specs/scheduling.feature::a shuffled run records the seed it ran in",
+    ),
+    Mutation(
+        what="naming what forced a test to run alone",
+        module="footprint.py",
+        find="        return f'\"{self.opaque[0]}\" has an effect nothing declares'",
+        replace='        return "it runs alone"',
+        caught_by="tests/specs/scheduling.feature::"
+        "a sentence whose effect nothing declares is named as what forced a test to go alone",
+    ),
+    Mutation(
+        what="adopt naming a system that cannot say what it holds",
+        module="adopt.py",
+        find="        raise AdoptError(",
+        replace='        return "", []\n        raise AdoptError(',
+        caught_by="tests/specs/adopting.feature::"
+        "a system that cannot say what it holds is named, and nothing is written",
+    ),
+    Mutation(
+        what="adopt refusing to overwrite a declaration",
+        module="commands.py",
+        find="    return any(isinstance(node, ast.ClassDef) for node in ast.walk(tree))",
+        replace="    return False",
+        caught_by="tests/specs/adopting.feature::"
+        "adopt refuses to overwrite a file that already declares something",
     ),
 )
 

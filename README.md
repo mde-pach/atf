@@ -74,8 +74,11 @@ branch on why.
 
 ## The systems it ships
 
-`command`, `browser`, `filesystem`, `process` and `rest`. **There is no backend and never was** — ATF
-is pointed at whatever a team already has. Anything else is an adapter somebody writes:
+`command`, `browser`, `filesystem`, `process`, `rest` and `sql`. **There is no backend and never
+was** — ATF is pointed at whatever a team already has. `sql` is the one exception the argument
+allows: every documentation example declares rows in a table, so the rows in a table are shipped.
+It takes a `path` to a database file or a `url` to one elsewhere, and reads the driver off the
+scheme. Anything else is an adapter somebody writes:
 
 ```python
 @adapter("redis")
@@ -89,6 +92,9 @@ class Redis:
 That ships `@redis(...)` with it, and the editor renders it — a catalogue entry, a graph node, a
 composer sentence — without a line of editor code changing. `@sqlite` throughout the documentation
 is exactly this: the worked example, living in the suite that uses it.
+
+`atf verify-adapter <resource>` puts one through the contract — create, read back, update, delete,
+and delete again — against a copy it marks and removes.
 
 ## How ATF tests itself
 

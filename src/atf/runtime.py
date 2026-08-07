@@ -31,6 +31,8 @@ class Scope:
     slots: dict[str, Any] = field(default_factory=dict)
     arranged: list[Any] = field(default_factory=list)
     pending: Any = None
+    #: Resources an action changed, so what it changed can be put back when the test ends.
+    acted: list[Any] = field(default_factory=list)
 
     # --- Arranging ---------------------------------------------------------------------------
 
@@ -146,6 +148,8 @@ class Scope:
     def act(self, kind: str, name: str, action: str) -> Any:
         self.flush()
         resource = self._in_scope_named(name) or self._declared(kind, name)
+        if not any(node is resource for node in self.acted):
+            self.acted.append(resource)
         return self.remember("result", reconcile.act(self.ground, resource, action))
 
     def browse(self, kind: str) -> list[Record]:

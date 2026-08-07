@@ -52,6 +52,7 @@ from .spi import Adapter, Did, Record, SpiError, State  # isort: skip
 
 from . import claims  # isort: skip
 from .markers import Marker, MarkerError, marker  # isort: skip
+from .naming import current as namespace, within  # isort: skip
 from .record import Outcome, Run, TestOutcome, Verdict, Where  # isort: skip
 from .registries import Check, check, claim  # isort: skip
 from .reports import report  # isort: skip
@@ -63,6 +64,7 @@ command = system("command")
 filesystem = system("filesystem")
 process = system("process")
 rest = system("rest")
+sql = system("sql")
 
 __version__ = "0.1.0"
 
@@ -122,6 +124,7 @@ __all__ = [
     "is_resource",
     "load_suite",
     "marker",
+    "namespace",
     "name_of",
     "order",
     "parents",
@@ -130,6 +133,7 @@ __all__ = [
     "report",
     "resource",
     "rest",
+    "sql",
     "status",
     "system",
     "teardown",
@@ -139,4 +143,5 @@ __all__ = [
     "unused",
     "values_of",
     "when",
+    "within",
 ]

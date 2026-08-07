@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -45,6 +46,8 @@ class Where:
     line: int = 0
     step: str = ""
     message: str = ""
+    #: Paths written while this test was failing, under `.atf/artefacts/`.
+    artefacts: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -120,6 +123,24 @@ def verdict(outcomes: Any) -> Verdict:
     if seen:
         return Verdict.SKIPPED
     return Verdict.NEVER_RUN
+
+
+def test_name(title: str) -> str:
+    """A scenario's identity is its own title, with the characters a node id uses replaced."""
+    cleaned = re.sub(r"[\[\]:]+", " ", title.strip()).strip()
+    return cleaned or "scenario"
+
+
+def identity(path: Path, title: str, root: Path) -> str:
+    """What a run calls one test: its file from the suite root, then its title.
+
+    The same string pytest builds a node id from, so a recorded outcome is found by equality.
+    """
+    try:
+        where = path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        where = path.name
+    return f"{where}::{test_name(title)}"
 
 
 def new_id() -> str:

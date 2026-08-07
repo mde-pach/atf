@@ -22,6 +22,8 @@ class Selection:
     select: str = ""
     failed: bool = False
     keyword: str = ""
+    #: The order the tests ran in, where anything chose one. Recorded so a run can be repeated.
+    seed: int | None = None
     #: Resolved from history when `failed` is set, so the plugin does not read history itself.
     failed_ids: set[str] = field(default_factory=set)
 
@@ -39,6 +41,7 @@ class Selection:
             "tag": self.tags or None,
             "select": self.select or None,
             "failed": self.failed,
+            "seed": self.seed,
         }
 
     def is_empty(self) -> bool:
@@ -135,7 +138,13 @@ def _where(report: pytest.TestReport) -> Where:
         if stripped.split(" ", 1)[0] in ("Given", "When", "Then", "And", "But"):
             step = stripped
             break
-    return Where(file=file, line=line + 1, step=step, message=message.strip())
+    return Where(
+        file=file,
+        line=line + 1,
+        step=step,
+        message=message.strip(),
+        artefacts=list(getattr(report, "atf_artefacts", []) or []),
+    )
 
 
 def build_run(

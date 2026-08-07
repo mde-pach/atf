@@ -99,6 +99,10 @@ class Editor:
     def graph(self) -> list[dict[str, Any]]:
         return [_as_node(node) for node in core.spine(self.suite, self.features, self.phrases)]
 
+    def whole(self) -> list[list[dict[str, Any]]]:
+        """Every resource laid out by depth, which is the graph as one picture."""
+        return [[_as_node(node) for node in layer] for layer in core.layered(self.suite)]
+
     def node(self, id: str) -> dict[str, Any]:
         """One node and every edge touching it. `KeyError` where the spine has no such node."""
         here = core.around(self.suite, self.features, self.phrases, id)
@@ -124,13 +128,13 @@ class Editor:
                 "flaky": one.flaky,
                 "arranges": one.arranges,
             }
-            for one in core.tests(self.suite, self.features, self.root, self.ground.config.name)
+            for one in core.tests(self.suite, self.features, self.root, self.ground.config.name, self.phrases)
         ]
 
     def test(self, id: str) -> dict[str, Any]:
         """One test opened. `KeyError` where the suite describes no such behaviour."""
         found = core.detail_of_test(
-            self.suite, self.features, self.root, self.ground.config.name, id
+            self.suite, self.features, self.root, self.ground.config.name, id, self.phrases
         )
         kinds = {name: type(node).__name__ for name, node in self.suite.instances.items()}
         return {
@@ -473,7 +477,15 @@ def render_graph(editor: Editor) -> str:
         "<strong>what breaks if this does</strong> is on every node below, and "
         f"{link('/unused', 'what nothing asks for')} is the resources no test reaches.</p>"
     )
-    return page("The graph", f"{entries}<table><tr><th>node<th>kind<th>needs</tr>{rows}</table>", "graph")
+    layers = editor.whole()
+    whole = (
+        f"<h2>every resource</h2>{_drawing(layers)}<p><small>parents on the left. "
+        f"Tests and phrases are in the table below.</small></p>"
+        if sum(len(layer) for layer in layers) > 1
+        else ""
+    )
+    table = f"<h2>every node</h2><table><tr><th>node<th>kind<th>needs</tr>{rows}</table>"
+    return page("The graph", f"{entries}{whole}{table}", "graph")
 
 
 def _node_link(id: str, label: str) -> str:

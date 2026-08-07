@@ -7,7 +7,7 @@ from typing import Any
 from . import claims
 from .declare import declaration_of
 from .runtime import Scope
-from .steps import given, then, when
+from .steps import READS, WRITES, given, then, when
 
 # --- Arrange ---------------------------------------------------------------------------------------
 
@@ -24,13 +24,13 @@ def _arrange_any(kind: str, atf: Scope) -> Any:
     return atf.arrange_any(kind)
 
 
-@given('the {kind} "{name}" but "{field}" is "{value}"')
+@given('the {kind} "{name}" but "{field}" is "{value}"', effect=WRITES)
 def _arrange_varied(kind: str, name: str, field: str, value: str, atf: Scope) -> Any:
     """The first sentence of a variation: the resource, and one field changed."""
     return atf.arrange(kind, name, patch={field: value})
 
 
-@given('"{field}" is "{value}"')
+@given('"{field}" is "{value}"', effect=WRITES)
 def _arrange_varied_more(field: str, value: str, atf: Scope) -> Any:
     """A continuation: one more field of whatever the previous `Given` named."""
     return atf.vary(field, value)
@@ -51,13 +51,13 @@ def _run_as(command: str, slot: str, shell: Any, atf: Scope) -> Any:
     return atf.remember(slot, shell(command))
 
 
-@when('I {action} the {kind} "{name}"')
+@when('I {action} the {kind} "{name}"', effect=WRITES)
 def _act(action: str, kind: str, name: str, atf: Scope) -> Any:
     """`When I complete the task "laundry"` — one of the resource's declared verbs."""
     return atf.act(kind, name, action)
 
 
-@when("I list every {kind}")
+@when("I list every {kind}", effect=READS)
 def _browse(kind: str, atf: Scope) -> Any:
     """`When I list every todo_list` — everything of that kind the environment holds."""
     return atf.remember("result", atf.browse(kind))

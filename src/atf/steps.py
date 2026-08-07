@@ -15,6 +15,11 @@ from .patterns import CAPTURE_RE, literal_length, pattern_regex
 GIVEN, WHEN, THEN = "given", "when", "then"
 KEYWORDS = (GIVEN, WHEN, THEN)
 
+# How a step reaches what its sentence names. `opaque` is an effect the graph cannot follow, which
+# is what a shell command or a step somebody wrote is until it says otherwise.
+READS, WRITES, OPAQUE = "reads", "writes", "opaque"
+EFFECTS = (READS, WRITES, OPAQUE)
+
 # `And` and `But` continue whatever keyword came before them, which is Gherkin's own rule.
 CONTINUATIONS = ("and", "but", "*")
 
@@ -32,6 +37,19 @@ class Step:
     function: Callable[..., Any]
     target: str = ""
     module: str = ""
+    #: What running this does to what it names, as one of `EFFECTS`. Empty takes the default.
+    effect: str = ""
+
+    @property
+    def touch(self) -> str:
+        """How this step reaches what its sentence names.
+
+        A `Given` or a `Then` reads unless it says otherwise. A `When` with nothing declared is
+        `opaque`: an unstated effect is treated as any effect at all.
+        """
+        if self.effect:
+            return self.effect
+        return OPAQUE if self.keyword == WHEN else READS
 
     @property
     def placeholders(self) -> tuple[str, ...]:
@@ -75,14 +93,19 @@ class Step:
 REGISTRY: list[Step] = []
 
 
-def register(keyword: str, pattern: str, target: str = "") -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def register(
+    keyword: str, pattern: str, target: str = "", effect: str = ""
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     def decorate(function: Callable[..., Any]) -> Callable[..., Any]:
+        if effect and effect not in EFFECTS:
+            raise StepError(f"{pattern!r}: effect is {effect!r}; it is one of {', '.join(EFFECTS)}")
         step = Step(
             keyword=keyword,
             pattern=pattern,
             function=function,
             target=target,
             module=getattr(function, "__module__", ""),
+            effect=effect,
         )
         clash = next((s for s in REGISTRY if s.keyword == keyword and s.pattern == pattern), None)
         if clash is not None and clash.function is not function:
@@ -99,19 +122,23 @@ def register(keyword: str, pattern: str, target: str = "") -> Callable[[Callable
     return decorate
 
 
-def given(pattern: str, *, target: str = "") -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def given(
+    pattern: str, *, target: str = "", effect: str = ""
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """A sentence that arranges. `target` names the fixture its return value is bound to."""
-    return register(GIVEN, pattern, target)
+    return register(GIVEN, pattern, target, effect)
 
 
-def when(pattern: str, *, target: str = "") -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """A sentence that acts."""
-    return register(WHEN, pattern, target)
+def when(
+    pattern: str, *, target: str = "", effect: str = ""
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """A sentence that acts. `effect` says what it does to what it names; a `When` is `opaque` without one."""
+    return register(WHEN, pattern, target, effect)
 
 
-def then(pattern: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def then(pattern: str, *, effect: str = "") -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """A sentence that claims."""
-    return register(THEN, pattern)
+    return register(THEN, pattern, "", effect)
 
 
 def matching(keyword: str, sentence: str) -> Step | None:

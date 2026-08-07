@@ -109,6 +109,7 @@ def _read_ctrf(path: Path) -> Run:
                     file=str(entry.get("filePath", "")),
                     line=int(entry.get("line", 0) or 0),
                     message=message,
+                    artefacts=[str(one) for one in entry.get("attachments") or []],
                 )
                 if word is Outcome.FAILED
                 else None,
@@ -143,6 +144,7 @@ def _write_ctrf(run: Run, destination: Path) -> None:
                             "message": outcome.failed_at.message,
                             "filePath": outcome.failed_at.file,
                             "line": outcome.failed_at.line,
+                            "attachments": list(outcome.failed_at.artefacts),
                         }
                         if outcome.failed_at is not None
                         else {}

@@ -50,6 +50,68 @@ class Ground:
         """Whether this resource's system offers one of the optional methods, `act` or `browse`."""
         return offers(type(self.adapter_for(resource)), method)
 
+    @property
+    def transactional(self) -> list[str]:
+        """Systems whose adapter can wrap a test and undo everything it did."""
+        return sorted(
+            name
+            for name, adapter in self.adapters.items()
+            if offers(type(adapter), "begin") and offers(type(adapter), "rollback")
+        )
+
+    def begin(self) -> list[str]:
+        """Open a transaction on every system that offers one, and name the ones that opened.
+
+        A system that cannot be reached opens nothing and is left out, so its resources are made
+        and taken away in the ordinary way.
+        """
+        opened: list[str] = []
+        for name in self.transactional:
+            try:
+                self.adapters[name].begin()
+            except Unreachable:
+                continue
+            opened.append(name)
+        return opened
+
+    def rollback(self, systems: list[str]) -> None:
+        """Undo what each of these systems did since `begin`."""
+        for name in systems:
+            adapter = self.adapters.get(name)
+            if adapter is None:
+                continue
+            try:
+                adapter.rollback()
+            except Unreachable:
+                continue
+
+    def find_all(self, resources: list[Any]) -> dict[int, tuple[State, Record | None]]:
+        """Ask about several resources, one question per system where the adapter answers in bulk.
+
+        Keyed by identity, which is what a graph node is. An adapter with no `find_many` is asked
+        once per resource, and answers the same.
+        """
+        out: dict[int, tuple[State, Record | None]] = {}
+        by_system: dict[str, list[Any]] = {}
+        for node in resources:
+            by_system.setdefault(declaration_of(node).system, []).append(node)
+
+        for system, mine in by_system.items():
+            adapter = self.adapters.get(system)
+            if adapter is None or not offers(type(adapter), "find_many"):
+                for node in mine:
+                    out[id(node)] = self.find(node)
+                continue
+            try:
+                found = adapter.find_many(mine)
+            except Unreachable:
+                out.update({id(node): (State.UNREACHABLE, None) for node in mine})
+                continue
+            for node in mine:
+                record = found.get(id(node))
+                out[id(node)] = (State.PRESENT, record) if record is not None else (State.ABSENT, None)
+        return out
+
     def find(self, resource: Any) -> tuple[State, Record | None]:
         """Ask the environment whether this resource is there. The one question, asked every time.
 

@@ -109,6 +109,7 @@ nav:
       - Why there is no state file: explanation/why-there-is-no-state-file.md
       - Every failure names your sentence: explanation/every-failure-names-your-sentence.md
       - What we borrowed: explanation/what-we-borrowed.md
+      - Why the editor is plain: explanation/why-the-editor-is-plain.md
       - The concept budget: explanation/the-concept-budget.md
 
 markdown_extensions:

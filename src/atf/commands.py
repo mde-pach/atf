@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import graph, reconcile, record, reports, scaffold
+from . import core, footprint, graph, reconcile, record, reports, scaffold
 from .declare import declaration_of, name_of
 from .environment import GroundError, build_ground
 from .loader import Suite, SuiteError, load_suite
@@ -241,15 +242,164 @@ def do_make(
     )
 
 
+def do_drift(
+    env: str = "", names: list[str] | None = None, *, strict: bool = False, config: str | None = None
+) -> Answer:
+    """What this environment holds that no longer matches its declaration.
+
+    Reports by default and gates with `--strict`. Absence is not drift: a resource that is not there
+    is `atf status`'s answer, and this one is about records that are there and have moved.
+    """
+    try:
+        suite = _suite(config)
+        ground = build_ground(suite, env)
+        wanted = _select(suite, names or [])
+    except (ManifestError, SuiteError, GroundError) as exc:
+        return fault(str(exc), INVALID)
+    except KeyError as exc:
+        return fault(str(exc).strip("'"), USAGE)
+
+    moved = [
+        outcome
+        for outcome in reconcile.status(ground, wanted)
+        if outcome.state is State.PRESENT and outcome.changes
+    ]
+    lines: list[str] = []
+    for outcome in moved:
+        found = outcome.record or {}
+        lines.append(f"{declaration_of(outcome.resource).kind} {outcome.name}")
+        lines += [
+            f"  {field}: {found.get(field)!r} declared {value!r}"
+            for field, value in sorted(outcome.changes.items())
+        ]
+    return Answer(
+        code=FAILED if (strict and moved) else OK,
+        lines=lines or [f"{ground.config.name} matches every declaration"],
+        data={
+            "environment": ground.config.name,
+            "drifted": [
+                {
+                    "name": outcome.name,
+                    "kind": declaration_of(outcome.resource).kind,
+                    "changes": {
+                        field: {"found": (outcome.record or {}).get(field), "declared": value}
+                        for field, value in outcome.changes.items()
+                    },
+                }
+                for outcome in moved
+            ],
+        },
+    )
+
+
+def _changed_since(root: Path, revision: str) -> list[Path] | None:
+    """Files this working tree has changed since a revision, or nothing where git cannot say."""
+    try:
+        top = subprocess.run(  # noqa: S603
+            ["git", "rev-parse", "--show-toplevel"],  # noqa: S607
+            cwd=root, capture_output=True, text=True, check=False, timeout=5,
+        )
+        listed = subprocess.run(  # noqa: S603
+            ["git", "diff", "--name-only", revision],  # noqa: S607
+            cwd=root, capture_output=True, text=True, check=False, timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if top.returncode != 0 or listed.returncode != 0:
+        return None
+    where = Path(top.stdout.strip())
+    return [where / line.strip() for line in listed.stdout.splitlines() if line.strip()]
+
+
+def _declared_in(suite: Suite, changed: list[Path]) -> list[Any]:
+    """Every resource whose kind is declared in one of these files."""
+    import sys as system  # noqa: PLC0415 - the loaded modules are what says where a kind was written
+
+    touched = {path.resolve() for path in changed}
+    kinds = {
+        kind
+        for kind, cls in suite.kinds.items()
+        if (module := system.modules.get(declaration_of(cls).module)) is not None
+        and getattr(module, "__file__", None)
+        and Path(str(module.__file__)).resolve() in touched
+    }
+    return [node for node in suite.instances.values() if declaration_of(node).kind in kinds]
+
+
+def do_impact_since(revision: str, *, config: str | None = None) -> Answer:
+    """What a change since this revision could have broken.
+
+    A resources module that changed puts every kind it declares in scope, and lineage widens that
+    the same way `--select +name` does. A feature file that changed names its own scenarios.
+    """
+    try:
+        suite = _suite(config)
+    except (ManifestError, SuiteError) as exc:
+        return fault(str(exc), INVALID)
+
+    root = _root(suite)
+    changed = _changed_since(root, revision)
+    if changed is None:
+        return fault(f"git could not say what changed since {revision!r}", USAGE)
+
+    everything = list(suite.instances.values())
+    directly = _declared_in(suite, changed)
+    affected = list(directly)
+    for node in directly:
+        for other in graph.dependents(node, everything):
+            if not any(seen is other for seen in affected):
+                affected.append(other)
+
+    names = {name_of(node) for node in affected}
+    tests = set(_tests_reaching(suite, names)) if names else set()
+    for path in changed:
+        if path.suffix == ".feature" and path.is_file():
+            tests |= {one for one in _tests_in(suite, path, root)}
+
+    lines = [f"changed since {revision}"]
+    lines += [f"  {_relative(path, root)}" for path in changed] or ["  -"]
+    lines.append("resources")
+    lines += [f"  {declaration_of(n).kind} {name_of(n)}" for n in affected] or ["  -"]
+    lines.append("tests")
+    lines += [f"  {one}" for one in sorted(tests)] or ["  -"]
+    return Answer(
+        lines=lines,
+        data={
+            "since": revision,
+            "changed": [_relative(path, root) for path in changed],
+            "resources": sorted(names),
+            "tests": sorted(tests),
+        },
+    )
+
+
+def _tests_in(suite: Suite, path: Path, root: Path) -> list[str]:
+    """The identities of the scenarios written in one feature file."""
+    from . import feature as feature_reader  # noqa: PLC0415
+
+    try:
+        parsed = feature_reader.read(path)
+    except Exception:  # noqa: BLE001 - a file that will not parse names no tests
+        return []
+    return [
+        record.identity(path, scenario.name, root)
+        for scenario in parsed.scenarios
+        if not scenario.is_phrase
+    ]
+
+
 def do_impact(
     name: str = "",
     *,
     tests_only: bool = False,
     resources_only: bool = False,
     depth: int = 0,
+    since: str = "",
     config: str | None = None,
 ) -> Answer:
     """What breaks if a named resource does. Reads the graph, not history."""
+    if since:
+        return do_impact_since(since, config=config)
     try:
         suite = _suite(config)
     except (ManifestError, SuiteError) as exc:
@@ -373,10 +523,9 @@ def _resources_tests_name(vocabulary: Any, suite: Suite) -> set[str]:
     named: set[str] = set()
     for feature in vocabulary.features:
         for scenario in feature.scenarios:
-            for line in scenario.lines:
-                for word in line.text.replace('"', " ").split():
-                    if word in suite.instances:
-                        named.add(word)
+            named |= footprint.of_scenario(suite, scenario, vocabulary.phrases).touches
+    for _, _, asks in core._functions(suite):
+        named |= footprint.of_function(suite, asks).touches
     return named
 
 
@@ -389,21 +538,24 @@ def _relative(path: Any, root: Path) -> str:
 
 
 def _tests_reaching(suite: Suite, names: set[str]) -> list[str]:
-    """Which tests name any of these resources. Read off the specs, before anything runs."""
+    """Which tests reach any of these resources. Read off the specs, before anything runs."""
     from .plugin import Loaded  # noqa: PLC0415
 
+    root = _root(suite)
     try:
-        vocabulary = Loaded(_root(suite))
+        vocabulary = Loaded(root)
     except Exception:  # noqa: BLE001 - impact answers about the graph even when the specs will not read
         return []
     out: list[str] = []
     for feature in vocabulary.features:
         for scenario in feature.scenarios:
-            if scenario.is_phrase:
+            if scenario.is_phrase or feature.path is None:
                 continue
-            words = {w for line in scenario.lines for w in line.text.replace('"', " ").split()}
-            if words & names:
-                out.append(f"{_relative(feature.path, _root(suite))}::{scenario.name}")
+            if footprint.of_scenario(suite, scenario, vocabulary.phrases).touches & names:
+                out.append(record.identity(feature.path, scenario.name, root))
+    for path, name, asks in core._functions(suite):
+        if footprint.of_function(suite, asks).touches & names:
+            out.append(record.identity(path, name, root))
     return sorted(out)
 
 
@@ -528,6 +680,168 @@ def do_import_run(
     return Answer(
         lines=[f"imported {len(imported.outcomes)} outcomes into {env} as {imported.id}"],
         data={"id": imported.id, "environment": env, "path": str(path), "outcomes": len(imported.outcomes)},
+    )
+
+
+def _suite_or_bare(config: str | None) -> Suite:
+    """The suite, or one holding only its manifest where the resources will not read yet.
+
+    `atf adopt` runs before there is anything to read: the file it writes is the one that would
+    have to load.
+    """
+    manifest = load(Path(config)) if config else load()
+    try:
+        return load_suite(manifest)
+    except SuiteError:
+        from .declare import ADAPTERS  # noqa: PLC0415
+
+        return Suite(manifest=manifest, adapters=dict(ADAPTERS))
+
+
+def do_adopt(env: str = "", *, out: str = "", force: bool = False, config: str | None = None) -> Answer:
+    """Write the declarations for what an environment already holds.
+
+    Reads the environment and writes nothing but the file it is asked for. Without `--out` the
+    source goes to stdout, so it can be looked at before it is kept.
+    """
+    from . import adopt as adopting  # noqa: PLC0415 - only this command reads a schema
+
+    # Before the environment is read: a destination that cannot be written to is a refusal that
+    # should cost nothing.
+    destination = Path(out) if out else None
+    if destination is not None and destination.exists() and not force and _declares_something(destination):
+        return fault(f"{out} already declares resources; --force overwrites it", USAGE)
+
+    try:
+        suite = _suite_or_bare(config)
+        ground = build_ground(suite, env)
+        written, tables = adopting.from_ground(ground)
+    except (ManifestError, SuiteError, GroundError) as exc:
+        return fault(str(exc), INVALID)
+    except adopting.AdoptError as exc:
+        return fault(str(exc), USAGE)
+
+    if destination is not None:
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(written, encoding="utf-8")
+        except OSError as exc:
+            return fault(str(exc), USAGE)
+        nameless = [one["table"] for one in tables if not one["unique_by"]]
+        lines = [f"wrote {out}: {len(tables)} kinds"]
+        if nameless:
+            lines.append(f"{len(nameless)} have no single unique column: {', '.join(sorted(nameless))}")
+        return Answer(lines=lines, data={"wrote": out, "tables": tables})
+
+    return Answer(lines=written.splitlines(), data={"source": written, "tables": tables})
+
+
+def _declares_something(path: Path) -> bool:
+    """Whether a file already holds a declaration, so overwriting it would lose one.
+
+    Read as Python, so the commented example `atf init` scaffolds is not mistaken for one.
+    """
+    import ast  # noqa: PLC0415 - only this reads a file to see whether it declares anything
+
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return True
+    return any(isinstance(node, ast.ClassDef) for node in ast.walk(tree))
+
+
+def do_verify_adapter(name: str, env: str = "", *, config: str | None = None) -> Answer:
+    """Put one resource's adapter through the contract, against a marked copy it then removes."""
+    from . import conformance  # noqa: PLC0415 - only this command writes to prove a contract
+
+    try:
+        suite = _suite(config)
+        ground = build_ground(suite, env)
+        resource = suite.resource(name)
+    except (ManifestError, SuiteError, GroundError) as exc:
+        return fault(str(exc), INVALID)
+
+    try:
+        found = conformance.verify(ground, resource)
+    except conformance.Unverifiable as exc:
+        return fault(str(exc), USAGE)
+
+    failed = [one for one in found if not one.held]
+    declaration = declaration_of(resource)
+    return Answer(
+        code=FAILED if failed else OK,
+        lines=[f"{declaration.system} — {declaration.kind} in {ground.config.name}", *(str(one) for one in found)],
+        data={
+            "system": declaration.system,
+            "kind": declaration.kind,
+            "environment": ground.config.name,
+            "held": not failed,
+            "findings": [{"what": one.what, "held": one.held, "why": one.why} for one in found],
+        },
+    )
+
+
+def do_why_red(test: str, env: str = "", *, config: str | None = None) -> Answer:
+    """When this test turned, and what the revision was on either side of the turn.
+
+    Reads history and nothing else. A test with one outcome has not turned, and says so.
+    """
+    try:
+        suite = _suite(config)
+    except (ManifestError, SuiteError) as exc:
+        return fault(str(exc), INVALID)
+
+    root = _root(suite)
+    environment = env or suite.manifest.default_env
+    seen = [
+        (run, outcome)
+        for run in record.runs_for(root, environment)
+        for outcome in run.outcomes
+        if outcome.test == test
+    ]
+    if not seen:
+        known = sorted({o.test for r in record.runs_for(root, environment) for o in r.outcomes})
+        near = [one for one in known if test.lower() in one.lower()][:3]
+        message = f"no test {test!r} in {environment}'s history"
+        if near:
+            message += "\n  did you mean:\n    " + "\n    ".join(near)
+        return fault(message, USAGE)
+
+    turns: list[tuple[Any, Any, Any, Any]] = []
+    for (earlier, was), (later, now) in zip(seen, seen[1:], strict=False):
+        if was.outcome is not now.outcome:
+            turns.append((earlier, was, later, now))
+
+    latest = seen[-1]
+    lines = [f"{test}", f"  {latest[1].outcome} in {latest[0].id} ({latest[0].revision or 'no revision'})"]
+    if not turns:
+        lines.append(f"  {len(seen)} runs, and it has never changed its mind")
+    for earlier, was, later, now in reversed(turns):
+        lines.append(
+            f"  {was.outcome} at {earlier.revision or earlier.id}, "
+            f"{now.outcome} since {later.revision or later.id}"
+        )
+    if latest[1].failed_at is not None and latest[1].failed_at.step:
+        lines.append(f"  {latest[1].failed_at.step}")
+    return Answer(
+        code=OK,
+        lines=lines,
+        data={
+            "test": test,
+            "environment": environment,
+            "outcome": str(latest[1].outcome),
+            "runs": len(seen),
+            "turns": [
+                {
+                    "from": str(was.outcome),
+                    "to": str(now.outcome),
+                    "at": earlier.revision,
+                    "since": later.revision,
+                    "run": later.id,
+                }
+                for earlier, was, later, now in turns
+            ],
+        },
     )
 
 

@@ -90,6 +90,28 @@ class Browser:
         if page is not None:
             page.close()
 
+    def capture(self, where: Any) -> list[str]:
+        """A screenshot of every open page, written under `where`, and the paths written.
+
+        Called when a test goes red. A page that will not answer contributes nothing.
+        """
+        from pathlib import Path  # noqa: PLC0415
+
+        directory = Path(where)
+        directory.mkdir(parents=True, exist_ok=True)
+        written: list[str] = []
+        for number, (url, page) in enumerate(sorted(self._pages.items())):
+            shot = directory / f"page-{number}.png"
+            try:
+                page.screenshot(path=str(shot), full_page=True)
+            except Exception:  # noqa: BLE001 - a page that will not answer leaves no picture
+                continue
+            written.append(str(shot))
+            note = directory / f"page-{number}.txt"
+            note.write_text(url, encoding="utf-8")
+            written.append(str(note))
+        return written
+
     def close(self) -> None:
         for page in self._pages.values():
             page.close()

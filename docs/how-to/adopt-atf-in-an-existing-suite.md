@@ -198,3 +198,24 @@ an environment. Run it after each declaration you move.
   fixtures you converted that tests were mutating.
 - [Run only what a change touched](run-only-what-a-change-touched.md) — the first thing the graph
   buys you once one directory is converted.
+
+## Start from the database rather than from a blank file
+
+Every declaration you would type is already a fact the schema holds: a table is a kind, a UNIQUE
+constraint is `unique_by`, a FOREIGN KEY is `depends_on`, and the column types are the annotations.
+
+```console
+$ atf init
+$ # point the manifest's `sql:` block at the database
+$ atf adopt --out resources.py
+wrote resources.py: 4 kinds
+1 have no single unique column: audit_entries
+```
+
+What comes out is ordinary Python you own. Delete the tables you do not test, set `scope` and
+`when_absent` — neither is a fact about a schema — and name the particular resources your tests ask
+for. A table with no single unique column is written with an empty `unique_by` and a docstring saying
+so, because recognition is a decision rather than something to guess at.
+
+`adopt` refuses to overwrite a file that already declares something; `--force` overwrites it.
+Without `--out` the source goes to stdout, so it can be read before it is kept.

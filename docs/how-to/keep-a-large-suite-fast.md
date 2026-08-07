@@ -17,6 +17,40 @@ resources carrying a `TodoList` field, and the tests that name those. The edges 
 selector, `atf impact` for asking before you run, and the trade-off: the graph knows what a test
 declares, not what it incidentally touches.
 
+## Run what cannot interfere at the same time
+
+```sh
+atf run --jobs auto
+```
+
+What each test touches is read off its sentences before anything runs: a `Given` reads the resource
+it names and everything that resource needs, a declared action writes the one it names, and asking
+for anything not `persistent` writes it, since the test makes it and takes it away again. Two tests
+where neither writes what the other touches cannot interfere, so they go at once.
+
+A sentence whose effect nothing declares — `When I run "…"`, a browser step, a step you wrote — is
+`opaque`. Those tests run alone, with nothing beside them. That is the honest half of the trade, and
+it is countable:
+
+```console
+$ atf run --explain
+70 tests
+  10 can run beside something else, in 1 sets
+  60 run alone
+        41  "I run "status local"" has an effect nothing declares
+        19  "I read "/api/catalogue" from the editor" has an effect nothing declares
+```
+
+That number is what declaring bought you. It goes up when a step says what it does:
+
+```python
+@when('I archive the {kind} "{name}"', effect=WRITES)
+def _archive(kind: str, name: str, atf): ...
+```
+
+For CI across several machines, `--shard 2/5` takes one slice of the same layout every other shard
+is slicing, and no conflict set is split across two of them.
+
 ## Persistent is the default, and that is why re-runs are cheap
 
 `scope="persistent"` outlives the process. The first run creates `primary` and `groceries`; every

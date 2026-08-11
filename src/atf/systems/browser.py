@@ -1,21 +1,19 @@
-"""`@browser(...)` — a page, opened and looked at by role and accessible name."""
+"""The `browser` driver, and `@page(...)` — a page opened in it and looked at by role."""
 
 from __future__ import annotations
 
 from typing import Any, TypedDict
 
-from ..declare import Unreachable, adapter, declaration_of, values_of
-from ..spi import Record
+from ..declare import Unreachable, adapter, driver
+from ..spi import Record, Resource
 
 
-@adapter("browser")
+@driver("browser")
 class Browser:
-    """One browser, and the pages opened in it."""
+    """One browser, and the pages opened in it.
 
-    class Options(TypedDict, total=False):
-        """What the decorator takes, per resource."""
-
-        url: str
+    A step asks for this by the name `browser`; the `page` adapter works through it.
+    """
 
     class Settings(TypedDict, total=False):
         """What an environment configures."""
@@ -47,48 +45,37 @@ class Browser:
             raise Unreachable(f"the browser would not start: {exc}") from exc
         return self._browser
 
-    def _url(self, resource: Any) -> str:
-        declaration = declaration_of(resource)
-        written = values_of(resource).get("path") or values_of(resource).get("url") or declaration.options.get("url")
+    def url(self, resource: Resource) -> str:
+        written = resource.values.get("path") or resource.values.get("url") or resource.options.get("url")
         if not written:
-            raise Unreachable(f'{declaration.kind}: no url — write it as @browser(url="...") or as a field')
+            raise Unreachable(f'{resource.kind}: no url — write it as a `path` field or @page(url="...")')
         text = str(written)
         return text if text.startswith("http") else f"{self.base_url}{text if text.startswith('/') else '/' + text}"
 
-    def page(self, resource: Any) -> Any:
-        """The open page for this resource, opening it if it is not open yet."""
-        url = self._url(resource)
-        if url not in self._pages:
-            page = self._start().new_page()
-            try:
-                page.goto(url, wait_until="domcontentloaded", timeout=10_000)
-            except Exception as exc:  # noqa: BLE001
-                raise Unreachable(f"{url} did not answer: {exc}") from exc
-            self._pages[url] = page
-        return self._pages[url]
+    def opened(self, resource: Resource) -> Any | None:
+        """The page already open for this resource, or nothing."""
+        return self._pages.get(self.url(resource))
 
-    def find(self, resource: Any) -> Record | None:
-        url = self._url(resource)
+    def open(self, resource: Resource) -> Any:
+        """Open a page at this resource's url, and answer it."""
+        url = self.url(resource)
+        page = self._start().new_page()
         try:
-            page = self.page(resource)
-        except Unreachable:
-            raise
-        return {"url": url, "path": values_of(resource).get("path", url), "title": page.title()}
+            page.goto(url, wait_until="domcontentloaded", timeout=10_000)
+        except Exception as exc:  # noqa: BLE001
+            raise Unreachable(f"{url} did not answer: {exc}") from exc
+        self._pages[url] = page
+        return page
 
-    def create(self, resource: Any) -> Record:
-        """A page is not created. Declaring one `when_absent="observe"` is how that is said."""
-        raise Unreachable(
-            f"{declaration_of(resource).kind}: a page is opened, never created — "
-            f'declare it `when_absent="observe"`'
-        )
-
-    def update(self, resource: Any, found: Record, changes: Record) -> Record:
-        raise Unreachable(f"{declaration_of(resource).kind}: a page is looked at, not written to")
-
-    def delete(self, resource: Any, found: Record) -> None:
-        page = self._pages.pop(self._url(resource), None)
+    def close(self, resource: Resource) -> None:
+        """Close the page open for this resource, if one is."""
+        page = self._pages.pop(self.url(resource), None)
         if page is not None:
             page.close()
+
+    def looking_at(self, resource: Resource) -> Any:
+        """The open page for this resource, opening it if it is not open yet."""
+        return self.opened(resource) or self.open(resource)
 
     def capture(self, where: Any) -> list[str]:
         """A screenshot of every open page, written under `where`, and the paths written.
@@ -112,7 +99,7 @@ class Browser:
             written.append(str(note))
         return written
 
-    def close(self) -> None:
+    def shut(self) -> None:
         for page in self._pages.values():
             page.close()
         self._pages.clear()
@@ -121,3 +108,33 @@ class Browser:
         if self._playwright is not None:
             self._playwright.stop()
         self._browser = self._playwright = None
+
+
+@adapter("page", driver="browser")
+class Page:
+    """A page open in the browser. Opening it is what makes it exist; closing it removes it."""
+
+    class Options(TypedDict, total=False):
+        """What the decorator takes, per resource."""
+
+        url: str
+
+    #: A page is the address it is open at. There is no second way to recognise one.
+    recognised_by = ("path",)
+
+    def __init__(self, browser: Browser) -> None:
+        self.browser = browser
+
+    def find(self, resource: Resource) -> Record | None:
+        page = self.browser.opened(resource)
+        if page is None:
+            return None
+        return {"url": self.browser.url(resource), "path": resource.values.get("path", ""), "title": page.title()}
+
+    def create(self, resource: Resource) -> Record:
+        page = self.browser.open(resource)
+        url = self.browser.url(resource)
+        return {"url": url, "path": resource.values.get("path", url), "title": page.title()}
+
+    def delete(self, resource: Resource, found: Record) -> None:
+        self.browser.close(resource)

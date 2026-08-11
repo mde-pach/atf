@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .record import Outcome, Run, TestOutcome, Where
+from .runs import Outcome, Run, TestOutcome, Where
 
 Writer = Callable[[Run, Path], None]
 Reader = Callable[[Path], Run]

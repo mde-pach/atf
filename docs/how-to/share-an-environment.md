@@ -26,7 +26,7 @@ else.
 everyone after that finds it. Nobody gets a second one.
 
 ```python
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 
@@ -62,7 +62,7 @@ Declare the fields that matter to a test, and the environment repairs itself.
 Where a test writes to a record, give that record its own lifetime and its own name.
 
 ```python
-@sqlite(table="guests", unique_by="nickname", scope="function")
+@sql.row(table="guests", unique_by="nickname", scope="function")
 class Guest:
     nickname: str
 
@@ -109,10 +109,10 @@ create and delete.
 environments:
   staging:
     mutable: true
-    sqlite: { path: $STAGING_DB }
+    sql: { path: $STAGING_DB }
 
   production:
-    sqlite: { path: $PRODUCTION_DB }
+    sql: { path: $PRODUCTION_DB }
 ```
 
 Against `production`, `atf make` refuses and exits `2`, no `scope="function"` resource is built or
@@ -124,7 +124,7 @@ nobody's test should create — a plan, a region, a feature flag — is declared
 [`when_absent="require"`](require-something-you-cannot-create.md):
 
 ```python
-@sqlite(table="plans", unique_by="code", when_absent="require")
+@sql.row(table="plans", unique_by="code", when_absent="require")
 class Plan:
     code: str
 ```
@@ -169,7 +169,7 @@ the resources `when_absent="require"` and let whoever owns the environment seed 
 reconciled the declared field for everyone. That is the mechanism working. Treat `resources.py` as
 shared configuration of a shared place, and review changes to it.
 
-**Exit `2`, `unreachable: sqlite`.** The environment did not answer. Nothing was tested, and it is not
+**Exit `2`, `unreachable: todo`.** The environment did not answer. Nothing was tested, and it is not
 a test failure — see the three states in [The ground](../reference/the-ground.md#environment).
 
 ## Where to go next

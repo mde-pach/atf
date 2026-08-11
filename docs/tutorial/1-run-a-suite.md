@@ -11,7 +11,7 @@ todo-suite/
   todo.py
   resources.py
   adapters/
-    sqlite.py
+    todo.py
   specs/
     showing-a-list.feature
 ```
@@ -20,39 +20,50 @@ todo-suite/
 is allowed to touch. `resources.py` declares the suite's **resources**: the things a test can ask
 for, each one a class with a name. Chapter 3 writes one; today you only use them.
 
-`adapters/sqlite.py` is this suite's own file, not part of ATF: it is what taught ATF to keep
-resources in a SQLite database, and
+`adapters/todo.py` is this suite's own file, not part of ATF: it is what taught ATF to make owners
+and lists **through the app's own API**, and
 [Teach ATF a new system](../how-to/teach-atf-a-new-system.md) is where you eventually read it. Use it
 today without opening it.
 
 ## The app
 
-The whole of `todo.py` — twenty-five lines, a SQLite file, two commands. It is yours to break.
+The whole of `todo.py` — a SQLite file, a small API, and two commands over it. It is yours to break.
 
 ```python
 import sqlite3, sys
 
-db = sqlite3.connect("todo.db")
-db.executescript("""
-  CREATE TABLE IF NOT EXISTS owners (id INTEGER PRIMARY KEY, email TEXT UNIQUE);
-  CREATE TABLE IF NOT EXISTS lists  (id INTEGER PRIMARY KEY, slug TEXT UNIQUE,
-                                     owner_id INTEGER REFERENCES owners(id));
-""")
 
-def add(email, slug):
-    owner = db.execute("SELECT id FROM owners WHERE email = ?", (email,)).fetchone()
-    if owner is None:
-        sys.exit(f"no owner {email}")
-    db.execute("INSERT INTO lists (slug, owner_id) VALUES (?, ?)", (slug, owner[0]))
-    db.commit()
+class Todo:
+    """The app's own API. A service layer, an ORM or a client would sit here instead."""
 
-def show(email):
-    rows = db.execute("""SELECT lists.slug FROM lists
-                         JOIN owners ON owners.id = lists.owner_id
-                         WHERE lists.slug = ?""", (email,)).fetchall()
-    print("\n".join(r[0] for r in rows) or "no lists")
+    def __init__(self, path="todo.db"):
+        self.db = sqlite3.connect(path)
+        self.db.row_factory = sqlite3.Row
+        self.db.executescript("""
+          CREATE TABLE IF NOT EXISTS owners (id INTEGER PRIMARY KEY, email TEXT UNIQUE);
+          CREATE TABLE IF NOT EXISTS lists  (id INTEGER PRIMARY KEY, slug TEXT UNIQUE,
+                                             owner_id INTEGER REFERENCES owners(id));
+        """)
 
-{"add": add, "show": show}[sys.argv[1]](*sys.argv[2:])
+    def find_owner(self, email):
+        row = self.db.execute("SELECT * FROM owners WHERE email = ?", (email,)).fetchone()
+        return dict(row) if row else None
+
+    def create_list(self, owner_id, slug):
+        self.db.execute("INSERT INTO lists (slug, owner_id) VALUES (?, ?)", (slug, owner_id))
+        self.db.commit()
+
+    def lists_of(self, email):
+        rows = self.db.execute("""SELECT lists.slug FROM lists
+                                  JOIN owners ON owners.id = lists.owner_id
+                                  WHERE lists.slug = ?""", (email,)).fetchall()
+        return [r["slug"] for r in rows]
+
+
+def show(app, email):
+    print("\n".join(app.lists_of(email)) or "no lists")
+
+{"add": add, "show": show}[sys.argv[1]](Todo(), *sys.argv[2:])
 ```
 
 There is a bug in it. Find it by running the suite rather than by reading.
@@ -81,14 +92,13 @@ Four sentences, in the order every test goes: arrange, act, assert. The two `The
 ```yaml
 resources: [./resources.py]
 specs: ./specs
-extensions: [./adapters/sqlite.py]
 default_env: local
 
 environments:
   local:
     mutable: true
-    sqlite:  { path: ./todo.db }
-    command: { prefix: "python todo.py" }
+    todo:    { path: ./todo.db }
+    shell: { prefix: "python todo.py" }
 ```
 
 `extensions:` is the line that loads the adapter. `local` is an **environment**: a place the suite's

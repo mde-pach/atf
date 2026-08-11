@@ -15,7 +15,7 @@ Feature: taking on a system that is already there
     And the result field "output" contains "already declares resources"
     And "resources.py" contains "class Notebook"
 
-  @namespace
+  @run @namespace
   Scenario: a run can be told the token its factories build names from
     Given the workspace "scaffolded"
     When I run "run --namespace pr-1234"

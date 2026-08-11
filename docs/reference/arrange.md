@@ -8,12 +8,12 @@ from typing import Self
 
 from faker import Faker
 
-from adapters.sqlite import sqlite
+from adapters.todo import todo
 
 faker = Faker()
 
 
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 
@@ -22,7 +22,7 @@ class Owner:
         return cls(email=faker.email())
 
 
-@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
+@todo.list(depends_on=[Owner])
 class TodoList:
     slug: str
 
@@ -31,9 +31,10 @@ primary   = Owner(email="primary@example.com")
 groceries = TodoList(owner=primary, slug="groceries")
 ```
 
-`sqlite` is not part of ATF. It is the worked example of an adapter, written once and living in the
-suite's own `adapters/sqlite.py`, registered through the manifest's `extensions:` key. A decorator
-imported from your own suite is the normal case; the systems ATF ships are listed under
+`todo` is not part of ATF. It is the worked example of a [driver](#driver) and its adapters, written
+once and living in the suite's own `adapters/todo.py`, registered through the manifest's
+`extensions:` key — and it goes through the application's own API rather than behind its back. A
+decorator imported from your own suite is the normal case; the systems ATF ships are listed under
 [system](#system).
 
 ## Resource {#resource}
@@ -71,7 +72,7 @@ A resource says what must exist before it with `depends_on` — `TodoList` above
 scope and otherwise by the [factory](#factory). A particular resource means that one.
 
 ```python
-@sqlite(table="lists", unique_by="slug", depends_on=[Owner])   # any owner
+@todo.list(depends_on=[Owner])   # any owner
 class TodoList:
     slug: str
 
@@ -88,7 +89,7 @@ is the declaration — `owner=primary` above says which owner `groceries` needs,
 slug and a rendered body has nowhere to put an `owner`, and still needs one:
 
 ```python
-@sqlite(table="reports", unique_by="slug", depends_on=[Owner])
+@sql.row(table="reports", unique_by="slug", depends_on=[Owner])
 class Report:
     slug: str
     body: str
@@ -193,32 +194,106 @@ types can be asked for without naming an instance.
 
 ## System {#system}
 
-A system is a kind of place resources live. Every resource belongs to exactly one, and the decorator
-is how it says which. Each system ships with its [adapter](#adapter) — the code that finds, creates,
-updates and deletes there — and declares its own typed configuration. **Options** are written on the
-decorator and vary per resource; **settings** are written in `atf.yaml` and vary per environment.
+A system is a kind of thing a resource can be. Every resource belongs to exactly one, and the
+decorator is how it says which. Behind each system is an [adapter](#adapter) — the code that finds,
+creates, updates and deletes that kind of thing — and behind the adapter is one or more
+[drivers](#driver): the machinery it works through.
 
-ATF ships four systems — the ones it needs to test itself.
+**A system is named after the thing, never after the technology, and it is reached through the
+[driver](#driver) it is made over.** `filesystem.file`, `filesystem.directory` and
+`filesystem.tree` are three systems over one driver, because a file and a directory are not the
+same thing and do not answer the same questions — and the declaration names both at once:
 
-`@command`
-:   Arranges a command-line invocation. Its setting is `prefix`; it takes no options of its own.
+```python
+from atf import filesystem, sql
 
-`@browser(…)`
-:   Arranges a page, opened and looked at. Its settings are `base_url` and `headless`; its option is
-    `url`.
+@filesystem.file()
+class Config:
+    path: str
 
-`@filesystem(…)`
-:   Arranges files and directories. Its setting is `root`; its option is `path`.
+@todo.owner()
+class Owner:
+    email: str
+```
 
-`@process(…)`
-:   Arranges a running process. Its setting is `cwd`; its option is `command`.
+A suite's own driver works the same way, so `@todo.owner(...)` over an application's API and ATF's
+`@sql.row(...)` over a database can both exist in one suite, and neither has to pick a worse name.
 
-`rest` ships later, in the same shape: a decorator carrying its own options, a `rest:` block in each
-environment, an adapter behind it. Everything else is an adapter somebody wrote, and nothing binds
-ATF to one database. `@sqlite`, used throughout this documentation, is the worked example: it
-arranges rows in a table, takes `path` as a setting and `table` as an option, and lives in the
-suite's own `adapters/sqlite.py`. Its `table` defaults to the class name, so `TodoList` reads and
-writes `todolist`; write the option only to override that.
+`@filesystem.file(…)`
+:   One file, and the text in it. Its option is `path`; its driver is `filesystem`.
+
+`@filesystem.directory(…)`
+:   A directory, and nothing about what is inside it. Removed at teardown only when empty. Its
+    option is `path`; its driver is `filesystem`.
+
+`@filesystem.tree(…)`
+:   A directory whose whole contents are declared, as a `files` field mapping a path to its text. A
+    tree owns what is under it, and teardown removes the lot. Its driver is `filesystem`.
+
+`@browser.page(…)`
+:   A page open in a browser. Opening it is what makes it exist. Its option is `url`; its driver is
+    `browser`.
+
+`@shell.process(…)`
+:   A running process. Its options are `command` and `port`; its driver is `process`.
+
+`@http.record(…)`
+:   A record an HTTP API owns. Its options are `path`, `list_filter` and the rest listed in
+    [extending ATF](extending-atf.md); its driver is `http`.
+
+`@sql.row(…)`
+:   A row in a table, over any DB-API module. Its options are `table`, `id_field` and
+    `parent_suffix`; its driver is `sql`.
+
+Everything else is an adapter somebody wrote. **`@sql.row` is the bottom of the stack, not the
+normal case** — reach for it where a thing has no interface of its own to go through. Where it does,
+write an adapter over that interface: `@todo.owner` and `@todo.list`, used throughout this
+documentation, go through `todo.Todo`, the same API the product's own command line uses, and live in
+the suite's own `adapters/todo.py`.
+
+**A system has no settings of its own.** An adapter carries `Options`, written on the decorator and
+varying per resource. Everything that varies per environment — a database file, a base URL, a root
+directory — belongs to the [driver](#driver) it works through.
+
+## Driver {#driver}
+
+A driver is the machinery an adapter works through: a connection, a browser, an HTTP client, a
+shell. It is built once per environment from its own block in `atf.yaml`, and it is the only place
+`Settings` live.
+
+```yaml
+environments:
+  local:
+    filesystem: { root: ./tmp }         # one block, read by file, directory and tree
+    sqlite:     { path: ./todo.db }
+```
+
+An adapter asks for the drivers it needs **by parameter name**, the way a test asks for a fixture:
+
+```python
+@adapter("row", driver="sqlite")
+class Row:
+    def __init__(self, sqlite: Connection):
+        self.db = sqlite.db
+```
+
+Several drivers is several parameters; there is no list to keep in step. A driver an adapter asks
+for that the environment does not configure fails at load, naming both.
+
+**A driver is also a fixture.** A step and a pytest function ask for one by the same name:
+
+```python
+@when('I click the {role} "{name}"')
+def _(role, name, browser): ...
+
+def test_x(shell):
+    assert shell("todo list")["exit_code"] == 0
+```
+
+`shell` is the driver behind `When I run "…"`, and nothing is declared as a resource for it: running
+a command line is something a test *does*, and what it produced lands in a slot.
+
+ATF ships the `filesystem`, `browser`, `shell`, `sql` and `http` drivers.
 
 Every decorator also takes the options that belong to ATF rather than to the system:
 
@@ -232,19 +307,37 @@ Every decorator also takes the options that belong to ATF rather than to the sys
 `scope`
 :   How long the resource lives. `"persistent"` unless stated. See [scope](#scope).
 
-`actions`
-:   Domain verbs the resource answers to. No default. Defined in [act](act.md#action).
+There is no `actions` option. A domain verb is a [phrase](act.md#domain-verb) over the `becomes`
+sentence, and every declared field is held to its declaration with no exception.
 
-**In CI** — a resource whose system has no settings in the chosen environment stops the run at
-start-up, naming the system and the environment rather than failing inside the first test.
+**In CI** — a resource whose driver has no settings in the chosen environment stops the run at
+start-up, naming the adapter, the driver and the environment rather than failing inside the first
+test.
 
-**In the editor** — resources are grouped by system, and each system shows the settings in force for
+**In the editor** — resources are grouped by system, and each driver shows the settings in force for
 the environment you are on, beside the options each resource carries.
 
-**To an agent** — systems are listed with their resources, their settings and their option types, so
-an agent can tell which sentences are available before writing one.
+**To an agent** — systems are listed with their resources and their option types, and drivers with
+their settings, so an agent can tell which sentences are available before writing one.
 
 ## Recognition {#recognition}
+
+**An adapter over something with only one identity says so itself, and a declaration writes
+nothing.** A file is its path; there was never a second way to put it. So `@filesystem.file()`,
+`@filesystem.directory()`, `@filesystem.tree()` and `@browser.page()` take no `unique_by`, and
+writing one is refused — it can only repeat what the adapter already knows.
+
+`unique_by` is for an adapter that genuinely cannot know: a row could be recognised by any column,
+a record by any field. `@todo.owner()` is the suite's answer to a
+question the adapter has no way to settle.
+
+An adapter fixes its own by declaring `recognised_by` on the class:
+
+```python
+@adapter("file", driver="filesystem")
+class File:
+    recognised_by = ("path",)
+```
 
 `unique_by` names the field that says which resource this is. `Owner` is recognised by `email`, so
 two owners with the same email are the same owner. That is all `unique_by` asserts.
@@ -253,7 +346,7 @@ Where one field does not tell two resources apart, write several. A tenant recog
 *within a region* says so, and two regions may then each have an `acme`.
 
 ```python
-@sqlite(table="tenants", unique_by=("region", "code"))
+@sql.row(table="tenants", unique_by=("region", "code"))
 class Tenant:
     region: str
     code: str
@@ -352,8 +445,8 @@ environment is in a state it wants to change.
 :   Does nothing. The resource is read, never made. Use it for things you can only look at.
 
 ```python
-@sqlite(table="plans", unique_by="code", when_absent="require")   # the environment's job
-@browser(when_absent="observe")                    # something to look at
+@sql.row(table="plans", unique_by="code", when_absent="require")   # the environment's job
+@browser.page(when_absent="observe")                       # something to look at
 ```
 
 The default is named after `atf make`, which does the same thing from outside a run. It is not
@@ -389,7 +482,7 @@ trace.
 Scope is how long a resource lives once it has been made.
 
 ```python
-@sqlite(table="guests", unique_by="nickname", scope="function")
+@sql.row(table="guests", unique_by="nickname", scope="function")
 ```
 
 `scope="persistent"`
@@ -469,38 +562,83 @@ unvaried one.
 
 **To an agent** — the patch is served as data, separate from the base declaration.
 
+## Arranging first {#arranging-first}
+
+**Every `Given` in a scenario comes before every `When` and `Then`.** A scenario that goes back to
+arrange something after it has begun to act is refused at collection, with the sentence that
+arranges and the sentence it came after.
+
+```gherkin
+Scenario: refused
+  Given the task "laundry"
+  When the task "laundry" field "done" becomes "1"
+  Given the report "weekly"                          # ← refused here
+  Then the task "laundry" field "done" is "1"
+```
+
+Arranging brings a resource and its whole [lineage](#lineage) back to what the declaration says. The
+`Given` above reaches `laundry` through the report's lineage, [reconciles](#reconciliation) it, and
+writes `done` back to `0` — so the `Then` claims on a value nothing in the scenario put there, and
+the scenario fails for a reason nothing in it names.
+
+Say them together instead, in any of the forms Gherkin already has:
+
+```gherkin
+  Given the task "laundry"
+  And the report "weekly"
+```
+
+```gherkin
+  Given the task "laundry"
+  Given the report "weekly"
+```
+
+The rule is checked after [phrases](../how-to/teach-atf-a-sentence.md) are expanded, so a phrase that
+arranges is held to it wherever it is said.
+
+**In CI** — the run stops before a single test body executes, naming the file, the scenario and both
+sentences.
+
+**In the editor** — the composer stops offering `Given`s once a `When` has been taken.
+
+**To an agent** — a scenario that breaks the rule comes back refused, with both sentences named, so
+an agent can move the `Given` without being told the rule first.
+
 ## Adapter {#adapter}
 
-An adapter teaches ATF a system. It is the only place where ATF touches anything.
+An adapter teaches ATF one kind of thing. It is the only place where ATF touches anything.
 
-**One adapter instance is built per system, per environment**, constructed with that environment's
-settings and holding its own connection on `self`. There is no context object and no `connect` step;
-if the adapter exists, it is already pointed somewhere.
+**One adapter instance is built per system, per environment**, handed the [drivers](#driver) it
+asked for. It holds no settings and opens no connections; the driver did that.
 
 ```python
-@adapter("sqlite")
-class Sqlite:
-    class Options(TypedDict):       # what the decorator takes, per resource
-        table: str                  # named on the decorator, never guessed
-
+@driver("sqlite")
+class Connection:
     class Settings(TypedDict):      # what an environment configures
         path: str
 
     def __init__(self, settings: Settings):
         self.db = sqlite3.connect(settings["path"])
 
-    def find(self, resource) -> Record | None: ...
-    def create(self, resource) -> Record: ...
-    def update(self, resource, found, changes) -> Record: ...
-    def delete(self, resource, found) -> None: ...
 
-    def act(self, resource, found, action) -> Any: ...   # optional
+@adapter("row", driver="sqlite")
+class Row:
+    class Options(TypedDict):       # what the decorator takes, per resource
+        table: str                  # named on the decorator, never guessed
+
+    def __init__(self, sqlite: Connection):   # the driver, by parameter name
+        self.db = sqlite.db
+
+    def find(self, resource) -> Record | None: ...
+
+    def create(self, resource) -> Record: ...            # optional
+    def update(self, resource, found, changes) -> Record: ...   # optional
+    def delete(self, resource, found) -> None: ...       # optional
     def browse(self, resource) -> list[Record]: ...      # optional
 ```
 
-Declaring an adapter ships a decorator with it: `@adapter("redis")` gives the suite `@redis(...)`.
-Its `Options` type is what that decorator accepts, its `Settings` type is what a `redis:` block in
-`atf.yaml` accepts, and both are checked before a run rather than inside one.
+Declaring an adapter ships a decorator with it: `@adapter("redis")` gives the suite `@redis(...)`,
+and its `Options` type is what that decorator accepts, checked before a run rather than inside one.
 
 Every method takes the same first argument. `resource` is the declared resource, resolved. It
 carries `.name`, the instance's name — `groceries`; `.kind`, the class's name — `TodoList`;
@@ -508,7 +646,10 @@ carries `.name`, the instance's name — `groceries`; `.kind`, the class's name 
 recognised fields and their values, which is what `find` looks up on; and `.values`, every declared
 field, with [lineage](#lineage) already resolved to what the parents were made as.
 
-Four methods are required.
+**`find` is the only required method.** Leaving `create`, `update` or `delete` out says this kind of
+thing is never made, changed or removed — a page is opened and looked at, a table another team owns
+is read and never written. Asking for a missing one raises `atf.Unreachable` naming the kind and the
+method, instead of an `AttributeError`.
 
 `find(resource)`
 :   Returns the record, or `None` when it is absent, and raises `atf.Unreachable` when the system
@@ -531,12 +672,13 @@ where that diff comes from. The four returns cover the whole of what an
 `atf.Unreachable` is `unreachable`. Let a connection error out — an adapter that swallows it and
 returns `None` turns an unreachable database into a suite that tries to create everything in it.
 
-Two methods are optional. `act` unlocks `When I complete the task "laundry"` and the `actions=`
-option on the decorator. `browse` unlocks `When I list every todo_list` and
-`Then the environment has 2 todo_list`.
+`browse` is optional, and unlocks `When I list every todo_list` and
+`Then the environment has 2 todo_list`. An adapter without it can answer questions about a resource
+you named and none about the set of them.
 
-A system without `act` can still be arranged and claimed about; it has no verbs of its own. One
-without `browse` can answer questions about a resource you named and none about the set of them.
+There is no `act`. Changing a field mid-test goes through `update` — so
+[`When the task "laundry" field "done" becomes "1"`](act.md#action) works against every adapter that
+implements it, with nothing extra to write.
 
 **In CI** — an adapter that raises `atf.Unreachable` makes the resource `unreachable`, and the tests
 needing it fail rather than passing quietly on nothing.
@@ -549,8 +691,8 @@ that list is served, so an agent writes what the suite can actually run.
 
 ## Where to go next
 
-- [Act](act.md) defines what a test does once its resources exist, including the actions declared
-  with `actions=` above.
+- [Act](act.md) defines what a test does once its resources exist, including changing a field
+  mid-test and the phrase that gives that change a domain verb.
 - [The ground](the-ground.md) defines the environments these resources live in, and the `atf.yaml`
   settings each system reads.
 - [Extending ATF](extending-atf.md) writes an adapter out in full, alongside the steps and claims

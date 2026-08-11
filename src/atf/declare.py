@@ -18,16 +18,6 @@ class Unreachable(Exception):
     """
 
 
-@dataclass(frozen=True)
-class Update:
-    """A change an action makes to a resource: `actions={"complete": Update(done=True)}`."""
-
-    values: dict[str, Any]
-
-    def __init__(self, **values: Any) -> None:
-        object.__setattr__(self, "values", values)
-
-
 class DeclarationError(Exception):
     """Raised when a declaration cannot be read as one. Always at load, never inside a test."""
 
@@ -43,7 +33,6 @@ class Declaration:
     depends_on: tuple[Any, ...] = ()
     when_absent: str = "make"
     scope: str = "persistent"
-    actions: dict[str, Update] = field(default_factory=dict)
     module: str = ""
     # The class's own annotations, as written. They are the shape a reader sees and nothing more —
     # no dependency is read from them, which is the whole point of `depends_on`.
@@ -125,7 +114,28 @@ def _init(self: Any, **values: Any) -> None:
         values=values,
         depends_on=[v for v in values.values() if is_resource(v)] + list(depends_on),
     )
+    _check_declared(self, values)
     _check_recognisable(self, values)
+
+
+def _check_declared(self: Any, values: dict[str, Any]) -> None:
+    """Every value is a field the kind declares, or a parent. Anything else is refused here.
+
+    A field holding another resource is exempt. That is the foreign-key case, and it is written on
+    the instance while the class annotates only its own scalars: `TodoList(owner=primary, slug="…")`.
+    """
+    declaration = declaration_of(self)
+    unknown = sorted(
+        name
+        for name, value in values.items()
+        if name not in declaration.fields and not is_resource(value)
+    )
+    if unknown:
+        declared = ", ".join(declaration.fields) or "no fields at all"
+        raise DeclarationError(
+            f"{declaration.kind} declares {declared}, and this one also sets {', '.join(unknown)}. "
+            f"A resource carries the fields its class declares."
+        )
 
 
 def _check_recognisable(self: Any, values: dict[str, Any]) -> None:
@@ -165,6 +175,34 @@ def _bind(cls: type, name: str, value: Any) -> None:
     setattr(cls, name, value)
 
 
+def _fields(cls: type) -> dict[str, Any]:
+    """The shape: every field this class annotates, and every one it inherits.
+
+    A base class holding what two kinds share contributes its annotations to both.
+    """
+    found: dict[str, Any] = {}
+    for ancestor in reversed(cls.__mro__):
+        found.update(vars(ancestor).get("__annotations__", {}))
+    return found
+
+
+def _recognised(cls: type, system: str, unique_by: str | tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    """What recognises this resource: the adapter's own answer, or the one the suite wrote.
+
+    An adapter over something that can only be recognised one way says so once, and a declaration
+    then says nothing — a file is its path, and there was never a second way to put it.
+    """
+    fixed = getattr(ADAPTERS.get(system), "recognised_by", None)
+    if fixed is not None:
+        if unique_by:
+            raise DeclarationError(
+                f"{cls.__name__}: the {system!r} adapter recognises by {', '.join(fixed)}, so "
+                f"`unique_by` says nothing it does not already know — remove it"
+            )
+        return tuple(fixed)
+    return _recognition(cls, unique_by)
+
+
 def _recognition(cls: type, unique_by: str | tuple[str, ...] | list[str]) -> tuple[str, ...]:
     """`unique_by` as a tuple of field names, whether one was written or several.
 
@@ -188,7 +226,6 @@ def resource(
     depends_on: list[Any] | tuple[Any, ...] | None = None,
     when_absent: str = "make",
     scope: str = "persistent",
-    actions: dict[str, Update] | None = None,
     _system: str = "",
     _options: dict[str, Any] | None = None,
 ):
@@ -204,7 +241,8 @@ def resource(
             )
         if scope not in SCOPES:
             raise DeclarationError(f"{cls.__name__}: scope is {scope!r}; it is one of {', '.join(SCOPES)}")
-        recognised = _recognition(cls, unique_by)
+        recognised = _recognised(cls, _system, unique_by)
+        fields = _fields(cls)
         for entry in depends_on or ():
             if not (isinstance(entry, type) and is_declared(entry)) and not is_resource(entry):
                 raise DeclarationError(
@@ -223,9 +261,8 @@ def resource(
                 depends_on=tuple(depends_on or ()),
                 when_absent=when_absent,
                 scope=scope,
-                actions=dict(actions or {}),
                 module=cls.__module__,
-                fields=dict(vars(cls).get("__annotations__", {})),
+                fields=fields,
             ),
         )
         _bind(cls, "__init__", _init)
@@ -249,7 +286,6 @@ def system_decorator(name: str):
         depends_on: list[Any] | tuple[Any, ...] | None = None,
         when_absent: str = "make",
         scope: str = "persistent",
-        actions: dict[str, Update] | None = None,
         **options: Any,
     ):
         return resource(
@@ -257,7 +293,6 @@ def system_decorator(name: str):
             depends_on=depends_on,
             when_absent=when_absent,
             scope=scope,
-            actions=actions,
             _system=name,
             _options=options,
         )
@@ -270,27 +305,97 @@ def system_decorator(name: str):
 ADAPTERS: dict[str, type] = {}
 
 
-def adapter(name: str):
+DRIVERS: dict[str, type] = {}
+
+
+def driver(name: str):
+    """Register a driver: the machinery an adapter works through, and a step can ask for by name.
+
+    A driver is built once per environment from the `atf.yaml` block of its own name, and is what
+    holds a connection, a browser or a shell.
+    """
+
+    def decorate(cls: type) -> type:
+        seen = DRIVERS.get(name)
+        if seen is not None and (seen.__module__, seen.__qualname__) != (cls.__module__, cls.__qualname__):
+            raise DeclarationError(
+                f"two drivers are called {name!r}: {seen.__module__}.{seen.__qualname__} "
+                f"and {cls.__module__}.{cls.__qualname__}"
+            )
+        DRIVERS[name] = cls
+        _bind(cls, "__atf_driver__", name)
+        # The driver is bound into its own module under its name, so `from adapters.sqlite import
+        # sqlite` reaches it and every adapter over it is an attribute: `@sqlite.row(...)`.
+        module = sys.modules.get(cls.__module__)
+        if module is not None and not hasattr(module, name):
+            setattr(module, name, cls)
+        return cls
+
+    return decorate
+
+
+#: Parameter names an adapter's `__init__` may take that are not drivers.
+RESERVED = ("self", "args", "kwargs")
+
+
+def _parameters(cls: type) -> tuple[str, ...]:
+    import inspect  # noqa: PLC0415
+
+    try:
+        return tuple(inspect.signature(cls.__init__).parameters)
+    except (TypeError, ValueError):
+        return ()
+
+
+def drivers_wanted(cls: type) -> tuple[str, ...]:
+    """The drivers a class asks for, read off its `__init__` parameters by name."""
+    return tuple(name for name in _parameters(cls) if name not in RESERVED)
+
+
+
+def adapter(name: str, *, driver: str = ""):
     """Register an adapter class, and ship the `@<name>(...)` decorator that goes with it.
+
+    `driver` is the machinery this kind of thing is made through. It namespaces the registration —
+    `@adapter("row", driver="sqlite")` registers `sqlite.row` — and hangs the decorator off the
+    driver, so a declaration says `@sqlite.row(...)` and names both at once.
 
     The decorator is bound into the module where the adapter is written, so that
     `from adapters.sqlite import sqlite` finds it — which is how every example in the documentation
     imports one. `atf.system(name)` returns the same object for anyone who would rather be explicit.
+
+    An adapter takes its drivers as `__init__` parameters, by name. It carries `Options` — what the
+    decorator accepts, per resource — and no settings of its own; those belong to a driver.
     """
 
     def decorate(cls: type) -> type:
+        registered = f"{driver}.{name}" if driver else name
         # Compared by where it is written, so re-importing one file is a reload and not a clash.
-        seen = ADAPTERS.get(name)
+        seen = ADAPTERS.get(registered)
         if seen is not None and (seen.__module__, seen.__qualname__) != (cls.__module__, cls.__qualname__):
             raise DeclarationError(
-                f"two adapters are called {name!r}: {seen.__module__}.{seen.__qualname__} "
-                f"and {cls.__module__}.{cls.__qualname__}"
+                f"two adapters are registered as {registered!r}: "
+                f"{seen.__module__}.{seen.__qualname__} and {cls.__module__}.{cls.__qualname__}"
             )
-        ADAPTERS[name] = cls
-        _bind(cls, "__atf_system__", name)
-        module = sys.modules.get(cls.__module__)
-        if module is not None and not hasattr(module, name):
-            setattr(module, name, system_decorator(name))
+        ADAPTERS[registered] = cls
+        _bind(cls, "__atf_system__", registered)
+        if driver:
+            over = DRIVERS.get(driver)
+            if over is None:
+                raise DeclarationError(
+                    f"{cls.__qualname__} is an adapter over the {driver!r} driver, and no "
+                    f"`@driver({driver!r})` is registered above it"
+                )
+            if name in vars(over):
+                raise DeclarationError(
+                    f"the {driver!r} driver already has a {name!r}, so the {registered!r} adapter "
+                    f"cannot hang its decorator there — rename one of them"
+                )
+            _bind(over, name, staticmethod(system_decorator(registered)))
+        else:
+            module = sys.modules.get(cls.__module__)
+            if module is not None and not hasattr(module, name):
+                setattr(module, name, system_decorator(registered))
         return cls
 
     return decorate

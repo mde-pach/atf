@@ -15,6 +15,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 
+# pytest's own exit codes. A scenario here shells out to `atf run`, whose whole output is captured
+# into the result the scenario claims on and printed again when it goes red — so the outer verdict
+# is read from the exit code, and never by looking for a summary line in the output.
+NO_TESTS_COLLECTED = 5
+USAGE_ERROR = 4
+
 
 @dataclass(frozen=True)
 class Mutation:
@@ -107,7 +113,7 @@ MUTATIONS = (
     Mutation(
         what="a pytest function in the tests list",
         module="core.py",
-        find='        out.append(entry(record.identity(path, name, root), name, "function", [], reach))',
+        find='        out.append(entry(runs.identity(path, name, root), name, "function", [], reach))',
         replace="        pass",
         caught_by="tests/specs/the-editor.feature::"
         "a scenario and a pytest function are listed the same way",
@@ -121,12 +127,12 @@ MUTATIONS = (
         "a format the suite registered is a format --report accepts",
     ),
     Mutation(
-        what="a field a declared action writes",
-        module="reconcile.py",
-        find="    return {field for action in declaration_of(resource).actions.values() for field in action.values}",
-        replace="    return set()",
-        caught_by="tests/specs/making-resources.feature::"
-        "a field a declared action writes is not reverted by the next pass",
+        what="arranging after acting",
+        module="steps.py",
+        find="        elif sentence.keyword == GIVEN and acted is not None:",
+        replace="        elif False:",
+        caught_by="tests/specs/refusing.feature::"
+        "a scenario that arranges after it has acted is refused before anything runs",
     ),
     Mutation(
         what="drift reporting a record that moved",
@@ -225,7 +231,10 @@ def check(mutation: Mutation) -> str | None:
     """The complaint this mutation earned, or `None` where the suite caught it."""
     with tempfile.TemporaryDirectory() as workspace:
         result = run(mutation.caught_by, mutate(mutation, Path(workspace)))
-    if "no tests ran" in result.stdout or "not found" in result.stdout + result.stderr:
+    named_nothing = result.returncode == NO_TESTS_COLLECTED or (
+        result.returncode == USAGE_ERROR and "not found" in result.stdout + result.stderr
+    )
+    if named_nothing:
         return f"{mutation.caught_by} names no scenario, so nothing was checked"
     if result.returncode == 0:
         return f"the suite stayed green with {mutation.what} broken"

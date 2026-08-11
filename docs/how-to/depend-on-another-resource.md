@@ -8,15 +8,15 @@ Write it in `depends_on`.
 
 ```python
 # resources.py
-from adapters.sqlite import sqlite
+from adapters.todo import todo
 
 
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 
 
-@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
+@todo.list(depends_on=[Owner])
 class TodoList:
     slug: str
 
@@ -41,7 +41,7 @@ A report written per owner might store only its own slug and a rendered body. Th
 field to pass, and it still needs an owner:
 
 ```python
-@sqlite(table="reports", unique_by="slug", depends_on=[Owner])
+@sql.row(table="reports", unique_by="slug", depends_on=[Owner])
 class Report:
     slug: str
     body: str
@@ -73,7 +73,7 @@ Depth does not change anything. A `Task` that depends on a `TodoList` gives a th
 from one name.
 
 ```python
-@sqlite(table="tasks", unique_by="slug", depends_on=[TodoList])
+@sql.row(table="tasks", unique_by="slug", depends_on=[TodoList])
 class Task:
     slug: str
 
@@ -106,7 +106,7 @@ no edge.
 **Two parents of the same kind.** Pass both. Each value that is a resource is its own edge.
 
 ```python
-@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
+@todo.list(depends_on=[Owner])
 class TodoList:
     slug: str
 

@@ -9,13 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import core, footprint, graph, reconcile, record, reports, scaffold
+from . import core, footprint, graph, reconcile, reports, runs, scaffold
 from .declare import declaration_of, name_of
 from .environment import GroundError, build_ground
 from .loader import Suite, SuiteError, load_suite
 from .manifest import ManifestError, load
-from .record import Verdict
 from .reports import ReportError
+from .runs import Verdict
 from .spi import Did, State
 
 OK, FAILED, NEVER_STARTED = 0, 1, 2
@@ -382,7 +382,7 @@ def _tests_in(suite: Suite, path: Path, root: Path) -> list[str]:
     except Exception:  # noqa: BLE001 - a file that will not parse names no tests
         return []
     return [
-        record.identity(path, scenario.name, root)
+        runs.identity(path, scenario.name, root)
         for scenario in parsed.scenarios
         if not scenario.is_phrase
     ]
@@ -552,10 +552,10 @@ def _tests_reaching(suite: Suite, names: set[str]) -> list[str]:
             if scenario.is_phrase or feature.path is None:
                 continue
             if footprint.of_scenario(suite, scenario, vocabulary.phrases).touches & names:
-                out.append(record.identity(feature.path, scenario.name, root))
+                out.append(runs.identity(feature.path, scenario.name, root))
     for path, name, asks in core._functions(suite):
         if footprint.of_function(suite, asks).touches & names:
-            out.append(record.identity(path, name, root))
+            out.append(runs.identity(path, name, root))
     return sorted(out)
 
 
@@ -669,14 +669,14 @@ def do_import_run(
     except ReportError as exc:
         return fault(str(exc), USAGE)
 
-    imported.id = record.new_id()
+    imported.id = runs.new_id()
     imported.environment = env
     imported.source = "imported"
     imported.label = label
     imported.revision = revision or imported.revision
-    imported.started = imported.started or record.now()
+    imported.started = imported.started or runs.now()
     imported.finished = imported.finished or imported.started
-    path = record.save(_root(suite), imported)
+    path = runs.save(_root(suite), imported)
     return Answer(
         lines=[f"imported {len(imported.outcomes)} outcomes into {env} as {imported.id}"],
         data={"id": imported.id, "environment": env, "path": str(path), "outcomes": len(imported.outcomes)},
@@ -795,12 +795,12 @@ def do_why_red(test: str, env: str = "", *, config: str | None = None) -> Answer
     environment = env or suite.manifest.default_env
     seen = [
         (run, outcome)
-        for run in record.runs_for(root, environment)
+        for run in runs.runs_for(root, environment)
         for outcome in run.outcomes
         if outcome.test == test
     ]
     if not seen:
-        known = sorted({o.test for r in record.runs_for(root, environment) for o in r.outcomes})
+        known = sorted({o.test for r in runs.runs_for(root, environment) for o in r.outcomes})
         near = [one for one in known if test.lower() in one.lower()][:3]
         message = f"no test {test!r} in {environment}'s history"
         if near:
@@ -852,17 +852,17 @@ def do_history(env: str = "", *, config: str | None = None) -> Answer:
     except (ManifestError, SuiteError) as exc:
         return fault(str(exc), INVALID)
     wanted = env or suite.manifest.default_env
-    runs = record.runs_for(_root(suite), wanted)
-    flaky = record.flaky(_root(suite), wanted)
+    past = runs.runs_for(_root(suite), wanted)
+    flaky = runs.flaky(_root(suite), wanted)
     return Answer(
         lines=[
             f"{run.id}  {run.started}  {run.source:<8} {run.label or '-':<10} {str(run.verdict):<9} "
-            f"{run.counts[record.Outcome.PASSED]} passed, {run.counts[record.Outcome.FAILED]} failed"
-            for run in runs
+            f"{run.counts[runs.Outcome.PASSED]} passed, {run.counts[runs.Outcome.FAILED]} failed"
+            for run in past
         ]
         or ["no runs recorded"],
         data={
-            "runs": [run.as_json() for run in runs],
+            "runs": [run.as_json() for run in past],
             "flaky": sorted(flaky),
         },
     )
@@ -884,5 +884,5 @@ def _classify(message: str) -> str:
     return INVALID
 
 
-def verdict_of(runs: list[record.Run]) -> Verdict:
-    return record.verdict(outcome.outcome for run in runs for outcome in run.outcomes)
+def verdict_of(past: list[runs.Run]) -> Verdict:
+    return runs.verdict(outcome.outcome for run in past for outcome in run.outcomes)

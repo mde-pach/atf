@@ -70,7 +70,7 @@ recognition do the work.
 Every test that asks pays both, and pays them for the whole closure that is not longer-lived.
 
 ```python
-@sqlite(table="guests", unique_by="nickname", scope="function")
+@sql.row(table="guests", unique_by="nickname", scope="function")
 class Guest:
     nickname: str
 ```

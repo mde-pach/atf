@@ -1,4 +1,4 @@
-"""`atf init` — a manifest, an empty resources module, an empty specs directory."""
+"""`atf init` — a manifest, an empty resources module, an empty specs directory, and no fourth file."""
 
 from __future__ import annotations
 
@@ -14,7 +14,10 @@ environments:
     # ATF may change this environment. It is false unless stated, so the dangerous setting is
     # never the one nobody had to type.
     mutable: true
-    command: {{ prefix: "" }}
+    # One block per driver. `filesystem` is here because the example in resources.py uses it;
+    # `command` is what `When I run "..."` and the `shell` fixture reach.
+    filesystem: {{ root: . }}
+    command:    {{ prefix: "" }}
 """
 
 RESOURCES = '''\
@@ -22,31 +25,22 @@ RESOURCES = '''\
 
 Declare a resource as a class, and one particular resource as a module-level variable:
 
-    from atf import filesystem
+    from atf import file
 
-    @filesystem(path="config.toml", unique_by="path")
+    @file(unique_by="path")
     class Config:
+        path: str
         text: str
 
-    settings = Config(text="")
+    settings = Config(path="config.toml", text="")
 
 What a resource needs goes in `depends_on`, never in an annotation — a dependency does not always
 have a field to live in.
-
-Do not add `from __future__ import annotations` to this file. The annotations here are the shape,
-and under that import they are strings rather than types.
 """
 '''
 
-CONFTEST = '''\
-"""Enable ATF's pytest plugin for this suite."""
-
-pytest_plugins = ["atf.plugin"]
-'''
-
-
 def init(root: Path, *, env: str = "local", force: bool = False) -> list[Path]:
-    """Write the manifest, the resources module, the conftest and the specs directory."""
+    """Write the manifest, the resources module and the specs directory."""
     manifest = root / "atf.yaml"
     if manifest.exists() and not force:
         raise FileExistsError(f"{manifest} already exists; pass --force to overwrite it")
@@ -59,11 +53,6 @@ def init(root: Path, *, env: str = "local", force: bool = False) -> list[Path]:
     if not resources.exists() or force:
         resources.write_text(RESOURCES, encoding="utf-8")
         written.append(resources)
-
-    conftest = root / "conftest.py"
-    if not conftest.exists() or force:
-        conftest.write_text(CONFTEST, encoding="utf-8")
-        written.append(conftest)
 
     specs = root / "specs"
     specs.mkdir(exist_ok=True)

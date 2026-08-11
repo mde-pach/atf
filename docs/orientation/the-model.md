@@ -52,10 +52,11 @@ resource in a test signature or a scenario line — by name for a particular one
 by calling their factories in turn. A [variation](glossary.md#variation) bends a declared resource
 for one test, one field per sentence.
 
-Underneath all of it, an [adapter](glossary.md#adapter) is what teaches ATF a system and ships that
-system's decorator with it. ATF ships four systems — `@command`, `@browser`, `@filesystem` and
-`@process` — so every other one a suite uses is an adapter somebody wrote. A suite uses one for a
-long time before anybody writes one.
+Underneath all of it, an [adapter](glossary.md#adapter) is what teaches ATF one kind of thing and
+ships that system's decorator with it, working through a [driver](../reference/arrange.md#driver)
+that holds the machinery. ATF ships `@filesystem.file`, `@filesystem.directory`, `@filesystem.tree`, `@browser.page`, `@shell.process`, `@http.record` and
+`@sql.row` — so every other one a suite uses is an adapter somebody wrote. A suite uses one for a long
+time before anybody writes one.
 
 ## Act
 
@@ -66,7 +67,7 @@ sentences repeat they become one phrase.
 Three of these are ways of acting, and they differ only in what they touch:
 [running something](glossary.md#running-something) invokes the system under test,
 [using an interface](glossary.md#using-an-interface) drives a browser, and an
-[action](glossary.md#action) is a domain verb a resource declares so a scenario can say it. Whatever
+[action](glossary.md#action) moves one of a declared resource's own fields. Whatever
 comes back lands in a slot called `result`, and [naming a result](glossary.md#naming-a-result) is
 needed only when one test does two things.
 

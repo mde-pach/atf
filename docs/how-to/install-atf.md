@@ -30,14 +30,14 @@ runs — it asks the systems you point it at what they hold, every time. See
 [Why there is no state file](../explanation/why-there-is-no-state-file.md) for why that is a design
 decision rather than a missing feature.
 
-The systems a suite talks to are yours. `command`, `browser`, `filesystem` and `process` ship with
+The systems a suite talks to are yours. `file`, `directory`, `tree`, `page`, `process`, `rest` and `sql`, over the `filesystem`, `browser`, `shell`, `process`, `http` and `sql` drivers ship with
 ATF; anything else — a database, an HTTP API, a queue — is an
 [adapter](../reference/arrange.md#adapter) the suite carries, and installing ATF installs none of
 its dependencies.
 
 ## The browser dependency
 
-Install it only if a suite declares a resource on the `@browser` system.
+Install it only if a suite declares a resource on the `@browser.page` system.
 
 ```sh
 pip install "atf[browser]"

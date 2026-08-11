@@ -1,7 +1,7 @@
 # Extending ATF
 
-Five things a suite can teach ATF: a system to talk to, a claim to make, a marker to match values
-against, a format to write results in, and a rule its own specs must obey. What each thing *is* is
+Six things a suite can teach ATF: a driver to work through, a system to talk to, a claim to make, a
+marker to match values against, a format to write results in, and a rule its own specs must obey. What each thing *is* is
 defined in the band that owns it; this page is how it gets registered.
 
 ## The idiom {#the-idiom}
@@ -10,8 +10,11 @@ Every registry works the same way: a decorator on a function or a class, taking 
 sentence.
 
 ```python
-@adapter("sqlite")
-class Sqlite: ...
+@driver("todo")
+class App: ...
+
+@adapter("owner", driver="todo")     # registers todo.owner, and hangs @todo.owner off App
+class Owners: ...
 
 @claim('the {type} "{name}" field "{field}" is a valid IBAN')
 def _(record, field): ...
@@ -35,7 +38,7 @@ registries.
 installed packages. A path is a file; a bare name is a package on the import path.
 
 ```yaml
-extensions: [./adapters/sqlite.py, atf_payments]
+extensions: [./adapters/todo.py, atf_payments]
 ```
 
 Each entry is imported once, before anything else runs. `atf run`, `atf check`, `atf edit` and
@@ -46,92 +49,98 @@ registrations and the modules they came from.
 
 ## Registering an adapter {#registering-an-adapter}
 
-[Adapter](arrange.md#adapter) defines the thing itself: the four required methods, the two optional
-ones, what `resource` carries, and why `find` raising `atf.Unreachable` produces the third
-environment state. This section is the registration.
+[Adapter](arrange.md#adapter) defines the thing itself: `find` and the optional writes, what
+`resource` carries, and why `find` raising `atf.Unreachable` produces the third environment state.
+[Driver](arrange.md#driver) defines the machinery an adapter works through. This section is the
+registration of both.
 
-**`@sqlite` is an adapter, and it is the one you have been using.** ATF ships `@command`,
-`@browser`, `@filesystem` and `@process` — the systems it needs to test itself — and nothing that
-binds it to a database. Every `@sqlite(table=…, unique_by=…)` in this documentation comes from the suite's
-own `adapters/sqlite.py`, named in `extensions:`. Here is that file, whole.
+**`@todo.owner` is an adapter, and it is one of the ones you have been using.** ATF ships
+`@filesystem.file`, `@filesystem.directory`, `@filesystem.tree`, `@browser.page`, `@shell.process`,
+`@http.record` and `@sql.row` — one per kind of thing, never one per technology. Every `@todo.owner()`
+and `@todo.list(...)` in this documentation comes from the suite's own `adapters/todo.py`, named in
+`extensions:`, and it goes through the application's own API rather than its database. Here is that
+file, whole.
 
 An adapter never compares. ATF finds the record, works out the difference from the declaration and
 hands `update` a ready-made `changes` — see [reconciliation](arrange.md#reconciliation).
 
-### A complete adapter
+### A complete driver and its adapters
 
 ```python
-# adapters/sqlite.py
-import sqlite3
-from typing import NotRequired, TypedDict
+# adapters/todo.py
+from typing import TypedDict
 
-from atf import Unreachable, adapter
+from todo import Todo                       # the product under test
+
+from atf import adapter, driver
 
 
-@adapter("sqlite")
-class Sqlite:
-    """Ships the @sqlite(...) decorator with it."""
+@driver("todo")
+class App:
+    """The machinery: the application, opened once per environment."""
 
-    class Options(TypedDict):          # what @sqlite(...) accepts, per resource
-        table: str                     # named on the decorator, never guessed
-
-    class Settings(TypedDict):         # what atf.yaml supplies under `sqlite:`, per environment
+    class Settings(TypedDict):              # what atf.yaml supplies under `todo:`, per environment
         path: str
 
     def __init__(self, settings: Settings):
-        self.path = settings["path"]
-        self.db = sqlite3.connect(self.path)
-        self.db.row_factory = sqlite3.Row
+        self.app = Todo(settings["path"])
 
-    def table(self, resource):
-        return resource.options.get("table", resource.kind)
 
-    def columns(self, values):
-        """A parent arrives as that resource's record, already made."""
-        for field, value in values.items():
-            yield (f"{field}_id", value["id"]) if isinstance(value, dict) else (field, value)
+@adapter("owner", driver="todo")
+class Owners:
+    """One kind of thing. Registered `todo.owner`, and hung off the driver as `@todo.owner`."""
+
+    recognised_by = ("email",)              # an owner is its email; a declaration says nothing
+
+    def __init__(self, todo: App):          # the driver, asked for by name
+        self.app = todo.app
 
     def find(self, resource):
-        where = dict(self.columns(resource.identity))
-        clause = " AND ".join(f"{column} = ?" for column in where)
-        try:
-            row = self.db.execute(
-                f"SELECT * FROM {self.table(resource)} WHERE {clause}", tuple(where.values())
-            ).fetchone()
-        except sqlite3.Error as failure:
-            raise Unreachable(f"sqlite at {self.path}: {failure}") from failure
-        return dict(row) if row else None
+        return self.app.find_owner(resource.identity["email"])
 
     def create(self, resource):
-        row = dict(self.columns(resource.values))
-        marks = ", ".join("?" * len(row))
-        self.db.execute(f"INSERT INTO {self.table(resource)} ({', '.join(row)}) "
-                        f"VALUES ({marks})", tuple(row.values()))
-        self.db.commit()
-        return self.find(resource)
-
-    def update(self, resource, found, changes):
-        row = dict(self.columns(changes))
-        assignments = ", ".join(f"{column} = ?" for column in row)
-        self.db.execute(f"UPDATE {self.table(resource)} SET {assignments} WHERE id = ?",
-                        (*row.values(), found["id"]))
-        self.db.commit()
-        return {**found, **row}
+        return self.app.create_owner(resource.values["email"])
 
     def delete(self, resource, found):
-        self.db.execute(f"DELETE FROM {self.table(resource)} WHERE id = ?", (found["id"],))
-        self.db.commit()
+        self.app.delete_owner(found["email"])
+
+
+@adapter("list", driver="todo")
+class Lists:
+    """A list carries nothing but its identity, so there is no `update` to write."""
+
+    recognised_by = ("slug",)
+
+    def __init__(self, todo: App):
+        self.app = todo.app
+
+    def find(self, resource):
+        return self.app.find_list(resource.identity["slug"])
+
+    def create(self, resource):
+        owner = resource.parents.get("owner")
+        return self.app.create_list(owner.key if owner else None, resource.values["slug"])
+
+    def delete(self, resource, found):
+        self.app.delete_list(found["slug"])
+
+    def browse(self, resource):
+        return self.app.every_list()
 ```
 
 `update` applies a decision rather than making one. Aim for that in any adapter: a merge and a
-write.
+write. Neither of these has one, because neither resource carries a field beyond its identity —
+`find` is the only method every adapter answers, and the rest are written where they mean something.
 
-`Options` and `Settings` are the adapter's typed configuration.
+`Options` and `Settings` are typed configuration, and they belong to different objects.
 
-- **Options are written on the decorator and vary per resource.** `TodoList` lives in the `lists`
-  table wherever it is made, so `table` is a property of the resource.
-- **Settings are written in the manifest and vary per environment.** The database file differs
-  between your laptop and CI, and no resource has an opinion about it.
+- **Options are the adapter's, written on the decorator, and vary per resource.** `TodoList` lives
+  in the `lists` table wherever it is made, so `table` is a property of the resource.
+- **Settings are the driver's, written in the manifest, and vary per environment.** The database
+  file differs between your laptop and CI, and no resource has an opinion about it.
+
+An adapter asks for its drivers by parameter name; several drivers is several parameters. A driver
+an adapter asks for that the environment does not configure fails at load, naming both.
 
 Both are checked before anything connects. A misspelt key in `atf.yaml` fails at load with the field
 name, not at the first test with a `KeyError`.
@@ -142,15 +151,15 @@ registers it, so a resource imports it from there. ATF's own four are re-exporte
 
 ```python
 # resources.py
-from adapters.sqlite import sqlite
+from adapters.todo import todo
 
 
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 
 
-@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
+@todo.list(depends_on=[Owner])
 class TodoList:
     slug: str
 ```
@@ -158,18 +167,20 @@ class TodoList:
 ```yaml
 environments:
   local:
-    sqlite: { path: ./todo.db }
+    sql: { path: ./todo.db }
 ```
 
-An adapter that also implements `act` declares which verbs it accepts, and resources opt in through
-`actions=`, exactly as `@sqlite(..., actions={"complete": Update(done=True)})` does.
+No adapter implements a method for domain verbs. `update` is required, and
+[`When the task "laundry" field "done" becomes "1"`](act.md#action) reaches it — so the moment an
+adapter exists, every resource of that system can be moved mid-test, and a
+[phrase](act.md#domain-verb) is what gives that move the domain's own word.
 
 - **In CI** — `atf status local` counts `TodoList` resources alongside every other type, and
   `atf make local` makes them.
-- **In the editor** — `sqlite` appears in the [catalogue](the-editor.md#catalogue) as a type, with
-  its instances, their state and their create bodies. Where `act` is implemented, the composer
-  offers its verbs.
-- **To an agent** — the same, through the `status` and `make` tools, with `sqlite` in the type list.
+- **In the editor** — `todo.owner` appears in the [catalogue](the-editor.md#catalogue) as a type, with
+  its instances, their state and their create bodies, and the composer offers a `becomes` sentence
+  for each of their fields.
+- **To an agent** — the same, through the `status` and `make` tools, with `todo.owner` in the type list.
 
 The cost is real: an adapter owns its own correctness. `find` returning a stale record, `update`
 writing a field it was not given, or `delete` leaving residue produces failures in the next run and
@@ -337,19 +348,19 @@ A check yields findings and does not raise. A rule that yields nothing passes.
 
 One rule governs all five registries: **ATF's own built-ins are registered through them.**
 
-`@command`, `@browser`, `@filesystem` and `@process` are adapters registered with `@adapter`,
-through the same decorator the `@sqlite` above uses. `#uuid` and `#datetime` are markers registered
+`@filesystem.file`, `@filesystem.directory`, `@filesystem.tree`, `@browser.page`, `@shell.process`, `@http.record` and `@sql.row` are adapters registered with `@adapter`,
+through the same decorator the `@sql.row` above uses. `#uuid` and `#datetime` are markers registered
 with `@marker`. Every sentence in [Assert](assert.md) is a claim registered with `@claim`. The CTRF
 report is a format registered with `@report`. The rules `atf check` applies to your specs are checks
 registered with `@check`.
 
-The cost lands on ATF. A registry interface five built-ins depend on cannot be widened for one of
+The cost lands on ATF. A registry interface six built-ins depend on cannot be widened for one of
 them without widening it for everyone, and cannot be narrowed without breaking ATF first. Some
 built-in behaviour is slower or more roundabout than a private door would have made it.
 
 The consequence: nothing you register is second class. A marker you added is compared by the same
-code as `#uuid`; an adapter you wrote is counted, catalogued and made by the same code as
-`@command`.
+code as `#uuid`; an adapter you wrote is counted, catalogued and made by the same code as `@filesystem.file`,
+and a driver you wrote is built and handed over by the same code as `filesystem`.
 
 ## Sharing a vocabulary {#sharing}
 

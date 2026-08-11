@@ -26,7 +26,7 @@ Feature: what an environment holds, against what the declarations say
     And I run "drift --strict" as "gating"
     Then the gating field "exit_code" is "1"
 
-  @adapter
+  @verify-adapter
   Scenario: an adapter is put through the contract against a copy it marks and removes
     Given the workspace "scaffolded"
     When I run "verify-adapter standup"
@@ -34,7 +34,7 @@ Feature: what an environment holds, against what the declarations say
     And the result field "output" contains "`create` answers with the record it wrote"
     And the result field "output" contains "`delete` takes the resource away"
 
-  @adapter
+  @verify-adapter
   Scenario: what the contract wrote is gone, and the resource it stood in for is untouched
     Given the workspace "scaffolded"
     When I run "make"

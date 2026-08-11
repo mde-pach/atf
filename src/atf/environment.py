@@ -6,10 +6,47 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .declare import Unreachable, declaration_of
+from .declare import (
+    DRIVERS,
+    Unreachable,
+    declaration_of,
+    drivers_wanted,
+    instance_of,
+    is_resource,
+)
 from .loader import Suite
 from .manifest import Environment as EnvironmentConfig
-from .spi import Record, State, check, check_shape, offers
+from .spi import Parent, Record, Resource, State, check, check_shape, offers
+
+
+def view(resource: Any) -> Resource:
+    """One declared resource, as an adapter sees it.
+
+    Built at every call into an adapter, so an adapter never imports `values_of` or
+    `declaration_of` and never holds ATF's own objects.
+    """
+    declaration = declaration_of(resource)
+    record = instance_of(resource)
+    scalars = {name: value for name, value in record.values.items() if not is_resource(value)}
+    return Resource(
+        kind=declaration.kind,
+        name=record.name,
+        options=dict(declaration.options),
+        fields=dict(declaration.fields),
+        when_absent=declaration.when_absent,
+        scope=declaration.scope,
+        values=scalars,
+        identity={name: scalars[name] for name in declaration.unique_by if name in scalars},
+        parents={
+            name: Parent(kind=declaration_of(value).kind, key=instance_of(value).identity)
+            for name, value in record.values.items()
+            if is_resource(value)
+        },
+    )
+
+
+#: What each write method does, as a message says it.
+_DONE = {"create": "made", "update": "changed", "delete": "removed"}
 
 
 class GroundError(Exception):
@@ -31,20 +68,43 @@ class Ground:
     suite: Suite
     config: EnvironmentConfig
     adapters: dict[str, Any] = field(default_factory=dict)
+    #: The machinery each adapter works through, and what a step asks for by name.
+    drivers: dict[str, Any] = field(default_factory=dict)
 
     @property
     def mutable(self) -> bool:
         return self.config.mutable
 
     def adapter_for(self, resource: Any) -> Any:
-        system = declaration_of(resource).system
+        declaration = declaration_of(resource)
         try:
-            return self.adapters[system]
+            return self.adapters[declaration.system]
         except KeyError:
             raise GroundError(
-                f"the {system!r} system has no settings in the {self.config.name!r} environment, "
-                f"and {declaration_of(resource).kind} lives there"
+                f"the {declaration.system!r} system has no settings in the "
+                f"{self.config.name!r} environment, and {declaration.kind} lives there"
             ) from None
+
+    def perform(self, resource: Any, method: str) -> Any:
+        """One of the adapter's write methods, or a refusal naming what this kind cannot do.
+
+        `find` is the only method every adapter answers. Leaving `create`, `update` or `delete` out
+        says this kind of thing is never made, changed or removed, and asking for one raises
+        `Unreachable` naming the kind and the method.
+        """
+        adapter = self.adapter_for(resource)
+        found = getattr(adapter, method, None)
+        if not callable(found):
+            declaration = declaration_of(resource)
+            raise Unreachable(
+                f"{declaration.kind}: the {declaration.system!r} adapter has no {method!r}, so one "
+                f"is never {_DONE[method]}. Declare it `when_absent=\"observe\"` if that is the point."
+            )
+
+        def call(_: Any, *rest: Any) -> Any:
+            return found(view(resource), *rest)
+
+        return call
 
     def can(self, resource: Any, method: str) -> bool:
         """Whether this resource's system offers one of the optional methods, `act` or `browse`."""
@@ -52,36 +112,36 @@ class Ground:
 
     @property
     def transactional(self) -> list[str]:
-        """Systems whose adapter can wrap a test and undo everything it did."""
+        """Drivers that can wrap a test and undo everything it did."""
         return sorted(
             name
-            for name, adapter in self.adapters.items()
-            if offers(type(adapter), "begin") and offers(type(adapter), "rollback")
+            for name, one in self.drivers.items()
+            if offers(type(one), "begin") and offers(type(one), "rollback")
         )
 
     def begin(self) -> list[str]:
-        """Open a transaction on every system that offers one, and name the ones that opened.
+        """Open a transaction on every driver that offers one, and name the ones that opened.
 
-        A system that cannot be reached opens nothing and is left out, so its resources are made
+        A driver that cannot be reached opens nothing and is left out, so its resources are made
         and taken away in the ordinary way.
         """
         opened: list[str] = []
         for name in self.transactional:
             try:
-                self.adapters[name].begin()
+                self.drivers[name].begin()
             except Unreachable:
                 continue
             opened.append(name)
         return opened
 
-    def rollback(self, systems: list[str]) -> None:
-        """Undo what each of these systems did since `begin`."""
-        for name in systems:
-            adapter = self.adapters.get(name)
-            if adapter is None:
+    def rollback(self, drivers: list[str]) -> None:
+        """Undo what each of these drivers did since `begin`."""
+        for name in drivers:
+            one = self.drivers.get(name)
+            if one is None:
                 continue
             try:
-                adapter.rollback()
+                one.rollback()
             except Unreachable:
                 continue
 
@@ -103,12 +163,11 @@ class Ground:
                     out[id(node)] = self.find(node)
                 continue
             try:
-                found = adapter.find_many(mine)
+                answered = adapter.find_many([view(node) for node in mine])
             except Unreachable:
                 out.update({id(node): (State.UNREACHABLE, None) for node in mine})
                 continue
-            for node in mine:
-                record = found.get(id(node))
+            for node, record in zip(mine, answered, strict=False):
                 out[id(node)] = (State.PRESENT, record) if record is not None else (State.ABSENT, None)
         return out
 
@@ -119,7 +178,7 @@ class Ground:
         gives the right answer immediately.
         """
         try:
-            found = self.adapter_for(resource).find(resource)
+            found = self.adapter_for(resource).find(view(resource))
         except Unreachable:
             return State.UNREACHABLE, None
         return (State.PRESENT, found) if found is not None else (State.ABSENT, None)
@@ -149,14 +208,24 @@ def systems_used(suite: Suite) -> set[str]:
 
 
 def systems_wanted(suite: Suite, config: EnvironmentConfig) -> set[str]:
-    """Every system to build an adapter for: the ones resources use, and the ones configured.
+    """Every system to build an adapter for: exactly the ones this suite's resources name."""
+    return systems_used(suite)
 
-    A system with settings and no resources is included — `command` is the common case, since
-    `shell` runs command lines for tests that arrange nothing through it. A configured system ATF
-    has no adapter for is ignored.
+
+def drivers_needed(suite: Suite, config: EnvironmentConfig) -> set[str]:
+    """Every driver to build: the ones the wanted adapters ask for, and the ones configured.
+
+    A configured driver with no adapter behind it is built anyway — `shell` is the common case,
+    since a test can run a command line without arranging anything through one.
     """
-    configured = {system for system in config.settings if system in suite.adapters}
-    return systems_used(suite) | configured
+    wanted: set[str] = {
+        name
+        for system in systems_wanted(suite, config)
+        if (cls := suite.adapters.get(system)) is not None
+        for name in drivers_wanted(cls)
+    }
+    configured = {name for name in DRIVERS if name in config.settings}
+    return wanted | configured
 
 
 def build_ground(suite: Suite, env: str = "") -> Ground:
@@ -166,7 +235,26 @@ def build_ground(suite: Suite, env: str = "") -> Ground:
     """
     config = suite.manifest.env(env)
     problems: list[str] = []
+    drivers: dict[str, Any] = {}
     adapters: dict[str, Any] = {}
+
+    for name in sorted(drivers_needed(suite, config)):
+        cls = DRIVERS.get(name)
+        if cls is None:
+            problems.append(
+                f"no driver is registered as {name!r} — an extension declaring "
+                f"`@driver({name!r})` should be listed under `extensions:`"
+            )
+            continue
+        settings = config.for_system(name)
+        if settings is None:
+            problems.append(f"the {name!r} driver has no settings in the {config.name!r} environment")
+            continue
+        try:
+            checked = check(cls, "Settings", settings, f"environments.{config.name}.{name}")
+            drivers[name] = cls(_against_manifest(checked, suite.manifest.root))
+        except Exception as exc:  # noqa: BLE001 - whatever a driver's constructor raises is its own problem
+            problems.append(f"the {name!r} driver could not be built: {type(exc).__name__}: {exc}")
 
     for system in sorted(systems_wanted(suite, config)):
         cls = suite.adapters.get(system)
@@ -176,24 +264,27 @@ def build_ground(suite: Suite, env: str = "") -> Ground:
                 f"an extension declaring `@adapter({system!r})` should be listed under `extensions:`"
             )
             continue
-        settings = config.for_system(system)
-        if settings is None:
-            problems.append(f"the {system!r} system has no settings in the {config.name!r} environment")
+        asked = drivers_wanted(cls)
+        missing = [one for one in asked if one not in drivers]
+        if missing:
+            problems.append(
+                f"the {system!r} adapter asks for the {', '.join(missing)} driver, and the "
+                f"{config.name!r} environment configures none"
+            )
             continue
         try:
             check_shape(system, cls)
-            checked = check(cls, "Settings", settings, f"environments.{config.name}.{system}")
-            adapters[system] = cls(_against_manifest(checked, suite.manifest.root))
+            adapters[system] = cls(**{one: drivers[one] for one in asked})
         except Exception as exc:  # noqa: BLE001 - whatever an adapter's constructor raises is this system's problem
             problems.append(f"the {system!r} system could not be built: {type(exc).__name__}: {exc}")
 
-    for kind, cls in sorted(suite.kinds.items()):
-        declaration = declaration_of(cls)
-        adapter = suite.adapters.get(declaration.system)
-        if adapter is None or declaration.system not in adapters:
+    for kind, resource_class in sorted(suite.kinds.items()):
+        declaration = declaration_of(resource_class)
+        if declaration.system not in adapters:
             continue
         try:
-            check(adapter, "Options", declaration.options, f"{kind}'s @{declaration.system}(...) options")
+            check(suite.adapters[declaration.system], "Options", declaration.options,
+                  f"{kind}'s @{declaration.system}(...) options")
         except Exception as exc:  # noqa: BLE001
             problems.append(str(exc))
 
@@ -201,11 +292,11 @@ def build_ground(suite: Suite, env: str = "") -> Ground:
     for node in suite.instances.values():
         adapter = adapters.get(declaration_of(node).system)
         say = getattr(adapter, "check", None)
-        if callable(say) and (problem := say(node)):
+        if callable(say) and (problem := say(view(node))):
             problems.append(problem)
 
     if problems:
         raise GroundError(
             f"the {config.name!r} environment is not ready:\n  - " + "\n  - ".join(problems)
         )
-    return Ground(suite=suite, config=config, adapters=adapters)
+    return Ground(suite=suite, config=config, adapters=adapters, drivers=drivers)

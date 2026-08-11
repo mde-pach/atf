@@ -1,7 +1,6 @@
 """Importing what a manifest names, and reading the declarations that came back."""
 
 from __future__ import annotations
-import __future__  # noqa: I001 - the module, to recognise the import above in somebody else's file
 
 import importlib.util
 import re
@@ -72,7 +71,6 @@ def load_suite(manifest: Manifest | None = None) -> Suite:
     problems: list[str] = []
 
     for module in modules:
-        _refuse_future_annotations(module, problems)
         for attribute, value in vars(module).items():
             if attribute.startswith("_"):
                 continue
@@ -131,18 +129,6 @@ def _refuse_name_collisions(kinds: dict[str, type], instances: dict[str, Any], p
     for name, claimants in sorted(by_fixture.items()):
         if len(claimants) > 1:
             problems.append(f"{' and '.join(claimants)} both want the name {name!r} — rename one")
-
-
-def _refuse_future_annotations(module: Any, problems: list[str]) -> None:
-    """A resources module states its shape in annotations, so they must be types, not strings.
-
-    Under that import `email: str` is the four characters, not the class.
-    """
-    if getattr(module, "annotations", None) is __future__.annotations:
-        problems.append(
-            f"{module.__file__}: remove `from __future__ import annotations`. A resources module "
-            f"declares its shape in annotations, and under that import they are strings"
-        )
 
 
 def _import_file(path: Path, root: Path) -> Any:

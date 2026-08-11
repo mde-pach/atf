@@ -1,19 +1,19 @@
 """What this suite needs to exist before a test runs.
 
-Note what is *not* here: no `from __future__ import annotations`. A resources module states its
-shape in annotations, and under that import they would be strings rather than types. ATF refuses a
-module that uses it and says so at load.
+`@todo.owner` and `@todo.list` are this suite's own, written once in `adapters/todo.py` over the
+application's own API. The rest use ATF's built-in `@sql.row`, which is what a suite reaches for
+when a thing has no interface of its own to go through.
 
-Note also what carries a dependency. `depends_on` does, and only `depends_on`. `TodoList` has a
-field for its owner and `Report` has nowhere to put one, and both are the same edge in the graph.
+Note what carries a dependency. `depends_on` does, and only `depends_on`. `TodoList` has a field
+for its owner and `Report` has nowhere to put one, and both are the same edge in the graph.
 """
 
-from adapters.sqlite import sqlite
+from adapters.todo import todo
 
-from atf import Update
+from atf import sql
 
 
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 
@@ -22,7 +22,7 @@ class Owner:
         return cls(email="generated@example.com")
 
 
-@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
+@todo.list(depends_on=[Owner])
 class TodoList:
     slug: str
 
@@ -31,16 +31,19 @@ class TodoList:
         return cls(owner=owner, slug="generated")
 
 
-@sqlite(table="tasks", unique_by="slug", depends_on=[TodoList],
-        actions={"complete": Update(done=True), "reopen": Update(done=False)})
+@sql.row(table="tasks", unique_by="slug", depends_on=[TodoList])
 class Task:
-    """Two domain verbs. `actions` is ATF's; performing one is the adapter's `act`."""
+    """Nothing here declares a verb.
+
+    `complete` and `reopen` are phrases in `specs/lists.feature`, each standing over one `becomes`
+    sentence, and `done` is an ordinary field held to what it says.
+    """
 
     slug: str
     done: bool
 
 
-@sqlite(table="reports", unique_by="slug", depends_on=[Owner])
+@sql.row(table="reports", unique_by="slug", depends_on=[Owner])
 class Report:
     """Written per owner, and storing only its own slug and a rendered body.
 
@@ -52,14 +55,14 @@ class Report:
     body: str
 
 
-@sqlite(table="plans", unique_by="code", when_absent="require")
+@sql.row(table="plans", unique_by="code", when_absent="require")
 class Plan:
     """The environment's job. No factory, so it can only ever be asked for by name."""
 
     code: str
 
 
-@sqlite(table="tenants", unique_by=("region", "code"), scope="session")
+@sql.row(table="tenants", unique_by=("region", "code"), scope="session")
 class Tenant:
     """Recognised by its code *within a region*, so two regions may each have an `acme`.
 
@@ -71,7 +74,7 @@ class Tenant:
     code: str
 
 
-@sqlite(table="guests", unique_by="nickname", scope="function")
+@sql.row(table="guests", unique_by="nickname", scope="function")
 class Guest:
     """Made fresh for each test that asks for it, and removed after."""
 

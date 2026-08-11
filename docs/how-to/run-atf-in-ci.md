@@ -132,7 +132,7 @@ schedule or after a failure; the gate is complete without it.
 **Exit `2`, `$STAGING_DB is not set`.** The secret is not exposed to the step. Secrets are not
 inherited by every step by default.
 
-**Exit `2`, `unreachable: sqlite`.** The system did not answer. Nothing was tested, so do not treat it
+**Exit `2`, `unreachable: todo`.** The system did not answer. Nothing was tested, so do not treat it
 as a failure. `--json` gives `environment_unreachable`.
 
 **Exit `2`, `atf make` refuses.** The environment is not mutable (`environment_immutable`). Either it

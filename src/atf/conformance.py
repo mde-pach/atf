@@ -9,7 +9,7 @@ from typing_extensions import override
 
 from . import reconcile
 from .declare import Unreachable, declaration_of, instance_of, values_of
-from .environment import Ground
+from .environment import Ground, view
 from .runtime import varied
 from .spi import State
 
@@ -100,7 +100,7 @@ def _absent_is_absent(ground: Ground, resource: Any) -> Finding:
 
 def _create_returns_the_record(adapter: Any, resource: Any) -> Finding:
     try:
-        record = adapter.create(resource)
+        record = adapter.create(view(resource))
     except Unreachable as exc:
         return Finding("`create` answers with the record it wrote", False, str(exc))
     if not isinstance(record, dict) or not record:
@@ -140,7 +140,7 @@ def _update_writes(ground: Ground, adapter: Any, resource: Any) -> list[Finding]
         return [Finding("`update` writes what it is handed", False, f"`find` says {state}")]
     wanted = f"{values_of(resource).get(field)}-changed"
     try:
-        adapter.update(resource, record, {field: wanted})
+        adapter.update(view(resource), record, {field: wanted})
     except Unreachable as exc:
         return [Finding("`update` writes what it is handed", False, str(exc))]
     _, after = ground.find(resource)
@@ -161,7 +161,7 @@ def _delete_removes(ground: Ground, adapter: Any, resource: Any) -> tuple[Findin
     if record is None:
         return Finding("`delete` takes the resource away", False, "it was already gone"), None
     try:
-        adapter.delete(resource, record)
+        adapter.delete(view(resource), record)
     except Unreachable as exc:
         return Finding("`delete` takes the resource away", False, str(exc)), record
     state, _ = ground.find(resource)
@@ -176,7 +176,7 @@ def _delete_is_idempotent(adapter: Any, resource: Any, record: Any) -> Finding:
     if record is None:
         return Finding(what, True, "nothing was deleted, so nothing asked")
     try:
-        adapter.delete(resource, record)
+        adapter.delete(view(resource), record)
     except Unreachable as exc:
         return Finding(what, False, str(exc))
     except Exception as exc:  # noqa: BLE001 - anything at all here is the finding
@@ -189,6 +189,6 @@ def _remove(ground: Ground, adapter: Any, resource: Any) -> None:
     try:
         _, record = ground.find(resource)
         if record is not None:
-            adapter.delete(resource, record)
+            adapter.delete(view(resource), record)
     except Exception:  # noqa: BLE001 - cleaning up is best effort, and the findings are the answer
         return

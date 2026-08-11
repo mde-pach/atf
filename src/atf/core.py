@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import footprint, graph, reconcile, record, steps
+from . import footprint, graph, reconcile, runs, steps
 from .declare import declaration_of, instance_of, is_resource, name_of, values_of
 from .environment import Ground
 from .loader import Suite, fixture_name
-from .record import Outcome, Verdict
+from .runs import Outcome, Verdict
 from .spi import Did, State
 
 # --- Overview -------------------------------------------------------------------------------------
@@ -23,7 +23,7 @@ class Overview:
     environment: str
     resources: dict[str, int]
     tests: dict[str, int]
-    last_run: record.Run | None
+    last_run: runs.Run | None
     well_formed: bool
     faults: int = 0
     unmakeable: list[str] = field(default_factory=list)
@@ -72,8 +72,8 @@ def overview(ground: Ground, root: Path, faults: int = 0) -> Overview:
         for outcome in outcomes
         if outcome.state is State.ABSENT and outcome.did is Did.LEFT_ALONE
     ]
-    runs = record.runs_for(root, ground.config.name)
-    last = runs[-1] if runs else None
+    past = runs.runs_for(root, ground.config.name)
+    last = past[-1] if past else None
     tests = last.counts if last else {}
     return Overview(
         environment=ground.config.name,
@@ -242,9 +242,6 @@ class Node:
     label: str
     kind: str
     needs: list[str] = field(default_factory=list)
-    #: What an adapter can perform on this one. A resource reaches an action the same way it reaches
-    #: a parent.
-    actions: list[str] = field(default_factory=list)
 
 
 def spine(suite: Suite, features: list[Any], phrases: dict[str, Any]) -> list[Node]:
@@ -259,7 +256,6 @@ def spine(suite: Suite, features: list[Any], phrases: dict[str, Any]) -> list[No
             label=f"{declaration_of(node).kind} {name_of(node)}",
             kind="resource",
             needs=[name_of(parent) for parent in graph.parents(node)],
-            actions=sorted(declaration_of(node).actions),
         )
         for node in suite.instances.values()
     ]
@@ -296,7 +292,6 @@ class Neighbourhood:
     sentence: str
     needs: list[Node] = field(default_factory=list)
     needed_by: list[Node] = field(default_factory=list)
-    actions: list[str] = field(default_factory=list)
     #: The closure laid out by depth, parents first. What a view draws when words are not enough.
     layers: list[list[Node]] = field(default_factory=list)
 
@@ -315,7 +310,6 @@ def around(suite: Suite, features: list[Any], phrases: dict[str, Any], id: str) 
         sentence=in_words(suite, id) if here.kind == "resource" else "",
         needs=[by_id[name] for name in here.needs if name in by_id],
         needed_by=[node for node in nodes if id in node.needs],
-        actions=here.actions,
         layers=_layers(suite, id, by_id) if here.kind == "resource" else [],
     )
 
@@ -391,10 +385,10 @@ def tests(
     """
     said = phrases or {}
     latest: dict[str, Outcome] = {}
-    for run in record.runs_for(root, environment):
+    for run in runs.runs_for(root, environment):
         for outcome in run.outcomes:
             latest[outcome.test] = outcome.outcome
-    flaky = record.flaky(root, environment)
+    flaky = runs.flaky(root, environment)
 
     def entry(identity: str, label: str, form: str, tags: list[str], arranges: list[str]) -> TestEntry:
         seen = latest.get(identity)
@@ -403,7 +397,7 @@ def tests(
             label=label,
             form=form,
             tags=tags,
-            verdict=str(record.verdict([seen] if seen else [])),
+            verdict=str(runs.verdict([seen] if seen else [])),
             flaky=identity in flaky,
             arranges=arranges,
         )
@@ -415,12 +409,12 @@ def tests(
                 continue
             reach = footprint.arranged(suite, footprint.of_scenario(suite, scenario, said))
             identity = (
-                record.identity(feature.path, scenario.name, root) if feature.path else scenario.name
+                runs.identity(feature.path, scenario.name, root) if feature.path else scenario.name
             )
             out.append(entry(identity, scenario.name, "scenario", list(scenario.tags), reach))
     for path, name, asks in _functions(suite):
         reach = footprint.arranged(suite, footprint.of_function(suite, asks))
-        out.append(entry(record.identity(path, name, root), name, "function", [], reach))
+        out.append(entry(runs.identity(path, name, root), name, "function", [], reach))
     return out
 
 
@@ -480,14 +474,14 @@ def detail_of_test(
         if feature.path is None:
             continue
         for scenario in feature.scenarios:
-            if scenario.is_phrase or record.identity(feature.path, scenario.name, root) != id:
+            if scenario.is_phrase or runs.identity(feature.path, scenario.name, root) != id:
                 continue
             lines = [(line.keyword.title(), line.text) for line in scenario.lines]
             where = f"{feature.path.name}:{scenario.number}"
 
     outcomes = [
         outcome
-        for run in record.runs_for(root, environment)
+        for run in runs.runs_for(root, environment)
         for outcome in run.outcomes
         if outcome.test == listed.id
     ]
@@ -527,9 +521,9 @@ def offers(
 
     Three rules, all read from the registries and the graph:
 
-    - a `Given` for any resource the suite declares, by name or by kind;
-    - a `When` only where the adapter can perform it — an `act` sentence needs the kind to declare
-      that action *and* its adapter to implement `act`; `list every` needs `browse`;
+    - a `Given` for any resource the suite declares, by name or by kind, and only while nothing
+      above it has acted;
+    - a `When` only where the adapter can perform it — `list every` needs `browse`;
     - a `Then` only once something above it has produced what the claim reads.
 
     Ordering the steps differently re-answers the offer.
@@ -539,22 +533,30 @@ def offers(
     slots = {"result"} if any(keyword == "when" for keyword, _ in so_far) else set()
     slots |= {slot for _, text in so_far for slot in _slots(text)}
 
+    acted = any(keyword in ("when", "then") for keyword, _ in so_far)
+
     out: list[Offer] = []
-    for name, node in sorted(suite.instances.items()):
-        kind = fixture_name(declaration_of(node).kind)
-        out.append(Offer("Given", f'the {kind} "{name}"', "declared by this suite"))
-    for kind, cls in sorted(suite.kinds.items()):
-        if hasattr(cls, "factory"):
-            out.append(Offer("Given", f"a {fixture_name(kind)}", "it has a factory"))
+    if not acted:
+        for name, node in sorted(suite.instances.items()):
+            kind = fixture_name(declaration_of(node).kind)
+            out.append(Offer("Given", f'the {kind} "{name}"', "declared by this suite"))
+        for kind, cls in sorted(suite.kinds.items()):
+            if hasattr(cls, "factory"):
+                out.append(Offer("Given", f"a {fixture_name(kind)}", "it has a factory"))
 
     for name in sorted(arranged):
         node = suite.instances[name]
         declaration = declaration_of(node)
         kind = fixture_name(declaration.kind)
-        if declaration.actions and ground.can(node, "act"):
-            for action in sorted(declaration.actions):
-                why = f"{declaration.kind} declares it and its adapter acts"
-                out.append(Offer("When", f'I {action} the {kind} "{name}"', why))
+        for field_name in sorted(values_of(node)):
+            if not is_resource(values_of(node)[field_name]):
+                out.append(
+                    Offer(
+                        "When",
+                        f'the {kind} "{name}" field "{field_name}" becomes ""',
+                        "it is arranged above, and this environment may be changed",
+                    )
+                )
         if ground.can(node, "browse"):
             out.append(Offer("When", f"I list every {kind}", "the adapter browses"))
         out.append(Offer("Then", f'the {kind} "{name}" exists', "it is arranged above"))
@@ -572,6 +574,8 @@ def offers(
 
     for pattern in sorted(phrases):
         keyword = _phrase_keyword(phrases[pattern])
+        if keyword == "Given" and acted:
+            continue
         out.append(Offer(keyword, pattern, "a phrase this suite teaches"))
     return out
 
@@ -638,9 +642,9 @@ def subjects(suite: Suite) -> dict[str, list[str]]:
 # --- Activity and environments --------------------------------------------------------------------
 
 
-def activity(root: Path, environment: str) -> list[record.Run]:
+def activity(root: Path, environment: str) -> list[runs.Run]:
     """Past runs of this environment, newest first."""
-    return list(reversed(record.runs_for(root, environment)))
+    return list(reversed(runs.runs_for(root, environment)))
 
 
 def environments(suite: Suite) -> list[dict[str, Any]]:
@@ -663,4 +667,4 @@ def verdict_of(entries: list[TestEntry]) -> Verdict:
         "failing": Outcome.FAILED,
         "skipped": Outcome.SKIPPED,
     }
-    return record.verdict([words[entry.verdict] for entry in entries if entry.verdict in words])
+    return runs.verdict([words[entry.verdict] for entry in entries if entry.verdict in words])

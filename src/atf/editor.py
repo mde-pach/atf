@@ -9,7 +9,7 @@ from datetime import UTC
 from pathlib import Path
 from typing import Any
 
-from . import core, markers, record
+from . import core, markers, runs
 from .commands import make as make_resources
 from .environment import build_ground
 from .loader import SuiteError, load_suite
@@ -113,7 +113,6 @@ class Editor:
             "sentence": here.sentence,
             "needs": [_as_node(one) for one in here.needs],
             "needed_by": [_as_node(one) for one in here.needed_by],
-            "actions": here.actions,
             "layers": [[_as_node(one) for one in layer] for layer in here.layers],
         }
 
@@ -508,9 +507,6 @@ def render_node(editor: Editor, id: str) -> str:
         parts.append(f"<p><small>{html.escape(here['sentence'])}</small></p>")
     parts.append(_edges("needs", here["needs"]))
     parts.append(_edges("what breaks if this does", here["needed_by"]))
-    if here["actions"]:
-        performed = " ".join(f"<code>{html.escape(one)}</code>" for one in here["actions"])
-        parts.append(f"<h2>actions</h2><p>{performed}</p>")
     return page(here["label"], "".join(parts), "graph")
 
 
@@ -977,6 +973,6 @@ def serve(manifest: Path | None, env: str, port: int) -> None:
     uvicorn.run(build_app(Editor(manifest, env)), host=LOOPBACK, port=port, log_level="warning")
 
 
-def last_run(root: Path, environment: str) -> record.Run | None:
-    runs = record.runs_for(root, environment)
-    return runs[-1] if runs else None
+def last_run(root: Path, environment: str) -> runs.Run | None:
+    past = runs.runs_for(root, environment)
+    return past[-1] if past else None

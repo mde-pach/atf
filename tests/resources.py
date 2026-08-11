@@ -5,7 +5,7 @@ two resources with lineage between them, one scoped to a single test, two enviro
 may not be changed. ATF's suite makes it exist, runs `atf` against it, and claims on what came back.
 """
 
-from atf import browser, filesystem, process
+from atf import browser, filesystem, shell
 
 MANIFEST = """\
 resources: [./resources.py]
@@ -22,56 +22,62 @@ environments:
 """
 
 RESOURCES = '''\
-"""A small, ordinary suite: lineage, every scope, and something the environment owns."""
+"""A small, ordinary suite: lineage, every scope, and something the environment owns.
 
-from atf import Update, filesystem
+The `__future__` import is here on purpose: a resources module is an ordinary Python module, and
+what a linter or an editor adds to one must not be what stops the suite loading.
+"""
+
+from __future__ import annotations
+
+from atf import filesystem
 
 
-@filesystem(unique_by="path")
+@filesystem.directory()
 class Notebook:
     path: str
 
 
-@filesystem(unique_by="path", depends_on=[Notebook])
+@filesystem.file(depends_on=[Notebook])
 class Note:
     path: str
     text: str
 
 
-@filesystem(unique_by="path", actions={"tick": Update(text="done\\n")})
+@filesystem.file()
 class Card:
-    """A field a declared action writes. Reconciliation must not undo what the action did."""
+    """A field a scenario moves mid-test, and that is put back when the test ends."""
 
     path: str
     text: str
 
 
-@filesystem(unique_by="path", scope="function")
+@filesystem.file(scope="function")
 class Draft:
     path: str
     text: str
 
 
-@filesystem(unique_by="path", scope="function")
+@filesystem.directory(scope="function")
 class Sketchbook:
     """A directory made for one test, which teardown can only remove once it is empty."""
 
     path: str
 
 
-@filesystem(unique_by="path", scope="function", depends_on=[Sketchbook])
+@filesystem.file(scope="function", depends_on=[Sketchbook])
 class Sketch:
     path: str
     text: str
 
 
-@filesystem(unique_by="path", scope="session")
+@filesystem.file(scope="session")
 class Meeting:
     path: str
     text: str
 
 
-@filesystem(unique_by="path", when_absent="require")
+@filesystem.file(when_absent="require")
 class Archive:
     """Somebody else's job. ATF names it rather than making one."""
 
@@ -102,6 +108,20 @@ Feature: notes
     Then the notebook is there
     And the note "standup" exists
 
+  @phrase
+  Scenario: I tick the card "{name}"
+    When the card "{name}" field "text" becomes "done"
+
+  Scenario: a field changes mid-test, with nothing declared for it
+    Given the card "todo"
+    When the card "todo" field "text" becomes "halfway"
+    Then the card "todo" field "text" is "halfway"
+
+  Scenario: a phrase is what gives the change a domain verb
+    Given the card "todo"
+    When I tick the card "todo"
+    Then the card "todo" field "text" is "done"
+
   Scenario: a draft is arranged for one test
     Given the draft "scratch"
     Then the draft "scratch" exists
@@ -126,6 +146,11 @@ Feature: notes
   Scenario: a claim this suite registered holds like a built-in
     Given the note "standup"
     Then the note "standup" reads like a note
+
+  Scenario: a slot a When produced reaches a step as a parameter
+    Given the note "standup"
+    When I open the note "standup"
+    Then the opened note is at "notebooks/work/standup.md"
 
   Scenario: a phrase says what several sentences say
     Given the note "standup"
@@ -163,10 +188,7 @@ def test_asking_by_kind_gets_the_one_in_scope(work: Notebook, notebook: Notebook
     assert notebook is work
 '''
 
-CONFTEST = 'pytest_plugins = ["atf.plugin"]\n'
-
-
-@filesystem(unique_by="path", scope="function")
+@filesystem.tree(scope="function")
 class Workspace:
     """An ATF suite on disk: a manifest, a resources module, a conftest and a spec.
 
@@ -181,9 +203,25 @@ class Workspace:
 
 
 INNER_VOCABULARY = '''\
-"""What the scaffolded suite registers: a marker, a claim, a check and a report format."""
+"""What the scaffolded suite registers: a marker, a claim, a check, a format and two steps."""
 
-from atf import check, claim, marker, report
+from atf import check, claim, claims, marker, report, then, when
+
+
+@when('I open the note "{name}"', target="opened")
+def _(name, atf):
+    """A `When` whose return value lands on a slot."""
+    return atf.look_up("note", name)
+
+
+@then('the opened note is at "{path}"')
+def _(opened, path):
+    """A slot reaching a step as a parameter, which is what `write-a-step-in-python.md` teaches.
+
+    The alternative is `def _(atf, path)` and `atf.recall("opened")`. Both work; this is the one
+    the documentation puts first, so this is the one the suite has to run.
+    """
+    claims.field_is(opened, "path", path)
 
 
 @marker("markdown")
@@ -230,7 +268,7 @@ BROKEN_RESOURCES = '''\
 from atf import filesystem
 
 
-@filesystem(unique_by="path")
+@filesystem.directory()
 class Notebook:
     path: str
 
@@ -249,6 +287,35 @@ def test_two_of_a_kind(work: Notebook, spare: Notebook, notebook: Notebook):
     raise AssertionError("this body must never run")
 '''
 
+MISTYPED_RESOURCES = '''\
+"""One resource setting a field its class never declared.
+
+`txt` is a typo for `text`. Nothing but the class's own annotations says so, which is why this is
+refused where it is written rather than carried to the adapter and written to the system.
+"""
+
+from atf import filesystem
+
+
+@filesystem.file()
+class Note:
+    path: str
+    text: str
+
+
+standup = Note(path="notebooks/standup.md", txt="stand up\\n")
+'''
+
+ARRANGES_LATE = """\
+Feature: a scenario that arranges after it has acted
+
+  Scenario: it goes back for a resource once it has begun
+    Given the notebook "work"
+    When the notebook "work" field "path" becomes "notebooks/moved"
+    Given the notebook "spare"
+    Then the notebook "spare" exists
+"""
+
 UNKNOWN_SENTENCE = """\
 Feature: a sentence nobody taught
 
@@ -262,7 +329,6 @@ scaffolded = Workspace(
     files={
         "atf.yaml": MANIFEST,
         "resources.py": RESOURCES,
-        "conftest.py": CONFTEST,
         "vocabulary.py": INNER_VOCABULARY,
         "specs/notes.feature": SPEC,
         "specs/test_both_surfaces.py": PYTEST_SIDE,
@@ -270,7 +336,7 @@ scaffolded = Workspace(
 )
 
 
-@process(
+@shell.process(
     command="uv run atf --config .workspaces/suite/atf.yaml edit --port 8791",
     port=8791,
     scope="function",
@@ -283,7 +349,7 @@ class Editor:
     """
 
 
-@browser(when_absent="observe", unique_by="path", scope="function")
+@browser.page(when_absent="observe", scope="function")
 class Screen:
     """A page of that editor.
 
@@ -339,10 +405,21 @@ broken = Workspace(
     files={
         "atf.yaml": MANIFEST,
         "resources.py": BROKEN_RESOURCES,
-        "conftest.py": CONFTEST,
         "vocabulary.py": BAD_VOCABULARY,
         "specs/test_ambiguous.py": AMBIGUOUS,
         "specs/unknown.feature": UNKNOWN_SENTENCE,
+        "specs/late.feature": ARRANGES_LATE,
+    },
+)
+
+
+mistyped = Workspace(
+    path="mistyped",
+    files={
+        "atf.yaml": MANIFEST,
+        "resources.py": MISTYPED_RESOURCES,
+        "vocabulary.py": INNER_VOCABULARY,
+        "specs/notes.feature": "Feature: nothing this suite gets far enough to run\n",
     },
 )
 
@@ -352,7 +429,6 @@ contrary = Workspace(
     files={
         "atf.yaml": MANIFEST,
         "resources.py": RESOURCES,
-        "conftest.py": CONFTEST,
         "vocabulary.py": INNER_VOCABULARY,
         "specs/contrary.feature": CONTRARY,
     },

@@ -7,9 +7,9 @@ from .declare import (
     DeclarationError,
     Instance,
     Unreachable,
-    Update,
     adapter,
     declaration_of,
+    driver,
     instance_of,
     is_declared,
     is_resource,
@@ -40,31 +40,35 @@ from .environment import Ground, GroundError, build_ground  # isort: skip
 from .reconcile import (  # isort: skip
     Reconciliation,
     ProvisionError,
-    act,
     browse,
+    change,
     diff,
     ensure,
     provision,
     status,
     teardown,
 )
-from .spi import Adapter, Did, Record, SpiError, State  # isort: skip
+from .spi import Adapter, Did, Record, Resource, SpiError, State  # isort: skip
 
 from . import claims  # isort: skip
 from .markers import Marker, MarkerError, marker  # isort: skip
 from .naming import current as namespace, within  # isort: skip
-from .record import Outcome, Run, TestOutcome, Verdict, Where  # isort: skip
+from .runs import Outcome, Run, TestOutcome, Verdict, Where  # isort: skip
 from .registries import Check, check, claim  # isort: skip
 from .reports import report  # isort: skip
 from .steps import Step, StepError, given, then, when  # isort: skip
 
-#: The systems ATF ships. `rest` joins them later; everything else is an adapter somebody wrote.
-browser = system("browser")
-command = system("command")
-filesystem = system("filesystem")
-process = system("process")
-rest = system("rest")
-sql = system("sql")
+#: The things ATF ships an adapter for. Each is one kind of thing, not one technology: `file`,
+#: `directory` and `tree` are three, and they read one `filesystem:` block between them.
+#: The drivers ATF ships. Each carries the adapters over it as attributes, so a declaration names
+#: both at once: `@filesystem.file(...)`, `@sql.row(...)`, `@browser.page(...)`.
+from .declare import DRIVERS as _DRIVERS  # noqa: E402  # isort: skip
+
+browser = _DRIVERS["browser"]
+filesystem = _DRIVERS["filesystem"]
+http = _DRIVERS["http"]
+shell = _DRIVERS["shell"]
+sql = _DRIVERS["sql"]
 
 __version__ = "0.1.0"
 
@@ -88,6 +92,7 @@ __all__ = [
     "Run",
     "ProvisionError",
     "Record",
+    "Resource",
     "SpiError",
     "State",
     "Step",
@@ -97,26 +102,26 @@ __all__ = [
     "SuiteError",
     "Unmet",
     "Unreachable",
-    "Update",
     "Verdict",
     "Where",
     "__version__",
-    "act",
     "adapter",
     "browse",
     "browser",
+    "change",
     "build_ground",
     "claims",
     "check",
+    "filesystem",
+    "http",
     "claim",
     "closure",
-    "command",
     "declaration_of",
     "dependents",
     "diff",
     "edges",
     "ensure",
-    "filesystem",
+    "driver",
     "fixture_name",
     "given",
     "instance_of",
@@ -128,12 +133,11 @@ __all__ = [
     "name_of",
     "order",
     "parents",
-    "process",
     "provision",
     "report",
-    "resource",
-    "rest",
+    "shell",
     "sql",
+    "resource",
     "status",
     "system",
     "teardown",

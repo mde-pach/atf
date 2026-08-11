@@ -6,4 +6,4 @@ environments:
   local:
     mutable: true
     filesystem: { root: ./tmp }
-    process: { cwd: . }
+    shell:      { cwd: . }

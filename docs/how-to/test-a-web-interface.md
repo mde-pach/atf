@@ -10,7 +10,7 @@ Declare the screen as a resource:
 from atf import browser
 
 
-@browser(when_absent="observe")
+@browser.page(when_absent="observe")
 class Screen:
     path: str
 

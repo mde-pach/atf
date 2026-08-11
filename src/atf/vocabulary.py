@@ -6,6 +6,7 @@ from typing import Any
 
 from . import claims
 from .declare import declaration_of
+from .environment import view
 from .runtime import Scope
 from .steps import READS, WRITES, given, then, when
 
@@ -51,10 +52,14 @@ def _run_as(command: str, slot: str, shell: Any, atf: Scope) -> Any:
     return atf.remember(slot, shell(command))
 
 
-@when('I {action} the {kind} "{name}"', effect=WRITES)
-def _act(action: str, kind: str, name: str, atf: Scope) -> Any:
-    """`When I complete the task "laundry"` — one of the resource's declared verbs."""
-    return atf.act(kind, name, action)
+@when('the {kind} "{name}" field "{field}" becomes "{value}"', effect=WRITES)
+def _becomes(kind: str, name: str, field: str, value: str, atf: Scope) -> Any:
+    """`When the task "laundry" field "done" becomes "true"`.
+
+    The act-time twin of `Given the task "laundry" but "done" is "true"`. Nothing is declared for
+    it: a domain verb is a phrase standing over this sentence.
+    """
+    return atf.change(kind, name, {field: value})
 
 
 @when("I list every {kind}", effect=READS)
@@ -235,13 +240,13 @@ def _choose(option: str, role: str, name: str, atf: Scope) -> None:
 def _page(atf: Scope) -> Any:
     """The one page this scenario is looking at.
 
-    A scenario arranges exactly one `browser` resource, so there is nothing to disambiguate here —
+    A scenario arranges exactly one `page` resource, so there is nothing to disambiguate here —
     two of a kind in scope was already refused at collection.
     """
-    looking = [node for node in atf.arranged if declaration_of(node).system == "browser"]
+    looking = [node for node in atf.arranged if declaration_of(node).system == "browser.page"]
     if not looking:
         claims.fail("this sentence is about a page, and the scenario arranged none")
-    return atf.ground.adapters["browser"].page(looking[-1])
+    return atf.ground.drivers["browser"].looking_at(view(looking[-1]))
 
 
 def _unquote(written: str) -> str:

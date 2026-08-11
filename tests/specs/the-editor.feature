@@ -19,7 +19,7 @@ Feature: the editor shows the same graph
     Given the screen "catalogue"
     When I read "/api/catalogue" from the editor
     Then the answer contains "Notebook"
-    And the answer contains "filesystem"
+    And the answer contains "directory"
 
   @edit
   Scenario: opening a resource shows what would be sent to create it

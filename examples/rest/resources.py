@@ -4,22 +4,22 @@ Note what changes and what does not. `depends_on` is identical. `unique_by` is i
 decorator and its options differ — which is the whole claim a system makes.
 """
 
-from atf import process, rest
+from atf import http, shell
 
 
-@rest(path="/owners", unique_by="email", list_filter=["email"], collection_key="items")
+@http.record(path="/owners", unique_by="email", list_filter=["email"], collection_key="items")
 class Owner:
     """Unique by email, fetchable only by a numeric id. `find` filters; nobody writes the id."""
 
     email: str
 
 
-@rest(path="/lists", unique_by="slug", list_filter=["slug"], collection_key="items", depends_on=[Owner])
+@http.record(path="/lists", unique_by="slug", list_filter=["slug"], collection_key="items", depends_on=[Owner])
 class TodoList:
     slug: str
 
 
-@process(command="python api.py", port=8799, scope="session")
+@shell.process(command="python api.py", port=8799, scope="session")
 class Api:
     """The API under test, started for the run and stopped when it ends.
 

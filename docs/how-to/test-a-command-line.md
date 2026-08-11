@@ -8,7 +8,7 @@ Tell the environment how the tool is invoked. That is one block in
 [`atf.yaml`](configure-an-environment.md):
 
 ```yaml
-    command: { prefix: "python todo.py" }
+    shell: { prefix: "python todo.py" }
 ```
 
 Then run it:
@@ -116,7 +116,7 @@ that greps stderr for `unreachable` is the same mistake as a scenario claiming o
 **A tool with no prefix.** Leave `prefix` out and the first word is run as-is, found on `PATH`.
 
 **A long-running process.** `When I run` waits for the process to exit. Something that stays up is a
-`@process` resource, arranged rather than acted.
+`@shell.process` resource, arranged rather than acted.
 
 **Reading the output in Python.** [`shell`](../reference/act.md#shell) is the fixture behind
 `When I run`, and returns the same record — see

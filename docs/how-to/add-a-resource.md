@@ -8,10 +8,10 @@ Declare the shape and the system that holds it.
 
 ```python
 # resources.py
-from adapters.sqlite import sqlite      # your suite's adapter, not ATF's
+from atf import sql      # your suite's adapter, not ATF's
 
 
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 ```
@@ -22,7 +22,7 @@ the field ATF reads to decide whether this record is already there. `table` is t
 that: this adapter never guesses a table from a class name, because a class is a shape your suite
 chose and a table is a name your database chose.
 
-ATF ships `@command`, `@browser`, `@filesystem` and `@process`. `@sqlite` is not one of them: it is an
+ATF ships `@filesystem.file`, `@filesystem.directory`, `@filesystem.tree`, `@browser.page`, `@shell.process`, `@http.record` and `@sql.row`. `@sql.row` is not one of them: it is an
 [adapter](../reference/arrange.md#adapter) living in your own suite, and importing a decorator from
 your own code is the normal case. [Teach ATF a new system](teach-atf-a-new-system.md) opens the file.
 
@@ -137,7 +137,7 @@ request — see [Give a resource a factory](give-a-resource-a-factory.md).
 **A field beyond the recognition field.** Add it to the class and pass it at construction.
 
 ```python
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
     display_name: str

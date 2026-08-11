@@ -20,8 +20,8 @@ have typed yourself, and performs nothing.
 
 The editor knows about no specific type, system, claim or marker. It renders whatever the
 [registries](extending-atf.md) contain: the `sqlite` adapter a suite registers appears in the
-catalogue as a type, counted in the overview, its create bodies shown, its `act` verbs offered by
-the composer; register `#iban` and it appears in the marker picker and the value hints; register a
+catalogue as a type, counted in the overview, its create bodies shown, a `becomes` sentence per
+field offered by the composer; register `#iban` and it appears in the marker picker and the value hints; register a
 claim and the composer offers its sentence wherever its subject exists. No editor code changes, and
 there is no list of known systems anywhere in it.
 
@@ -183,10 +183,10 @@ Writing a scenario, or a phrase, from what the suite already knows. It offers th
 derived from the registries and the graph:
 
 - **A `Given`** for any resource the suite declares, by name or by type.
-- **A step only where it can be used.** `When I complete the task "laundry"` is offered because
-  `Task` declares a `complete` action and its adapter implements `act`. `When I list every todo_list`
-  is offered because that adapter implements `browse`. An adapter that implements neither contributes
-  no `When`, and the composer says so.
+- **A step only where it can be used.** `When the task "laundry" field "done" becomes "1"` is
+  offered for every field of every resource arranged above it. `When I list every todo_list` is
+  offered only because that adapter implements `browse`; one that does not contributes no such
+  `When`, and the composer says so.
 - **A claim only once something above it has produced what the claim reads.**
   `Then the result field "exit_code" is "0"` appears after a `When I run …`;
   `Then the todo_list "groceries" field "slug" is "groceries"` after that list has been arranged.

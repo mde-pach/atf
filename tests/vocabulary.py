@@ -9,8 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from atf import check, claim, claims, then, when
+from atf.entry import cli
 
-SUBCOMMANDS = {"init", "status", "make", "run", "check", "docs", "edit", "impact", "unused"}
+#: Read off the command group rather than written down, so a new subcommand cannot be shipped with
+#: no scenario naming it and no way to notice.
+SUBCOMMANDS = set(cli.commands)
 
 
 @claim('the {result} lists "{first}" before "{second}"')
@@ -40,7 +43,7 @@ def _(suite):
 
 def _workspace(atf) -> Path:
     """Where the scaffolded suite lives, asked of the adapter rather than assumed."""
-    return Path(atf.ground.adapters["filesystem"].root) / "suite"
+    return Path(atf.ground.drivers["filesystem"].root) / "suite"
 
 
 @when('somebody changes "{path}" to "{text}"')
@@ -96,7 +99,7 @@ def _(path: str, atf) -> Any:
     import json  # noqa: PLC0415
     import urllib.request  # noqa: PLC0415
 
-    base = atf.ground.adapters["browser"].base_url
+    base = atf.ground.drivers["browser"].base_url
     with urllib.request.urlopen(f"{base}{path}", timeout=10) as answer:  # noqa: S310
         return atf.remember("answer", json.loads(answer.read()))
 

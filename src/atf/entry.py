@@ -17,13 +17,13 @@ from typing import Any
 import click
 import pytest
 
-from . import __version__, commands, naming, record, reports
+from . import __version__, commands, naming, reports, runs
 from .commands import FAILED, INVALID, NEVER_STARTED, OK, USAGE, Answer, fault
 from .loader import SuiteError, load_suite
 from .manifest import ManifestError, load
-from .record import Outcome
 from .reports import ReportError
 from .runner import Collected, Selection, SelectionError, build_run, resources_reaching
+from .runs import Outcome
 
 
 @dataclass
@@ -406,7 +406,7 @@ def do_run(options: Options, **flags: Any) -> Answer:
         return fault(str(exc), USAGE)
 
     if selection.failed:
-        selection.failed_ids = set(record.last_failed(manifest.root, environment))
+        selection.failed_ids = set(runs.last_failed(manifest.root, environment))
 
     for argument in flags["report"]:
         try:
@@ -442,7 +442,7 @@ def do_run(options: Options, **flags: Any) -> Answer:
     plugin.SHARD = shard
     plugin.SEED = selection.seed
     plugin.ONLY = confined
-    started = record.now()
+    started = runs.now()
 
     explaining = bool(flags.get("explain"))
     if jobs > 1 and not flags["dry_run"] and not explaining:
@@ -454,7 +454,9 @@ def do_run(options: Options, **flags: Any) -> Answer:
     # identity where `-k` names a pattern. `-k` cannot: its expression language has no room for a
     # sentence with spaces in it.
     named = [_locate(manifest, one) for one in flags.get("tests", ())]
-    arguments = [*(named or [str(manifest.specs)]), "-p", "atf.plugin", "--rootdir", str(manifest.root)]
+    # No `-p atf.plugin`: ATF is a pytest plugin by entry point, so naming it here loads it a second
+    # time and pytest warns that it can no longer rewrite its assertions.
+    arguments = [*(named or [str(manifest.specs)]), "--rootdir", str(manifest.root)]
     if flags["keyword"]:
         arguments += ["-k", flags["keyword"]]
     if options.quiet or explaining:
@@ -499,7 +501,7 @@ def _finish(
     """Record what a run did, write its reports, and say so in one line."""
     finished = build_run(environment, manifest.root, selection, outcomes, started)
     if not flags.get("no_record"):
-        record.save(manifest.root, finished)
+        runs.save(manifest.root, finished)
 
     written = [str(reports.write(argument, finished)) for argument in flags["report"]]
     counts = finished.counts
@@ -630,8 +632,6 @@ def _collect_only(options: Options, manifest: Any, flags: dict[str, Any]) -> Any
     named = [_locate(manifest, one) for one in flags.get("tests", ())]
     arguments = [
         *(named or [str(manifest.specs)]),
-        "-p",
-        "atf.plugin",
         "--rootdir",
         str(manifest.root),
         "--collect-only",
@@ -680,10 +680,10 @@ def _one_worker(
     except (ReportError, OSError):
         said = (finished.stderr or finished.stdout).strip().splitlines()
         return [
-            record.TestOutcome(
+            runs.TestOutcome(
                 test=one,
                 outcome=Outcome.FAILED,
-                failed_at=record.Where(message=said[-1] if said else record.STRANDED),
+                failed_at=runs.Where(message=said[-1] if said else runs.STRANDED),
             )
             for one in tests
         ]

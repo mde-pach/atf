@@ -13,14 +13,14 @@ Every environment is declared in `atf.yaml`, at the root of the suite:
 ```yaml
 resources: [./resources.py]
 specs: ./specs
-extensions: [./adapters/sqlite.py]
+extensions: [./adapters/todo.py]
 default_env: local
 
 environments:
   local:
     mutable: true
-    sqlite:  { path: ./todo.db }
-    command: { prefix: "python todo.py" }
+    todo:    { path: ./todo.db }
+    shell: { prefix: "python todo.py" }
 
   staging:
     browser: { headless: true }
@@ -35,7 +35,7 @@ The file has five top-level keys.
 :   The directory holding scenarios and phrases, as `./specs`. Required.
 
 `extensions`
-:   Paths or installed packages — `[./adapters/sqlite.py, atf_payments]` — imported once at
+:   Paths or installed packages — `[./adapters/todo.py, atf_payments]` — imported once at
     start-up. Importing them is what registers adapters, claims, markers, report formats and checks.
     Optional; a suite that extends nothing omits it.
 
@@ -74,42 +74,52 @@ each is written out in full.
 :   Whether ATF may create, change and delete here, written `mutable: true`. It is `false` unless
     stated. See [may be changed](#may-be-changed).
 
-`command`
-:   Settings for the `command` system: `prefix`, put in front of every command a test runs.
-    `command: { prefix: "python todo.py" }`. No default; required if any test runs a command.
+**Every other key is a [driver](arrange.md#driver)**, never a system. A driver is the machinery an
+adapter works through — a connection, a browser, a shell — and it is the only thing that carries
+settings. Several systems can share one: `file`, `directory` and `tree` all work through
+`filesystem`, and configure it once.
+
+`shell`
+:   Settings for the `shell` driver: `prefix`, put in front of every command a test runs; `cwd`,
+    where a command runs and where a `shell.process` is started; `start_timeout`, how long a
+    `shell.process` waits for a declared port. `shell: { prefix: "python todo.py" }`. No default;
+    required if any test runs a command or declares a `shell.process`.
 
 `browser`
-:   Settings for the `browser` system: `base_url`, where a page opens; `headless`, whether a window
-    is drawn. `browser: { headless: true }`. No default; required if any resource uses `browser`.
+:   Settings for the `browser` driver: `base_url`, where a page opens; `headless`, whether a window
+    is drawn. `browser: { headless: true }`. No default; required by the `page` system.
 
 `filesystem`
-:   Settings for the `filesystem` system: `root`, the directory paths are resolved against.
-    `filesystem: { root: ./workspace }`. No default; required if any resource uses `filesystem`.
+:   Settings for the `filesystem` driver: `root`, the directory paths are resolved against.
+    `filesystem: { root: ./workspace }`. No default; required by the `file`, `directory` and `tree`
+    systems.
 
-`process`
-:   Settings for the `process` system: `cwd`, the directory a process is started in.
-    `process: { cwd: . }`. No default; required if any resource uses `process`.
+`http`
+:   Settings for the `http` driver: `base_url`, and optionally `auth`, `headers`, `timeout`,
+    `verify` and `pagination`. Required by the `rest` system.
 
-Those are the four systems ATF ships. Every other block is an adapter the suite registered under
-`extensions`, named after the system it teaches and taking the settings that adapter declares:
-`sqlite: { path: ./todo.db }` is the `sqlite` adapter used throughout this documentation, and its
-`path` is the database file. There is no other kind of key. A suite's own client of the product — an
-HTTP wrapper, an SDK, a queue helper — is an ordinary pytest fixture the suite writes, and none of
-ATF's business.
+`sql`
+:   Settings for the `sql` driver: `path` to a database file, or `url` to one elsewhere — one of the
+    two, never both. Required by the `sql` system.
 
-A system block is needed only when something in the suite uses that system. If a resource needs a
-system the chosen environment has no block for, ATF stops before running anything and names both the
-system and the environment. The list of systems is in [arrange](arrange.md#system).
+Those are the five drivers ATF ships. Every other block is a driver the suite registered under
+`extensions`, taking the settings that driver declares: `sql: { path: ./todo.db }` is the
+`sqlite` driver used throughout this documentation, and its `path` is the database file. There is no
+other kind of key. A suite's own client of the product — an HTTP wrapper, an SDK, a queue helper —
+is an ordinary pytest fixture the suite writes, and none of ATF's business.
 
-`rest` ships later. When it does it takes a `rest:` block, in the same position as the others.
+A driver block is needed only when something in the suite reaches it. If an adapter asks for a
+driver the chosen environment has no block for, ATF stops before running anything and names the
+adapter, the driver and the environment.
 
 ### Settings are not options {#settings}
 
-Everything inside an environment block is a **setting**. A setting is written in `atf.yaml` under
-one environment and varies from one environment to the next, and that is the test of where a value
-belongs. What does not vary between environments is an **option**, written on the resource class's
-decorator and varying per resource. `sqlite: { path: ./todo.db }` is a setting;
-`@sqlite(table="lists", unique_by="slug")` carries options.
+Everything inside an environment block is a **setting**, and settings belong to drivers. A setting
+is written in `atf.yaml` under one environment and varies from one environment to the next, and that
+is the test of where a value belongs. What does not vary between environments is an **option**,
+written on the resource class's
+decorator and varying per resource. `sql: { path: ./todo.db }` is a setting;
+`@todo.list()` carries options.
 
 `TodoList` maps to the same table wherever it is arranged, so the table is an option. The database
 file is `./todo.db` on a laptop and something else in CI, so the path is a setting. Each system

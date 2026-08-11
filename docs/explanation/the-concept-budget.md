@@ -88,9 +88,9 @@ confidently.
 It was defended at four for a long time and it is seven now. Nothing was added: the total is still
 twenty-seven, and the three that arrived came from neighbouring levels, pulled by writers who could
 not describe a declaration without them. `system` and `recognition` came down from level 4, where
-they sat with configuration, because `@sqlite(table="owners", unique_by="email")` is on the first line of every
+they sat with configuration, because `@todo.owner()` is on the first line of every
 declaration anybody writes. `using an interface` and `interface claim` came up from level 2, because
-both need `@browser` on a class and the level-2 pages had to show a decorator they were forbidden to
+both need `@browser.page` on a class and the level-2 pages had to show a decorator they were forbidden to
 name.
 
 Four was never a measurement of what declaring costs. It was a measurement of what four pages had
@@ -122,7 +122,7 @@ escape hatches.
 
 When something new is proposed, one of three things happens.
 
-It **collapses** into an existing concept — a new option on `@sqlite` is not a new concept, because
+It **collapses** into an existing concept — a new option on `@sql.row` is not a new concept, because
 configuration belongs to the system. Most good proposals end here.
 
 It **replaces** one, and the replaced concept is then removed from every page it appears on rather

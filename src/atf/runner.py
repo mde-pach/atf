@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 
-from . import graph, record
+from . import graph, runs
 from .declare import instance_of
 from .loader import Suite
-from .record import Outcome, Run, TestOutcome, Where
+from .runs import Outcome, Run, TestOutcome, Where
 
 
 @dataclass
@@ -122,7 +122,7 @@ class Collected:
                 self.outcomes[nodeid] = TestOutcome(
                     test=nodeid,
                     outcome=Outcome.FAILED,
-                    failed_at=Where(message=record.STRANDED),
+                    failed_at=Where(message=runs.STRANDED),
                 )
         return [self.outcomes[nodeid] for nodeid in self.collected if nodeid in self.outcomes]
 
@@ -155,13 +155,13 @@ def build_run(
     started: str,
 ) -> Run:
     return Run(
-        id=record.new_id(),
+        id=runs.new_id(),
         environment=environment,
         started=started,
-        finished=record.now(),
+        finished=runs.now(),
         source="local",
-        label=record.label_from_environment(),
-        revision=record.revision(root),
+        label=runs.label_from_environment(),
+        revision=runs.revision(root),
         selection=selection.as_json(),
         outcomes=outcomes,
     )

@@ -32,15 +32,6 @@ class Reconciliation:
         return name_of(self.resource) or declaration_of(self.resource).kind
 
 
-def acted_fields(resource: Any) -> set[str]:
-    """Fields a declared action writes, which reconciliation must not undo.
-
-    A field named by both the shape and an action is declared for its *initial* value, and is not
-    held to it afterwards.
-    """
-    return {field for action in declaration_of(resource).actions.values() for field in action.values}
-
-
 def declared_values(resource: Any) -> Record:
     """The fields ATF writes when it creates: everything declared that is not another resource.
 
@@ -48,15 +39,6 @@ def declared_values(resource: Any) -> Record:
     diff is taken over.
     """
     return {name: value for name, value in values_of(resource).items() if not is_resource(value)}
-
-
-def comparable_values(resource: Any) -> Record:
-    """What the diff is taken over: the declared scalars, minus what an action is free to change.
-
-    A field a scenario varied is always compared, even where an action writes it.
-    """
-    loose = acted_fields(resource) - instance_of(resource).varied
-    return {name: value for name, value in declared_values(resource).items() if name not in loose}
 
 
 def parent_key(resource: Any, field_name: str) -> str:
@@ -109,7 +91,7 @@ def diff(resource: Any, found: Record) -> Record:
     """The declared fields the found record does not already satisfy."""
     changed = {
         name: value
-        for name, value in comparable_values(resource).items()
+        for name, value in declared_values(resource).items()
         if not same_value(found.get(name, None), value)
     }
     return {**changed, **parent_changes(resource, found)}
@@ -174,7 +156,7 @@ def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Reconcili
         return Reconciliation(resource, State.ABSENT, Did.CREATED, changes=declared_values(resource), why="dry run")
 
     try:
-        record = ground.adapter_for(resource).create(resource)
+        record = ground.perform(resource, "create")(resource)
     except Unreachable as exc:
         return Reconciliation(resource, State.UNREACHABLE, Did.LEFT_ALONE, why=str(exc))
     _remember_identity(resource, record)
@@ -192,7 +174,7 @@ def _remember_identity(resource: Any, record: Record) -> None:
 
 def _apply(ground: Ground, resource: Any, found: Record, changes: Record) -> Record:
     try:
-        return ground.adapter_for(resource).update(resource, found, changes)
+        return ground.perform(resource, "update")(resource, found, changes)
     except Unreachable:
         raise
     except Exception as exc:
@@ -258,25 +240,22 @@ def _would(ground: Ground, resource: Any) -> Did:
 # --- The two optional methods ----------------------------------------------------------------------
 
 
-def act(ground: Ground, resource: Any, action: str) -> Any:
-    """Run one of the resource's declared verbs — `When I complete the task "laundry"`.
+def change(ground: Ground, resource: Any, changes: Record) -> Record:
+    """Write fields onto a resource that is already there.
 
-    A system without `act` can still be arranged and claimed about; it has no verbs of its own, and
-    saying so here is better than a missing-attribute error inside a step.
+    The act-time twin of a variation: `Given ... but "done" is "true"` says it before the test runs,
+    this says it in the middle of one. It goes through `update`, which every adapter answers.
     """
     declaration = declaration_of(resource)
-    if action not in declaration.actions:
-        known = ", ".join(sorted(declaration.actions)) or "none"
-        raise ProvisionError(f"{declaration.kind} has no action {action!r} (declared: {known})")
-    if not ground.can(resource, "act"):
+    if not ground.mutable:
         raise ProvisionError(
-            f"the {declaration.system} system cannot act — its adapter implements no `act`, "
-            f"so {declaration.kind}'s `actions=` has nothing to run it"
+            f"the {ground.config.name} environment may not be changed, and this sentence changes "
+            f"{name_of(resource) or declaration.kind}"
         )
     state, found = ground.find(resource)
     if state is not State.PRESENT or found is None:
-        raise ProvisionError(f"{name_of(resource) or declaration.kind} is {state}, so nothing can act on it")
-    return ground.adapter_for(resource).act(resource, found, declaration.actions[action])
+        raise ProvisionError(f"{name_of(resource) or declaration.kind} is {state}, so nothing can change it")
+    return _apply(ground, resource, found, changes)
 
 
 def browse(ground: Ground, resource: Any) -> list[Record]:
@@ -291,27 +270,34 @@ def browse(ground: Ground, resource: Any) -> list[Record]:
             f"the {declaration.system} system cannot be listed — its adapter implements no `browse`"
         )
     try:
-        return list(ground.adapter_for(resource).browse(resource))
+        from .environment import view  # noqa: PLC0415
+
+        return list(ground.adapter_for(resource).browse(view(resource)))
     except Unreachable:
         raise
 
 
-def restore(ground: Ground, resources: list[Any], undone: list[str] | None = None) -> list[Reconciliation]:
-    """Put back what an action changed, so a declaration holds after a test as well as before it.
+def restore(
+    ground: Ground,
+    resources: list[Any],
+    loosed: dict[int, set[str]] | None = None,
+    undone: list[str] | None = None,
+) -> list[Reconciliation]:
+    """Put back what a test changed, so a declaration holds after it as well as before it.
 
-    Only the fields a declared action writes, and only on resources ATF will not take away. A
-    resource that is torn down needs nothing put back, a field no action names was never loosed, and
-    a system named in `undone` put everything back itself.
+    `loosed` is the fields each test wrote, by resource identity. Only on resources ATF will not
+    take away, and never on a system named in `undone`, which put everything back itself.
     """
     rolled_back = set(undone or ())
+    written_by_test = loosed or {}
     out: list[Reconciliation] = []
     for node in resources:
         if scope_of(node) != "persistent" or not ground.mutable:
             continue
         if declaration_of(node).system in rolled_back:
             continue
-        loosed = acted_fields(node)
-        if not loosed:
+        touched = written_by_test.get(id(node), set())
+        if not touched:
             continue
         state, found = ground.find(node)
         if state is not State.PRESENT or found is None:
@@ -319,7 +305,7 @@ def restore(ground: Ground, resources: list[Any], undone: list[str] | None = Non
         changes = {
             name: value
             for name, value in declared_values(node).items()
-            if name in loosed and not same_value(found.get(name, None), value)
+            if name in touched and not same_value(found.get(name, None), value)
         }
         if not changes:
             continue
@@ -354,7 +340,7 @@ def teardown(ground: Ground, resources: list[Any], undone: list[str] | None = No
             out.append(Reconciliation(node, state, Did.LEFT_ALONE, why="it was not there"))
             continue
         try:
-            ground.adapter_for(node).delete(node, found)
+            ground.perform(node, "delete")(node, found)
         except Unreachable as exc:
             out.append(Reconciliation(node, State.UNREACHABLE, Did.LEFT_ALONE, why=str(exc)))
             continue

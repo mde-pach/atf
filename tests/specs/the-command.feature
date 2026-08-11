@@ -43,6 +43,14 @@ Feature: what the command line promises
     And "fresh/resources.py" contains "depends_on"
 
   @init
+  Scenario: init writes no conftest, because there is nothing to enable
+    Given the workspace "scaffolded"
+    When I run "init" in an empty directory
+    Then the command succeeded
+    And the result field "output" does not contain "conftest"
+    And "fresh/conftest.py" is not there
+
+  @init
   Scenario: init refuses to overwrite what is already there
     Given the workspace "scaffolded"
     When I run "init" in an empty directory

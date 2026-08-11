@@ -12,12 +12,12 @@ from typing import Self
 
 from faker import Faker
 
-from adapters.sqlite import sqlite
+from adapters.todo import todo
 
 faker = Faker()
 
 
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 
@@ -104,7 +104,7 @@ back the record that already exists. Generate from something with room in it.
 import atf
 
 
-@sqlite(table="guests", unique_by="nickname", scope="function")
+@sql.row(table="guests", unique_by="nickname", scope="function")
 class Guest:
     nickname: str
 

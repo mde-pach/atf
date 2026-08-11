@@ -1,4 +1,4 @@
-"""`@sql(...)` — rows in a table, over any DB-API driver named by the environment's URL."""
+"""`@row(...)` — a row in a table, over the `sql` driver."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ import importlib
 from typing import Any, TypedDict
 from urllib.parse import urlparse
 
-from ..declare import Unreachable, adapter, declaration_of, is_resource, values_of
-from ..spi import Record
+from ..declare import Unreachable, adapter, driver
+from ..spi import Record, Resource
 
 #: URL scheme to the DB-API module that answers it, and the placeholder that module wants.
-DRIVERS: dict[str, tuple[str, str]] = {
+MODULES: dict[str, tuple[str, str]] = {
     "sqlite": ("sqlite3", "?"),
     "postgresql": ("psycopg", "%s"),
     "postgres": ("psycopg", "%s"),
@@ -35,19 +35,12 @@ def _table(
     }
 
 
-@adapter("sql")
-class Sql:
-    """Rows in a table, recognised by the columns `unique_by` names."""
+@driver("sql")
+class Database:
+    """One connection, over any DB-API module named by the environment's URL.
 
-    class Options(TypedDict, total=False):
-        """What the decorator takes, per resource."""
-
-        #: The table this kind maps to. Defaults to the class's name, lowercased.
-        table: str
-        #: What this schema calls the primary key.
-        id_field: str
-        #: What a column holding a parent is called: `owner` becomes `owner_id`.
-        parent_suffix: str
+    A step asks for this by the name `sql`; the `sql` adapter works through it.
+    """
 
     class Settings(TypedDict, total=False):
         """What an environment configures. One of the two, never both."""
@@ -56,6 +49,9 @@ class Sql:
         path: str
         #: A database somewhere else: `postgresql://user:pass@host/db`, `mysql://…`.
         url: str
+        #: Wrap each test in a transaction and roll it back. Off unless stated: only a system under
+        #: test running *inside* this process can see uncommitted rows, and a command line cannot.
+        transactional: bool
 
     def __init__(self, settings: Settings) -> None:
         path, url = str(settings.get("path", "")), str(settings.get("url", ""))
@@ -63,10 +59,11 @@ class Sql:
             raise ValueError("the sql system takes a `path` to a database file, or a `url` to one elsewhere")
         self.path, self.url = path, url
         scheme = "sqlite" if path else urlparse(url).scheme.split("+")[0]
-        known = DRIVERS.get(scheme)
+        known = MODULES.get(scheme)
         if known is None:
-            raise ValueError(f"no driver for {scheme!r} (known: {', '.join(sorted(DRIVERS))})")
+            raise ValueError(f"no driver for {scheme!r} (known: {', '.join(sorted(MODULES))})")
         self.module_name, self.mark = known
+        self.transactional = bool(settings.get("transactional", False))
         self._connection: Any = None
         self._open = False
 
@@ -83,21 +80,21 @@ class Sql:
         if self._connection is not None:
             return self._connection
         try:
-            driver = importlib.import_module(self.module_name)
+            module = importlib.import_module(self.module_name)
         except ImportError as exc:
             raise Unreachable(f"the sql system needs {self.module_name} to reach {self.where}") from exc
         try:
-            self._connection = self._connect(driver)
+            self._connection = self._connect(module)
         except Exception as exc:  # noqa: BLE001 - a database that will not open is unreachable
             raise Unreachable(f"cannot open {self.where}: {exc}") from exc
         return self._connection
 
-    def _connect(self, driver: Any) -> Any:
+    def _connect(self, module: Any) -> Any:
         if self.module_name != "sqlite3":
-            return driver.connect(self.url)
-        return driver.connect(self.path or ":memory:")
+            return module.connect(self.url)
+        return module.connect(self.path or ":memory:")
 
-    def _rows(self, statement: str, values: tuple[Any, ...] = ()) -> list[Record]:
+    def rows(self, statement: str, values: tuple[Any, ...] = ()) -> list[Record]:
         cursor = self.db.cursor()
         try:
             cursor.execute(statement, values)
@@ -108,7 +105,7 @@ class Sql:
         columns = [one[0] for one in cursor.description]
         return [dict(zip(columns, tuple(row), strict=False)) for row in cursor.fetchall()]
 
-    def _run(self, statement: str, values: tuple[Any, ...] = ()) -> None:
+    def execute(self, statement: str, values: tuple[Any, ...] = ()) -> None:
         cursor = self.db.cursor()
         try:
             cursor.execute(statement, values)
@@ -117,114 +114,8 @@ class Sql:
         if not self._open:
             self.db.commit()
 
-    def _marks(self, many: int) -> str:
+    def marks(self, many: int) -> str:
         return ", ".join(self.mark for _ in range(many))
-
-    # --- What a resource declared -----------------------------------------------------------------
-
-    def _table(self, resource: Any) -> str:
-        declaration = declaration_of(resource)
-        return str(declaration.options.get("table") or declaration.kind.lower())
-
-    def _id_field(self, resource: Any) -> str:
-        return str(declaration_of(resource).options.get("id_field", "id"))
-
-    def _suffix(self, resource: Any) -> str:
-        return str(declaration_of(resource).options.get("parent_suffix", "_id"))
-
-    def _identity(self, resource: Any) -> Record:
-        values = values_of(resource)
-        return {field: values[field] for field in declaration_of(resource).unique_by}
-
-    def _columns(self, resource: Any) -> Record:
-        """The declared fields, with a parent resolved to the key of the row it was made as."""
-        columns: Record = {}
-        for field, value in values_of(resource).items():
-            if not is_resource(value):
-                columns[field] = value
-                continue
-            parent = self.find(value)
-            if parent is None:
-                raise Unreachable(f"{field}: the parent it points at has not been made")
-            columns[f"{field}{self._suffix(resource)}"] = parent[self._id_field(value)]
-        return columns
-
-    # --- The four ---------------------------------------------------------------------------------
-
-    def find(self, resource: Any) -> Record | None:
-        identity = self._identity(resource)
-        if not identity:
-            raise Unreachable(f"{declaration_of(resource).kind}: nothing to recognise it by")
-        where = " AND ".join(f"{column} = {self.mark}" for column in identity)
-        found = self._rows(
-            f"SELECT * FROM {self._table(resource)} WHERE {where}",  # noqa: S608 - names come from the declaration
-            tuple(identity.values()),
-        )
-        return found[0] if found else None
-
-    def find_many(self, resources: list[Any]) -> dict[int, Record | None]:
-        """Every one of these, one question per table, keyed by identity.
-
-        Resources recognised by a single column are asked for with one `IN`. Anything recognised by
-        several is asked for one at a time, which is what `find` already does.
-        """
-        out: dict[int, Record | None] = {}
-        by_table: dict[str, list[Any]] = {}
-        for node in resources:
-            if len(declaration_of(node).unique_by) == 1:
-                by_table.setdefault(self._table(node), []).append(node)
-            else:
-                out[id(node)] = self.find(node)
-
-        for table, mine in by_table.items():
-            column = declaration_of(mine[0]).unique_by[0]
-            wanted = [self._identity(node)[column] for node in mine]
-            rows = self._rows(
-                f"SELECT * FROM {table} WHERE {column} IN ({self._marks(len(wanted))})",  # noqa: S608
-                tuple(wanted),
-            )
-            by_value = {str(row.get(column)): row for row in rows}
-            for node in mine:
-                out[id(node)] = by_value.get(str(self._identity(node)[column]))
-        return out
-
-    def create(self, resource: Any) -> Record:
-        columns = self._columns(resource)
-        names = ", ".join(columns)
-        self._run(
-            f"INSERT INTO {self._table(resource)} ({names}) VALUES ({self._marks(len(columns))})",  # noqa: S608
-            tuple(columns.values()),
-        )
-        found = self.find(resource)
-        if found is None:
-            raise Unreachable(f"{self._table(resource)}: the row was written and cannot be read back")
-        return found
-
-    def update(self, resource: Any, found: Record, changes: Record) -> Record:
-        assignments = ", ".join(f"{column} = {self.mark}" for column in changes)
-        key = self._id_field(resource)
-        self._run(
-            f"UPDATE {self._table(resource)} SET {assignments} WHERE {key} = {self.mark}",  # noqa: S608
-            (*changes.values(), found[key]),
-        )
-        return {**found, **changes}
-
-    def delete(self, resource: Any, found: Record) -> None:
-        key = self._id_field(resource)
-        self._run(
-            f"DELETE FROM {self._table(resource)} WHERE {key} = {self.mark}",  # noqa: S608
-            (found[key],),
-        )
-
-    # --- The optional ones ------------------------------------------------------------------------
-
-    def act(self, resource: Any, found: Record, action: Any) -> Record:
-        """A declared verb: write the fields the action names onto this row."""
-        return self.update(resource, found, dict(getattr(action, "values", {})))
-
-    def browse(self, resource: Any) -> list[Record]:
-        """Every row of this kind."""
-        return self._rows(f"SELECT * FROM {self._table(resource)}")  # noqa: S608
 
     def describe(self) -> list[dict[str, Any]]:
         """Every table this database holds, as the facts a declaration is written from.
@@ -239,23 +130,23 @@ class Sql:
     # --- sqlite, through its pragmas --------------------------------------------------------------
 
     def _sqlite_tables(self) -> list[str]:
-        rows = self._rows(
+        rows = self.rows(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
         )
         return [str(row["name"]) for row in rows]
 
     def _describe_sqlite(self, table: str) -> dict[str, Any]:
-        columns = self._rows(f"PRAGMA table_info({table})")
+        columns = self.rows(f"PRAGMA table_info({table})")
         keys = [str(one["name"]) for one in columns if one.get("pk")]
         parents = {
             str(one["from"]): str(one["table"])
-            for one in self._rows(f"PRAGMA foreign_key_list({table})")
+            for one in self.rows(f"PRAGMA foreign_key_list({table})")
         }
         unique: list[str] = []
-        for index in self._rows(f"PRAGMA index_list({table})"):
+        for index in self.rows(f"PRAGMA index_list({table})"):
             if not index.get("unique"):
                 continue
-            named = [str(one["name"]) for one in self._rows(f"PRAGMA index_info({index['name']})")]
+            named = [str(one["name"]) for one in self.rows(f"PRAGMA index_info({index['name']})")]
             if len(named) == 1 and named[0] not in keys:
                 unique.append(named[0])
         return _table(table, [(str(one["name"]), str(one["type"])) for one in columns], keys, unique, parents)
@@ -263,7 +154,7 @@ class Sql:
     # --- everything else, through information_schema -----------------------------------------------
 
     def _standard_tables(self) -> list[str]:
-        rows = self._rows(
+        rows = self.rows(
             "SELECT table_name FROM information_schema.tables "
             "WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'mysql', 'performance_schema') "
             "AND table_type = 'BASE TABLE' ORDER BY table_name"
@@ -271,12 +162,12 @@ class Sql:
         return [str(row["table_name"]) for row in rows]
 
     def _describe_standard(self, table: str) -> dict[str, Any]:
-        columns = self._rows(
+        columns = self.rows(
             "SELECT column_name, data_type FROM information_schema.columns "
             f"WHERE table_name = {self.mark} ORDER BY ordinal_position",
             (table,),
         )
-        constraints = self._rows(
+        constraints = self.rows(
             "SELECT tc.constraint_type, kcu.column_name, ccu.table_name AS points_at "
             "FROM information_schema.table_constraints tc "
             "JOIN information_schema.key_column_usage kcu "
@@ -302,8 +193,11 @@ class Sql:
         )
 
     def begin(self) -> None:
-        """Open a transaction, so everything a test does can be undone in one statement."""
-        if self._open:
+        """Open a transaction, so everything a test does can be undone in one statement.
+
+        Does nothing unless the environment sets `transactional: true`.
+        """
+        if self._open or not self.transactional:
             return
         self._run_raw("BEGIN")
         self._open = True
@@ -323,3 +217,115 @@ class Sql:
             self.db.cursor().execute(statement)
         except Exception:  # noqa: BLE001 - a driver already inside a transaction has nothing to open
             return
+
+
+@adapter("row", driver="sql")
+class Row:
+    """One row in a table, recognised by the columns `unique_by` names."""
+
+    class Options(TypedDict, total=False):
+        """What the decorator takes, per resource."""
+
+        #: The table this kind maps to. Defaults to the class's name, lowercased.
+        table: str
+        #: What this schema calls the primary key.
+        id_field: str
+        #: What a column holding a parent is called: `owner` becomes `owner_id`.
+        parent_suffix: str
+
+    def __init__(self, sql: Database) -> None:
+        self.sql = sql
+
+    def table(self, resource: Resource) -> str:
+        return str(resource.options.get("table") or resource.kind.lower())
+
+    def _id_field(self, resource: Resource) -> str:
+        return str(resource.options.get("id_field", "id"))
+
+    def _suffix(self, resource: Resource) -> str:
+        return str(resource.options.get("parent_suffix", "_id"))
+
+    # --- What a resource declared -----------------------------------------------------------------
+
+
+    def _columns(self, resource: Resource) -> Record:
+        """The declared fields, and each parent as the key of the row it was made as."""
+        columns: Record = dict(resource.values)
+        suffix = self._suffix(resource)
+        for field, parent in resource.parents.items():
+            if parent.key is None:
+                raise Unreachable(f"{field}: the parent it points at has not been made")
+            columns[f"{field}{suffix}"] = parent.key
+        return columns
+
+    # --- The four ---------------------------------------------------------------------------------
+
+    def find(self, resource: Resource) -> Record | None:
+        identity = dict(resource.identity)
+        if not identity:
+            raise Unreachable(f"{resource.kind}: nothing to recognise it by")
+        where = " AND ".join(f"{column} = {self.sql.mark}" for column in identity)
+        found = self.sql.rows(
+            f"SELECT * FROM {self.table(resource)} WHERE {where}",  # noqa: S608 - names come from the declaration
+            tuple(identity.values()),
+        )
+        return found[0] if found else None
+
+    def find_many(self, resources: list[Resource]) -> list[Record | None]:
+        """Every one of these, one question per table, answered in the order asked.
+
+        One recognised by several columns is asked for on its own, which is what `find` already does.
+        """
+        answers: dict[int, Record | None] = {}
+        grouped: dict[tuple[str, str], list[Resource]] = {}
+        for one in resources:
+            if len(one.identity) == 1:
+                grouped.setdefault((self.table(one), next(iter(one.identity))), []).append(one)
+            else:
+                answers[id(one)] = self.find(one)
+
+        for (table, column), mine in grouped.items():
+            wanted = [one.identity[column] for one in mine]
+            rows = self.sql.rows(
+                f"SELECT * FROM {table} WHERE {column} IN ({self.sql.marks(len(wanted))})",  # noqa: S608
+                tuple(wanted),
+            )
+            by_value = {str(row.get(column)): row for row in rows}
+            for one in mine:
+                answers[id(one)] = by_value.get(str(one.identity[column]))
+        return [answers[id(one)] for one in resources]
+
+    def create(self, resource: Resource) -> Record:
+        columns = self._columns(resource)
+        names = ", ".join(columns)
+        self.sql.execute(
+            f"INSERT INTO {self.table(resource)} ({names}) VALUES ({self.sql.marks(len(columns))})",  # noqa: S608
+            tuple(columns.values()),
+        )
+        found = self.find(resource)
+        if found is None:
+            raise Unreachable(f"{self.table(resource)}: the row was written and cannot be read back")
+        return found
+
+    def update(self, resource: Resource, found: Record, changes: Record) -> Record:
+        assignments = ", ".join(f"{column} = {self.sql.mark}" for column in changes)
+        key = self._id_field(resource)
+        self.sql.execute(
+            f"UPDATE {self.table(resource)} SET {assignments} WHERE {key} = {self.sql.mark}",  # noqa: S608
+            (*changes.values(), found[key]),
+        )
+        return {**found, **changes}
+
+    def delete(self, resource: Resource, found: Record) -> None:
+        key = self._id_field(resource)
+        self.sql.execute(
+            f"DELETE FROM {self.table(resource)} WHERE {key} = {self.sql.mark}",  # noqa: S608
+            (found[key],),
+        )
+
+    # --- The optional ones ------------------------------------------------------------------------
+
+    def browse(self, resource: Resource) -> list[Record]:
+        """Every row of this kind."""
+        return self.sql.rows(f"SELECT * FROM {self.table(resource)}")  # noqa: S608
+

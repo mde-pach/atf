@@ -3,54 +3,72 @@
 Act is the middle verb: what a test does once its resources exist. Three ways ship, and there are
 two ways to add a fourth.
 
-## Action {#action}
+## Changing a field {#action}
 
-An action is a domain verb declared on the class, written in terms of the mechanical verbs its
-adapter already has.
+A test sometimes has to move a resource **mid-test** — after it has already started acting, because
+the ordering is the point. One sentence does that, and nothing is declared for it:
 
-```python
-from adapters.sqlite import sqlite, Update
-
-@sqlite(table="tasks", unique_by="slug", depends_on=[TodoList],
-        actions={"complete": Update(done=True),
-                 "reopen":   Update(done=False)})
-class Task:
-    slug: str
-    done: bool = False
+```gherkin
+When the task "laundry" field "done" becomes "1"
 ```
 
-That declaration adds two sentences to the suite's vocabulary:
+The shape is `When the {type} "{name}" field "{field}" becomes "{value}"`. It is the act-time twin of
+the [variation](arrange.md#variation) that says the same thing before a test runs:
+
+```gherkin
+Given the task "laundry" but "done" is "1"     # before the test
+When  the task "laundry" field "done" becomes "1"   # in the middle of one
+```
+
+It reaches the adapter's [`update`](arrange.md#adapter) — so it works for every resource whose
+adapter can change one, with no option on the decorator and no extra method to implement. An adapter
+with no `update` refuses by name: a page is looked at, not written to.
+
+### A domain verb is a phrase {#domain-verb}
+
+`When the task "laundry" field "done" becomes "1"` says the mechanism. To say the domain, write a
+[phrase](../how-to/teach-atf-a-sentence.md) over it:
+
+```gherkin
+  @phrase
+  Scenario: I complete the task "{name}"
+    When the task "{name}" field "done" becomes "1"
+
+  @phrase
+  Scenario: I reopen the task "{name}"
+    When the task "{name}" field "done" becomes "0"
+```
 
 ```gherkin
 When I complete the task "laundry"
-When I reopen the task "laundry"
 ```
 
-The shape is `When I {action} the {type} "{name}"`. The type is the class name in snake case, as in
-every other sentence, so `TodoList` is `todo_list`. The name is the value of the field the resource
-is recognised by.
+The verb lives in the specs, where a reader can see what `complete` means, and it costs no Python at
+all. A verb nobody wrote fails at collection with the nearest sentences ATF does know.
 
-Each adapter ships its own action types. `Update(**fields)` is sqlite's, and it writes the given
-fields to the record the name resolves to. An adapter that does not implement `act` cannot carry
-actions, and declaring them on one is an error `atf check` reports.
+### It writes to the system, not through it {#not-through-it}
 
-`Update(done=True)` writes to the database. It does not run your application's code for completing a
-task, so it proves nothing about that code. Use an action where the state is the point — a task
-already done, so the test can assert on what happens next — and
-[running something](#running-something) where the behaviour is.
+`becomes` writes to the database. It does not run your application's code for completing a task, so
+it proves nothing about that code. Use it where the *state* is the point — a task already done, so
+the test can assert on what happens next — and [running something](#running-something) where the
+behaviour is.
 
-An action changes the environment, so it needs one that
+Changing a field changes the environment, so it needs one that
 [may be changed](the-ground.md#may-be-changed). Against an immutable environment the step fails
-before it runs, saying which environment refused and why.
+before it runs, naming the environment that refused.
 
-**In CI** — the step runs like any other. A failure names the action, the type, the name it
-resolved, and what the adapter reported.
+Whatever a test changed this way is put back when the test ends, so a declaration holds after a test
+as well as before it. Every `Given` in a scenario comes before every `When`, so nothing can arrange
+over a change this sentence has already made — see [arranging first](arrange.md#arranging-first).
 
-**In the editor** — the actions a resource carries are listed with the resource, and running the
-sentence applies it against the selected environment.
+**In CI** — the step runs like any other. A failure names the type, the name it resolved, the field
+and what the adapter reported.
 
-**To an agent** — the available actions come back per resource type, so an agent writes
-`When I complete the task "laundry"` from the vocabulary rather than guessing at it.
+**In the editor** — the composer offers the sentence for every field of every arranged resource, and
+running it applies the change against the selected environment.
+
+**To an agent** — the sentence is in the legal steps at that position for any resource, with no
+per-type vocabulary to look up first.
 
 ## Running something {#running-something}
 
@@ -87,7 +105,7 @@ directly instead of parsing what a human would have read.
 
 ### `shell` {#shell}
 
-The same act, from Python. The `command` system provides one fixture, `shell`. It runs a command
+The same act, from Python. `shell` is a [driver](arrange.md#driver), and every driver is a fixture a step or a test can ask for by name. It runs a command
 line against the current environment, through that environment's `prefix`, and returns the record
 `When I run` puts on a slot: `exit_code`, `output` and `ok`.
 
@@ -112,7 +130,7 @@ from Python.
 
 ## Using an interface {#using-an-interface}
 
-There is one way to reach an interface: a real browser. The `@browser` system drives it and the
+There is one way to reach an interface: a real browser. The `@browser.page` system drives it, through the `browser` driver — which a step can also ask for by name — and the
 environment says how (`browser: { headless: true }`). There is no headless DOM simulation and no
 faster second mode; a browser is slower than an HTTP call and needs a driver installed.
 

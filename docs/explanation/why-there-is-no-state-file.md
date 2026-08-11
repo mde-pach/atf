@@ -10,7 +10,7 @@ differs.
 A resource declares how it is recognised.
 
 ```python
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 ```

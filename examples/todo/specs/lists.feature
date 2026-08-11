@@ -46,7 +46,15 @@ Feature: showing a person's lists
     Then the tenant "acme" field "region" is "eu"
     And the tenant "acme_us" field "region" is "us"
 
-  Scenario: a domain verb is performed by the adapter, and its effect lasts
+  @phrase
+  Scenario: I complete the task "{name}"
+    When the task "{name}" field "done" becomes "1"
+
+  @phrase
+  Scenario: I reopen the task "{name}"
+    When the task "{name}" field "done" becomes "0"
+
+  Scenario: a domain verb is a phrase over a field change, and its effect lasts
     Given the task "laundry"
     When I complete the task "laundry"
     Then the task "laundry" field "done" is "1"

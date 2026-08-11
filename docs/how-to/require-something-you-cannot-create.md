@@ -9,10 +9,10 @@ Declare it with `when_absent="require"`.
 
 ```python
 # resources.py
-from adapters.sqlite import sqlite
+from adapters.todo import todo
 
 
-@sqlite(table="plans", unique_by="code", when_absent="require")
+@sql.row(table="plans", unique_by="code", when_absent="require")
 class Plan:
     code: str
 
@@ -84,7 +84,7 @@ not a record anyone provisions, and whether it is showing is what a test wants t
 from atf import browser
 
 
-@browser(when_absent="observe")
+@browser.page(when_absent="observe")
 class Screen:
     path: str
 

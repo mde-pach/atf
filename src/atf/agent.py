@@ -187,7 +187,7 @@ def _footprint(editor: Editor, test: str) -> dict[str, Any]:
         for scenario in feature.scenarios:
             if scenario.is_phrase:
                 continue
-            from .record import identity  # noqa: PLC0415
+            from .runs import identity  # noqa: PLC0415
 
             if identity(feature.path, scenario.name, editor.root) != test:
                 continue

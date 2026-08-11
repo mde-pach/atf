@@ -6,7 +6,7 @@ are typed data that exists before anything runs. That is the bet, including the 
 ## The bet
 
 ```python
-@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
+@todo.list(depends_on=[Owner])
 class TodoList:
     slug: str
 

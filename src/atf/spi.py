@@ -2,10 +2,38 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol, get_type_hints, runtime_checkable
 
 Record = dict[str, Any]
+
+
+@dataclass(frozen=True)
+class Parent:
+    """A resource this one hangs off, as an adapter needs it: its kind, and what it was made as."""
+
+    kind: str
+    key: Any
+
+
+@dataclass(frozen=True)
+class Resource:
+    """One declared resource, as an adapter sees it.
+
+    `values` holds the declared scalars and `parents` the lineage, already resolved to the keys the
+    parents were made as — an adapter never looks a parent up again.
+    """
+
+    kind: str
+    name: str
+    options: Record
+    fields: dict[str, Any]
+    values: Record
+    identity: Record
+    parents: dict[str, Parent]
+    when_absent: str = "make"
+    scope: str = "persistent"
 
 
 class State(StrEnum):
@@ -40,10 +68,14 @@ class Adapter(Protocol):
     def delete(self, resource: Any, found: Record) -> None: ...
 
 
-REQUIRED = ("find", "create", "update", "delete")
-# `act` and `browse` add sentences. `find_many` answers about several resources in one question,
-# and `begin`/`rollback` wrap a test so a short-lived resource costs no create and no delete.
-OPTIONAL = ("act", "browse", "find_many", "begin", "rollback", "capture", "describe")
+# `find` is the only one every adapter answers. A thing that is looked at and never made — a page,
+# a table somebody else owns — implements this and nothing else.
+REQUIRED = ("find",)
+# `create`, `update` and `delete` are what a thing ATF makes needs; an adapter without one refuses
+# that operation by name. `browse` adds a sentence, `find_many` answers about several resources at
+# once, and `begin`/`rollback` wrap a test.
+WRITES = ("create", "update", "delete")
+OPTIONAL = (*WRITES, "browse", "find_many", "begin", "rollback", "capture", "describe", "close")
 
 
 class SpiError(Exception):

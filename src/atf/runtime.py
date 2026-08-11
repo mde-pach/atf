@@ -31,8 +31,10 @@ class Scope:
     slots: dict[str, Any] = field(default_factory=dict)
     arranged: list[Any] = field(default_factory=list)
     pending: Any = None
-    #: Resources an action changed, so what it changed can be put back when the test ends.
+    #: Resources this test changed, so what it changed can be put back when the test ends.
     acted: list[Any] = field(default_factory=list)
+    #: Which fields it wrote on each of them, by resource identity.
+    loosed: dict[int, set[str]] = field(default_factory=dict)
 
     # --- Arranging ---------------------------------------------------------------------------
 
@@ -145,12 +147,14 @@ class Scope:
         _, found = self.ground.find(resource)
         return found
 
-    def act(self, kind: str, name: str, action: str) -> Any:
+    def change(self, kind: str, name: str, changes: Record) -> Any:
+        """Write fields onto a resource mid-test, and remember which ones so they can be put back."""
         self.flush()
         resource = self._in_scope_named(name) or self._declared(kind, name)
         if not any(node is resource for node in self.acted):
             self.acted.append(resource)
-        return self.remember("result", reconcile.act(self.ground, resource, action))
+        self.loosed.setdefault(id(resource), set()).update(changes)
+        return self.remember("result", reconcile.change(self.ground, resource, changes))
 
     def browse(self, kind: str) -> list[Record]:
         self.flush()

@@ -8,14 +8,14 @@ must not write to unwritable.
 ```yaml
 resources: [./resources.py]
 specs: ./specs
-extensions: [./adapters/sqlite.py]
+extensions: [./adapters/todo.py]
 default_env: local
 
 environments:
   local:
     mutable: true
-    sqlite:  { path: ./todo.db }
-    command: { prefix: "python todo.py" }
+    todo:    { path: ./todo.db }
+    shell: { prefix: "python todo.py" }
 ```
 
 ```sh
@@ -28,20 +28,20 @@ answer, the environment is configured.
 ## One block per system
 
 Each key under an environment names a [system](../reference/arrange.md#system) and holds that
-system's own typed configuration. `command`, `browser`, `filesystem` and `process` are ATF's own;
-`sqlite` is available because the manifest loaded
+driver's own typed configuration. `filesystem`, `browser`, `shell`, `sql` and `http` are ATF's own;
+`todo` is available because the manifest loaded
 [its adapter](teach-atf-a-new-system.md) through `extensions:`.
 
 ```yaml
 environments:
   staging:
-    sqlite:     { path: /srv/todo/todo.db }
-    command:    { prefix: "ssh deploy@staging todo" }
+    todo:       { path: /srv/todo/todo.db }
+    shell:    { prefix: "ssh deploy@staging todo" }
     browser:    { headless: true }
     filesystem: { root: /srv/todo/uploads }
 ```
 
-Configure the systems your resources declare. A resource declared `@browser(...)` in an environment
+Configure the drivers your adapters work through. A resource declared `@browser.page(...)` in an environment
 with no `browser:` block is an error from `atf check`, not a default. Unknown keys inside a block are
 an error too, so a typo is caught before a run.
 
@@ -53,8 +53,8 @@ replaced; there is no interpolation inside a longer string.
 ```yaml
 environments:
   staging:
-    sqlite:  { path: $STAGING_DB }
-    command: { prefix: $STAGING_TODO }
+    todo:    { path: $STAGING_DB }
+    shell: { prefix: $STAGING_TODO }
     browser: { headless: true }
 ```
 
@@ -79,7 +79,7 @@ fixture your suite writes, in ordinary Python, and
 ```yaml
 environments:
   production:
-    sqlite: { path: /srv/todo/todo.db }
+    sql: { path: /srv/todo/todo.db }
 ```
 
 That environment is unwritable. ATF never calls an adapter's create or delete against it:

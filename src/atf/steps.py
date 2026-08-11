@@ -170,6 +170,26 @@ def _overlap(pattern: str, sentence: str) -> int:
     return len(words & set(re.findall(r"[a-z]+", sentence.lower())))
 
 
+def arranged_first(sentences: list[Sentence]) -> None:
+    """Refuse a scenario that arranges after it has begun to act.
+
+    Every `Given` comes before every `When` and `Then`. Arranging brings a resource and its whole
+    lineage back to what the declaration says, so a `Given` after a `When` writes over what that
+    `When` just did — and the scenario claims on a value nothing in it put there.
+    """
+    acted: Sentence | None = None
+    for sentence in sentences:
+        if sentence.keyword in (WHEN, THEN):
+            acted = acted or sentence
+        elif sentence.keyword == GIVEN and acted is not None:
+            raise StepError(
+                f"Given {sentence.text!r} arranges, and this scenario has already acted:\n"
+                f"    {acted.keyword.title()} {acted.text}\n"
+                f"  Every Given comes first — arrange, then act, then claim. Move it up, or write "
+                f"it as its own scenario."
+            )
+
+
 @dataclass
 class Sentence:
     """One line of a scenario, after its keyword has been resolved through any `And`."""

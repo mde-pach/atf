@@ -1,7 +1,7 @@
 # Point it at your own system
 
 `todo.py` has done its work. Delete it, delete `todo.db`, and delete `specs/showing-a-list.feature`
-and `specs/test_ownership.py`. Keep `resources.py`, `adapters/sqlite.py`,
+and `specs/test_ownership.py`. Keep `resources.py`, `adapters/todo.py`,
 `specs/declarations.feature`, `specs/ownership.feature` and `specs/phrases.feature`.
 
 Six things stand between that suite and your own system — the decorator, recognition, what ATF does
@@ -11,30 +11,37 @@ environment may be changed — then the manifest that ties them to a place.
 ## The decorator is the system
 
 ```python
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 ```
 
 The decorator says which system holds the class and carries that system's own configuration — for
-sqlite, which field identifies a row. This is a Django model's `Meta`, except it also names the
+`@sql.row`, which column identifies a row. This is a Django model's `Meta`, except it also names the
 system. What it does not carry is *where*: no path, no host, no credentials. Those live in the
 environment, so one class runs against your laptop and against staging without an `if` anywhere.
 
-Four systems ship with ATF. `@command` holds a command-line invocation, which is how chapter 1 ran
-`todo show` and read its output. `@browser` holds a page and what is on it, for acting on a web
-interface. `@filesystem` holds files and directories — fixtures, uploads, generated artefacts.
-`@process` holds a running process, for a server the tests need up. Each takes configuration of its
-own, listed in full under [system](../reference/arrange.md#system) when you come to write the
+Seven systems ship with ATF over five drivers, each named after a *kind of thing* rather than a
+technology. `@filesystem.file`, `@filesystem.directory` and `@filesystem.tree` hold files,
+directories and whole directory trees — fixtures, uploads, generated artefacts. `@browser.page`
+holds a page open in a browser, for acting on a web interface. `@shell.process` holds a running
+process, for a server the tests need up. `@http.record` and `@sql.row` hold a record an API owns and
+a row in a table.
+
+Running a command line is not among them: `todo show` in chapter 1 went through the `shell`
+[driver](../reference/arrange.md#driver) — the same one `@shell.process` runs through — because
+running something is what a test *does* rather than something that exists. Configuration belongs to
+drivers, listed in full under [driver](../reference/arrange.md#driver) when you come to write the
 environment block below.
 
-`@sqlite` is not among them. It came from `adapters/sqlite.py` in the suite you were handed, and that
-is where every other system comes from: somebody writes the adapter once and `extensions:` loads it.
+`@todo.owner` is not among them. It came from `adapters/todo.py` in the suite you were handed, and
+that is where every system ATF does not ship comes from: somebody writes the driver and the adapter
+once, and `extensions:` loads them.
 If your database is Postgres, or the thing your tests arrange is a queue,
 [Teach ATF a new system](../how-to/teach-atf-a-new-system.md) walks through the file you have been
 using since chapter 1.
 
-`@rest` ships later. Until then, an HTTP API is reached with a client of your own: an ordinary
+`@http.record` ships later. Until then, an HTTP API is reached with a client of your own: an ordinary
 pytest fixture taking its base URL and token from the process environment. A client acts and reads;
 the arrange still comes from a declaration, because a client that creates records is setup code
 again and the graph loses sight of what exists.
@@ -88,7 +95,7 @@ By default, absent means make it. That is right for the records your tests own, 
 records the environment owns:
 
 ```python
-@sqlite(table="plans", unique_by="code", when_absent="require")
+@sql.row(table="plans", unique_by="code", when_absent="require")
 class Plan:
     code: str
 
@@ -105,7 +112,7 @@ anything runs, and a test that needs it fails naming the plan.
 Some things cannot be made at all, in any environment:
 
 ```python
-@browser(when_absent="observe")
+@browser.page(when_absent="observe")
 class Checkout:
     path: str
 
@@ -128,7 +135,7 @@ outlives the process. It is the default because it makes the second run cheap: w
 made is still there, and recognition finds it. Some things must be fresh instead:
 
 ```python
-@sqlite(table="guests", unique_by="nickname", scope="function")
+@sql.row(table="guests", unique_by="nickname", scope="function")
 class Guest:
     nickname: str
 
@@ -174,17 +181,16 @@ One file names the resources, the specs, and every place they can exist:
 ```yaml
 resources: [./resources.py]
 specs: ./specs
-extensions: [./adapters/sqlite.py]
 default_env: local
 
 environments:
   local:
     mutable: true
-    sqlite:  { path: ./app.db }
-    command: { prefix: "python -m myapp" }
+    todo:    { path: ./app.db }
+    shell: { prefix: "python -m myapp" }
 
   staging:
-    sqlite:  { path: /srv/app/app.db }
+    todo:    { path: /srv/app/app.db }
     browser: { headless: true }
 ```
 

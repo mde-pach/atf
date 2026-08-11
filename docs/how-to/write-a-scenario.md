@@ -75,8 +75,9 @@ check both before writing any Python, and see
 [assert a record field by field](assert-a-record-field-by-field.md) for quoted values against `#`
 kinds.
 
-Two of these need something declared first. `When I complete …` needs `complete` in the resource's
-`actions`, and the interface sentences need a `@browser` resource.
+One of these needs something declared first: the interface sentences need a `@browser.page` resource.
+`When I complete …` needs only a [phrase](teach-atf-a-sentence.md) standing over
+`When the task "laundry" field "done" becomes "1"`.
 
 ## Background
 

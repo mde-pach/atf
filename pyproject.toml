@@ -25,6 +25,15 @@ Source = "https://github.com/mde-pach/atf"
 [project.scripts]
 atf = "atf.entry:main"
 
+# ATF is a pytest plugin, so a suite needs no `conftest.py` to enable it and no `pytest.ini` to be
+# its own rootdir. Registered under its own module name, so `atf run`'s explicit `-p atf.plugin` is
+# the same plugin and not a second registration of it.
+#
+# This loads in every pytest session on a machine that has ATF installed. `pytest_configure` finds
+# no manifest in a project that is not an ATF suite and leaves the session entirely alone.
+[project.entry-points.pytest11]
+"atf.plugin" = "atf.plugin"
+
 [dependency-groups]
 dev = ["ruff", "ty"]
 docs = [

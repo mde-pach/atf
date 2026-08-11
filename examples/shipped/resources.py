@@ -9,21 +9,21 @@ the directory — and this is a case where getting it wrong fails loudly rather 
 removing a directory that still has something in it does not work.
 """
 
-from atf import filesystem, process
+from atf import filesystem, shell
 
 
-@filesystem(unique_by="path", scope="session")
+@filesystem.directory(scope="session")
 class Workspace:
     path: str
 
 
-@filesystem(unique_by="path", scope="function")
+@filesystem.file(scope="function")
 class Draft:
     path: str
     text: str
 
 
-@process(unique_by="command", scope="session")
+@shell.process(unique_by="command", scope="session")
 class Sleeper:
     command: str
 

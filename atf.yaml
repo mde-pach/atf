@@ -7,6 +7,5 @@ environments:
   local:
     mutable: true
     filesystem: { root: ./.workspaces }
-    command:    { prefix: "uv run atf --config .workspaces/suite/atf.yaml" }
-    process:    { cwd: . }
+    shell:      { prefix: "uv run atf --config .workspaces/suite/atf.yaml", cwd: . }
     browser:    { base_url: "http://127.0.0.1:8791", headless: true }

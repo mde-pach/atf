@@ -119,7 +119,7 @@ DocString. It is a good format, and it is somebody else's file rather than a sen
 split between a `data` block and a `resource` block — the same distinction between something you read
 and something you own, spelled as one option on a decorator rather than as two kinds of block.
 
-**System decorators** — `@sqlite(table=…, unique_by=…)`, `@browser`, `@command`. Declined: a configuration-file
+**System decorators** — `@todo.owner(…)`, `@browser.page`, `@filesystem.file`. Declined: a configuration-file
 mapping in the manner of Django's `DATABASES`, and a plugin entry-point registry as the surface a user
 sees. Both went so that the system and its typed options sit on the class whose shape they describe,
 where an editor can check them together and a reader finds them without opening a second file. What

@@ -40,7 +40,7 @@ executing it. A resource's dependency is declared data, so `atf status`, `atf im
 the resource rather than as a `SubFactory` attribute.**
 
 ```python
-@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
+@todo.list(depends_on=[Owner])
 class TodoList:
     slug: str
 
@@ -51,7 +51,7 @@ class TodoList:
 
 `depends_on=[Owner]` is the `SubFactory`. A dependency the caller does not supply is built by that
 resource's own factory, recursively, and the factory is handed it by the name of its kind. Faker is
-yours, and so is `@sqlite`: it comes from an adapter in the suite, not from ATF.
+yours, and so is `@sql.row`: it comes from an adapter in the suite, not from ATF.
 
 **Where it differs**
 
@@ -125,7 +125,8 @@ reality is one of three words: `present`, `absent`, `unreachable`.
   the database, because ATF has no record that it put it there. Cleanup of per-test things is
   [scope](../reference/arrange.md#scope), not a lifecycle.
 - **Much smaller in every other direction.** No providers ecosystem, no modules, no outputs, no
-  workspaces. Four systems ship in the box, and `@adapter` is how a team adds the fifth.
+  workspaces. Seven systems ship in the box over five drivers, and `@adapter` is how a team adds
+  the eighth.
 
 [Why there is no state file](../explanation/why-there-is-no-state-file.md) has the argument, and
 what trusting the environment over a record costs.
@@ -178,10 +179,10 @@ sentence.
 
 **Where it differs**
 
-- **A browser is one system among several.** `@browser` sits beside `@command`, `@filesystem`,
-  `@process` and whatever your database adapter is called, so a scenario can arrange a row and click
-  a button in the same breath. Playwright is a browser library; ATF is not.
-- **A browser is observed, not made.** `@browser(when_absent="observe")` — it is something to look
+- **A page is one system among several.** `@browser.page` sits beside `@filesystem.file`, `@filesystem.directory`, `@shell.process`
+  and whatever your database adapter is called, so a scenario can arrange a row and click a button
+  in the same breath. Playwright is a browser library; ATF is not.
+- **A browser is observed, not made.** `@browser.page(when_absent="observe")` — it is something to look
   at, and ATF will not create it.
 - **No ARIA snapshot.** There is no whole-screen claim, because a scenario is sentences and an
   accessible tree is not one. You lose the catch-everything property of a snapshot and gain a
@@ -198,7 +199,7 @@ sentence.
 thing*, not the application's definition of it.
 
 ```python
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 ```
@@ -216,9 +217,9 @@ is how it recognises an owner. The class is the shape; the decorator is the syst
 - **No manager, no queryset, no `save()`, no migrations.** The table must already exist — ATF
   arranges rows, not schema — and `unique_by` is how ATF looks a thing up, not a constraint it
   creates.
-- **It does not have to be a database at all.** The same class shape backs `@command`, `@browser`,
-  `@filesystem` and `@process`. A file on disk and a running process are resources with fields, and
-  the graph does not know the difference.
+- **It does not have to be a database at all.** The same class shape backs `@filesystem.file`, `@browser.page` and
+  `@shell.process`. A file on disk and a running process are resources with fields, and the graph does not
+  know the difference.
 
 ## Where to go next
 

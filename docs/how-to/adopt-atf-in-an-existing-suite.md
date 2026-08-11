@@ -16,14 +16,14 @@ atf init
 # atf.yaml
 resources: [./tests/lists/resources.py]
 specs: ./specs
-extensions: [./adapters/sqlite.py]
+extensions: [./adapters/todo.py]
 default_env: local
 
 environments:
   local:
     mutable: true
-    sqlite:  { path: ./todo.db }
-    command: { prefix: "python todo.py" }
+    todo:    { path: ./todo.db }
+    shell: { prefix: "python todo.py" }
 ```
 
 Take the fixture that directory's tests all share:
@@ -43,10 +43,10 @@ def primary(db):
 
 ```python
 # tests/lists/resources.py — after
-from adapters.sqlite import sqlite
+from adapters.todo import todo
 
 
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 
@@ -92,7 +92,7 @@ The setup everything in that directory shares. It is usually one or two fixtures
 Convert the root of that chain first — `Owner` — then the thing that needs it:
 
 ```python
-@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
+@todo.list(depends_on=[Owner])
 class TodoList:
     slug: str
 

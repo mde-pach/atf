@@ -63,15 +63,7 @@ Feature: making what a suite declares
     And the result field "output" contains "absent"
 
   @make
-  Scenario: a field a declared action writes is not reverted by the next pass
-    Given the workspace "scaffolded"
-    When I run "make local todo"
-    And somebody changes "cards/today.md" to "done\n"
-    And I run "status local todo" as "after"
-    Then the after field "output" contains "unchanged"
-
-  @make
-  Scenario: a field no action writes is still held to its declaration
+  Scenario: every declared field is held to its declaration, with no exception
     Given the workspace "scaffolded"
     When I run "make local standup"
     And somebody changes "notebooks/work/standup.md" to "tampered"

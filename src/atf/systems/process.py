@@ -1,4 +1,4 @@
-"""`@process(...)` — a running process, recognised by the port it answers on."""
+"""`@shell.process(...)` — a running process, recognised by the port it answers on."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ import shlex
 import socket
 import subprocess
 import time
-from pathlib import Path
-from typing import Any, TypedDict
+from typing import TypedDict
 
-from ..declare import Unreachable, adapter, declaration_of, name_of, values_of
-from ..spi import Record
+from ..declare import Unreachable, adapter
+from ..spi import Record, Resource
+from .command import Shell
 
 
-@adapter("process")
+@adapter("process", driver="shell")
 class Process:
     """Processes started from one working directory."""
 
@@ -25,21 +25,13 @@ class Process:
         #: depends on the process races it — and a race is a test that passes on a fast machine.
         port: int
 
-    class Settings(TypedDict, total=False):
-        """What an environment configures."""
-
-        cwd: str
-        #: How long to wait for a declared port, in seconds.
-        start_timeout: float
-
-    def __init__(self, settings: Settings) -> None:
-        self.cwd = Path(settings.get("cwd", ".")).expanduser().resolve()
-        self.timeout = float(settings.get("start_timeout", 20))
+    def __init__(self, shell: Shell) -> None:
+        self.cwd = shell.cwd
+        self.timeout = shell.start_timeout
         self.running: dict[str, subprocess.Popen[bytes]] = {}
 
-    def _port(self, resource: Any) -> int:
-        declaration = declaration_of(resource)
-        written = values_of(resource).get("port") or declaration.options.get("port")
+    def _port(self, resource: Resource) -> int:
+        written = resource.values.get("port") or resource.options.get("port")
         return int(written) if written else 0
 
     def _answers(self, port: int) -> bool:
@@ -47,7 +39,7 @@ class Process:
             probe.settimeout(0.2)
             return probe.connect_ex(("127.0.0.1", port)) == 0
 
-    def _wait_for(self, resource: Any, handle: subprocess.Popen[bytes]) -> None:
+    def _wait_for(self, resource: Resource, handle: subprocess.Popen[bytes]) -> None:
         """Block until the declared port answers, or say why it never did.
 
         A process that serves a port is not *made* until the port is open. Returning before that is
@@ -66,35 +58,33 @@ class Process:
             time.sleep(0.05)
         raise Unreachable(f"port {port} did not answer within {self.timeout:g}s")
 
-    def check(self, resource: Any) -> str:
+    def check(self, resource: Resource) -> str:
         """Why this declaration cannot be honoured, or nothing.
 
         `persistent` means a resource outlives the process that made it, and without a port this
         system has no way to tell whether it did.
         """
-        declaration = declaration_of(resource)
-        if declaration.scope == "persistent" and not self._port(resource):
+        if resource.scope == "persistent" and not self._port(resource):
             return (
-                f"{declaration.kind} is scope=persistent and declares no port. A process is "
+                f"{resource.kind} is scope=persistent and declares no port. A process is "
                 f"recognised by the port it answers on; without one, a process an earlier run "
                 f"started cannot be told from one that is gone. Declare a port, or use "
                 f"scope=session."
             )
         return ""
 
-    def _key(self, resource: Any) -> str:
-        return name_of(resource) or f"{declaration_of(resource).kind}:{self._command(resource)}"
+    def _key(self, resource: Resource) -> str:
+        return resource.name or f"{resource.kind}:{self._command(resource)}"
 
-    def _command(self, resource: Any) -> str:
-        declaration = declaration_of(resource)
-        written = values_of(resource).get("command") or declaration.options.get("command")
+    def _command(self, resource: Resource) -> str:
+        written = resource.values.get("command") or resource.options.get("command")
         if not written:
             raise Unreachable(
-                f'{declaration.kind}: no command — write it as @process(command="...") or as a field'
+                f'{resource.kind}: no command — write it as @process(command="...") or as a field'
             )
         return str(written)
 
-    def find(self, resource: Any) -> Record | None:
+    def find(self, resource: Resource) -> Record | None:
         """Whether this process is running.
 
         **A declared port is observed; a bare command is only remembered.** With a port,
@@ -112,7 +102,7 @@ class Process:
             return None
         return {"command": self._command(resource), "pid": handle.pid, "port": 0, "running": True}
 
-    def create(self, resource: Any) -> Record:
+    def create(self, resource: Resource) -> Record:
         command = self._command(resource)
         try:
             handle = subprocess.Popen(  # noqa: S603 - the command is the declaration; running it is the point
@@ -129,7 +119,7 @@ class Process:
         self._wait_for(resource, handle)
         return {"command": command, "pid": handle.pid, "port": self._port(resource), "running": True}
 
-    def update(self, resource: Any, found: Record, changes: Record) -> Record:
+    def update(self, resource: Resource, found: Record, changes: Record) -> Record:
         """A process is not edited in place: what it was started with is what it is running.
 
         The declaration changed, so the thing to reconcile is the process itself — stop it, and
@@ -138,7 +128,7 @@ class Process:
         self.delete(resource, found)
         return self.create(resource)
 
-    def delete(self, resource: Any, found: Record) -> None:
+    def delete(self, resource: Resource, found: Record) -> None:
         handle = self.running.pop(self._key(resource), None)
         if handle is None or handle.poll() is not None:
             return

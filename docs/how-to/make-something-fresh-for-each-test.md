@@ -9,10 +9,10 @@ Declare it with `scope="function"`.
 
 ```python
 # resources.py
-from adapters.sqlite import sqlite
+from adapters.todo import todo
 
 
-@sqlite(table="guests", unique_by="nickname", scope="function")
+@sql.row(table="guests", unique_by="nickname", scope="function")
 class Guest:
     nickname: str
 
@@ -112,7 +112,7 @@ environment fight over the same record. Give the resource a factory so each test
 recognition value.
 
 ```python
-@sqlite(table="guests", unique_by="nickname", scope="function")
+@sql.row(table="guests", unique_by="nickname", scope="function")
 class Guest:
     nickname: str
 

@@ -15,7 +15,9 @@ are the product, and the only way to exercise them under real load is to use the
 
 So the suite arranges a workspace — an ATF suite scaffolded on disk — starts `atf edit` over it,
 opens a page of that editor in a browser, and drives the `atf` command against it. Three of ATF's
-four systems appear in one closure, and the fourth runs the commands.
+systems appear in one closure — `filesystem.tree`, `shell.process` and `browser.page` — and the
+same `shell` driver runs the
+commands.
 
 The recursion is real and it stops one level down. The scaffolded workspace is a small, ordinary
 suite with resources and a spec of its own. ATF's suite makes it exist, runs ATF against it, and
@@ -56,15 +58,13 @@ environments:
   local:
     mutable: true
     filesystem: { root: ./.workspaces }
-    process:    { cwd: ./.workspaces/suite }
-    command:    { prefix: "uv run atf --config .workspaces/suite/atf.yaml" }
+    shell:    { prefix: "uv run atf --config .workspaces/suite/atf.yaml" }
     browser:    { base_url: "http://127.0.0.1:8765" }
 
   ci:
     mutable: true
     filesystem: { root: ./.workspaces }
-    process:    { cwd: ./.workspaces/suite }
-    command:    { prefix: "uv run atf --config .workspaces/suite/atf.yaml" }
+    shell:    { prefix: "uv run atf --config .workspaces/suite/atf.yaml" }
     browser:    { base_url: "http://127.0.0.1:8765", headless: true }
 ```
 
@@ -89,7 +89,7 @@ section says why that is the point rather than an omission.
 ### `tests/resources.py`
 
 ```python
-from atf import browser, filesystem, process
+from atf import browser, filesystem, shell
 
 SUITE = {
     "atf.yaml": """\
@@ -108,17 +108,17 @@ environments:
 from atf import filesystem
 
 
-@filesystem(path="notebooks", unique_by="name")
+@filesystem.directory()
 class Notebook:
     name: str
 
 
-@filesystem(path="notes", unique_by="name", depends_on=[Notebook])
+@filesystem.file(depends_on=[Notebook])
 class Note:
     name: str
 
 
-@filesystem(path="drafts", unique_by="name", scope="function")
+@filesystem.file(scope="function")
 class Draft:
     name: str
 
@@ -137,7 +137,7 @@ Feature: notes
 }
 
 
-@filesystem(path="suite", unique_by="name", scope="function")
+@filesystem.tree(scope="function")
 class Workspace:
     """An ATF suite on disk: a manifest, a resources module and a spec."""
 
@@ -145,14 +145,14 @@ class Workspace:
     files: dict[str, str]
 
 
-@process(command="atf edit --port 8765", unique_by="workspace", scope="function")
+@shell.process(command="atf edit --port 8765", unique_by="workspace", scope="function")
 class Editor:
     """An `atf edit` process serving one workspace."""
 
     workspace: Workspace
 
 
-@browser(when_absent="observe", unique_by="path", scope="function")
+@browser.page(when_absent="observe", scope="function")
 class Screen:
     """A page of that editor."""
 
@@ -322,7 +322,8 @@ that true is a test that fails when the catalogue stops showing what `atf status
 
 ## There is no backend, and that is the point
 
-ATF ships four systems: `command`, `browser`, `filesystem` and `process`. Look at what the suite
+ATF ships seven adapters — `filesystem.file`, `filesystem.directory`, `filesystem.tree`,
+`browser.page`, `shell.process`, `sql.row` and `http.record` — over five drivers. Look at what the suite
 above uses. All four, and nothing else. The suite registers a claim and a check under `extensions:`
 and no adapter at all, because there is no system ATF needs to test itself that ATF does not already
 ship.
@@ -336,9 +337,10 @@ a running process are what teams already have, and they misbehave in the ways re
 misbehave — a port that is slow to bind, a directory that is not empty, a process that exits before
 it is asked to.
 
-**`@sqlite` is not part of ATF.** It appears on nearly every page of this documentation because the
-tutorial's suite is a todo app over SQLite, and that suite writes its own `adapters/sqlite.py` and
-names it in `extensions:`. It is the worked example of an adapter, not a component. ATF's own suite
+**`@todo.owner` is not part of ATF.** It appears on nearly every page of this documentation because
+the tutorial's suite is a todo app over SQLite, and that suite writes its own `adapters/todo.py`
+and names it in `extensions:`. ATF ships `@sql.row` over its own `sql` driver, which speaks SQLite,
+PostgreSQL and MySQL. ATF's own suite
 does not import it and does not need it. See
 [teach ATF a new system](../how-to/teach-atf-a-new-system.md) for the file you have been using since
 the first page.

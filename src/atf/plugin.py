@@ -15,7 +15,7 @@ from . import feature as feature_reader
 from . import (
     footprint,
     reconcile,
-    record,
+    runs,
     runtime,
     steps,
     vocabulary,  # noqa: F401 - imported so its sentences are registered
@@ -156,10 +156,40 @@ def _kind_fixture(kind: str):
     return pytest.fixture(name=kind)(fixture)
 
 
+def _is_a_suite() -> bool:
+    """Whether there is a manifest for this pytest session to be a suite of.
+
+    ATF registers as a pytest plugin, so this runs in every pytest session on a machine that has it
+    installed. A project with no `atf.yaml` above it is not an ATF suite, and gets no fixtures, no
+    `.feature` collection and no error.
+    """
+    if MANIFEST is not None:
+        return True
+    from .manifest import ManifestError, find  # noqa: PLC0415
+
+    try:
+        find()
+    except ManifestError:
+        return False
+    return True
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Load the suite, then mint a fixture per declared resource and per kind."""
     global _LOADED  # noqa: PLW0603 - one suite per pytest session is one process-wide fact
-    _LOADED = Loaded()
+    if not _is_a_suite():
+        return
+    from .environment import GroundError  # noqa: PLC0415
+    from .loader import SuiteError  # noqa: PLC0415
+    from .manifest import ManifestError  # noqa: PLC0415
+
+    try:
+        _LOADED = Loaded()
+    except (ManifestError, SuiteError, GroundError) as exc:
+        # `atf run` reads the suite itself and reports this as exit 2. Under bare `pytest` this hook
+        # is the first thing to touch the suite, and an unhandled error here is an INTERNALERROR
+        # with a traceback through ATF. A suite that cannot be read is the user's message, not ours.
+        raise pytest.UsageError(str(exc)) from exc
     config.addinivalue_line("markers", f"{MARKER}: a scenario ATF collected from a .feature file")
     for tag in sorted({tag for f in _LOADED.features for s in f.scenarios for tag in s.tags}):
         config.addinivalue_line("markers", f"{tag}: a tag this suite writes on scenarios")
@@ -174,6 +204,9 @@ def pytest_configure(config: pytest.Config) -> None:
         setattr(plugin, name, _instance_fixture(name))
     for kind in _LOADED.kinds:
         setattr(plugin, kind, _kind_fixture(kind))
+    # A driver is asked for by name, in a step or in a pytest function, exactly as a resource is.
+    for name in _LOADED.ground.drivers:
+        setattr(plugin, name, _driver_fixture(name))
     config.pluginmanager.register(plugin, "atf-resource-fixtures")
 
 
@@ -186,7 +219,7 @@ def atf(request: pytest.FixtureRequest) -> Any:
     observed(request.node.nodeid, state)
     # Function scope ends here; session scope ends with the run. Persistent is never torn down.
     reconcile.teardown(state.ground, reconcile.scoped(state.made, "function"), undone)
-    reconcile.restore(state.ground, state.acted, undone)
+    reconcile.restore(state.ground, state.acted, state.loosed, undone)
     state.ground.rollback(undone)
     runtime.finish()
 
@@ -209,12 +242,12 @@ def capture(nodeid: str) -> list[str]:
     ground = _LOADED.ground
     where = Path(_LOADED.suite.manifest.root) / ARTEFACTS_DIR / _slug(nodeid)
     written: list[str] = []
-    for adapter in ground.adapters.values():
-        taking = getattr(adapter, "capture", None)
+    for one in (*ground.adapters.values(), *ground.drivers.values()):
+        taking = getattr(one, "capture", None)
         if not callable(taking):
             continue
         try:
-            written += [str(one) for one in taking(where)]
+            written += [str(path) for path in taking(where)]
         except Exception:  # noqa: BLE001 - a system that cannot show itself is not a second failure
             continue
     return written
@@ -248,23 +281,20 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     reconcile.teardown(_LOADED.ground, reconcile.scoped(_LOADED.made, "session"))
 
 
-@pytest.fixture
-def shell(atf: Scope) -> Any:
-    """Run a command line against the current environment, through its `prefix`."""
-    adapter = atf.ground.adapters.get("command")
-    if adapter is None:
-        raise pytest.UsageError(
-            f"the `shell` fixture needs a `command:` block in the "
-            f"{atf.ground.config.name!r} environment"
-        )
-    return adapter.shell
+def _driver_fixture(name: str):
+    def fixture(atf: Scope) -> Any:
+        return atf.ground.drivers[name]
+
+    fixture.__name__ = name
+    fixture.__doc__ = f"The `{name}` driver, built for this environment."
+    return pytest.fixture(name=name)(fixture)
 
 
 # --- Collecting scenarios ---------------------------------------------------------------------
 
 
 def pytest_collect_file(parent: Any, file_path: Path) -> Any:
-    if file_path.suffix == ".feature":
+    if _LOADED is not None and file_path.suffix == ".feature":
         return FeatureFile.from_parent(parent, path=file_path)
     return None
 
@@ -293,12 +323,17 @@ class ScenarioItem(pytest.Item):
         self.sentences: list[Sentence] = []
 
     def resolve(self) -> list[Sentence]:
-        """Expand phrases, then bind every line to the step that answers it."""
+        """Expand phrases, bind every line to the step that answers it, and check the order.
+
+        The order is checked after expansion, so a phrase that arranges is held to the same rule
+        wherever it is said.
+        """
         expanded = phrase_reader.expand(self.scenario, loaded().phrases)
         self.sentences = [
             Sentence(keyword=line.keyword, text=line.text, line=line.number).resolve()
             for line in expanded.lines
         ]
+        steps.arranged_first(self.sentences)
         return self.sentences
 
     @override
@@ -315,7 +350,7 @@ class ScenarioItem(pytest.Item):
         finally:
             observed(self.nodeid, state)
             reconcile.teardown(state.ground, reconcile.scoped(state.made, "function"), undone)
-            reconcile.restore(state.ground, state.acted, undone)
+            reconcile.restore(state.ground, state.acted, state.loosed, undone)
             state.ground.rollback(undone)
             runtime.finish()
 
@@ -355,31 +390,38 @@ def _run_sentence(state: Scope, sentence: Sentence) -> None:
 
 
 def _supply(state: Scope, name: str) -> Any:
-    """What a step asks for, from inside a scenario. The same names a pytest function may take."""
+    """What a step asks for, from inside a scenario. The same names a pytest function may take.
+
+    A slot is looked up last, so a declared resource is never shadowed by whatever an earlier
+    sentence happened to call its result.
+    """
     if name == "atf":
         return state
-    if name == "shell":
-        adapter = state.ground.adapters.get("command")
-        if adapter is None:
-            raise StepError(
-                f"this sentence needs `shell`, and the {state.ground.config.name!r} environment has "
-                f"no `command:` block"
-            )
-        return adapter.shell
+    if name in state.ground.drivers:
+        return state.ground.drivers[name]
     if name in state.suite.instances:
         return state.arrange(fixture_name(declaration_of(state.suite.resource(name)).kind), name)
     if name in loaded().kinds:
         return state.the(name)
-    raise StepError(f"a step asks for {name!r}, and nothing declares it")
+    # `When I run "…" as "listing"` fills a slot, and `def _(listing)` is how a step reads it back.
+    if name in state.slots:
+        return state.slots[name]
+    filled = ", ".join(sorted(state.slots)) or "nothing yet"
+    built = ", ".join(sorted(state.ground.drivers)) or "none"
+    raise StepError(
+        f"a step asks for {name!r}, and nothing declares it.\n"
+        f"  It is not a resource, not a kind, not a driver ({built}), and not a slot this test has "
+        f"filled ({filled})."
+    )
 
 
 def _test_name(title: str) -> str:
     """A scenario's identity is its own title.
 
-    `the-record.md` writes it as `specs/lists.feature::a list belongs to its owner`, so that is what
+    `the-runs.md` writes it as `specs/lists.feature::a list belongs to its owner`, so that is what
     a report, history and `--failed` all carry.
     """
-    return record.test_name(title)
+    return runs.test_name(title)
 
 
 # --- The collection pass ------------------------------------------------------------------------
@@ -391,6 +433,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
     Selection comes first: only what this run will execute is checked.
     """
+    if _LOADED is None:
+        return
     if SELECTION is not None:
         kept, dropped = _apply_selection(items)
         if dropped:

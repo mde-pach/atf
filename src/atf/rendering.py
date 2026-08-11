@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import core, record
+from . import core, runs
 from .feature import Feature
 from .loader import Suite
-from .record import Verdict
+from .runs import Verdict
 
 TONE = {
     Verdict.PASSING: "passing",
@@ -42,15 +42,15 @@ def render(feature: Feature, verdicts: dict[str, str], *, with_verdicts: bool = 
 
 def verdicts_for(suite: Suite, environment: str) -> dict[str, str]:
     """The last outcome each scenario had in this environment, folded into a verdict."""
-    latest: dict[str, record.Outcome] = {}
-    for run in record.runs_for(suite.manifest.root, environment):
+    latest: dict[str, runs.Outcome] = {}
+    for run in runs.runs_for(suite.manifest.root, environment):
         for outcome in run.outcomes:
             latest[outcome.test] = outcome.outcome
 
     out: dict[str, str] = {}
     for test, word in latest.items():
         name = test.split("::", 1)[-1]
-        out[name] = str(record.verdict([word]))
+        out[name] = str(runs.verdict([word]))
     return out
 
 

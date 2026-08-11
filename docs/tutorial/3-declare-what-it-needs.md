@@ -10,20 +10,21 @@ suite from chapter 2. Everything here goes in `resources.py`, which `atf.yaml` n
 An owner is a thing with an email address, and it lives in a table:
 
 ```python
-from adapters.sqlite import sqlite
+from adapters.todo import todo
 
 
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 ```
 
 The class is the shape. The decorator is the **system**: the thing that holds this resource in an
-environment and knows how to look for one, make one and remove one. `@sqlite` means rows in a SQLite
-database, and it comes from the suite's own `adapters/sqlite.py`. ATF ships `@command`, `@browser`,
-`@filesystem` and `@process`.
+environment and knows how to look for one, make one and remove one. `@todo.owner` means a row in a
+SQLite table, and it comes from the suite's own `adapters/todo.py`. ATF ships `@filesystem.file`,
+`@filesystem.directory`, `@filesystem.tree`, `@browser.page`, `@shell.process`, `@http.record` and
+`@sql.row`.
 
-`unique_by` is sqlite's own option, and it is **recognition**: the field that decides whether a
+`unique_by` is **recognition**: the field that decides whether a
 record ATF finds is the record it declared. Give it `email` and ATF looks for a row with that email
 before making one, so the second run finds the owner the first run left. Name a field the database
 does not keep unique and the second run makes a duplicate. Pick the field with the constraint on it
@@ -65,7 +66,7 @@ Run it. The owner is in `todo.db` afterwards, because the test asked for it and 
 A list has a slug, and it belongs to an owner:
 
 ```python
-@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
+@todo.list(depends_on=[Owner])
 class TodoList:
     slug: str
 
@@ -150,34 +151,47 @@ CREATE TABLE IF NOT EXISTS Task (id INTEGER PRIMARY KEY, slug TEXT UNIQUE,
 And declare it:
 
 ```python
-from adapters.sqlite import Update, sqlite
+from adapters.todo import todo
 
 
-@sqlite(table="tasks", unique_by="slug", actions={"complete": Update(done=True)})
+@sql.row(table="tasks", unique_by="slug")
 class Task:
     todo_list: TodoList
     slug: str
-    done: int = 0
+    done: int
 
 
-laundry = Task(todo_list=groceries, slug="laundry")
+laundry = Task(todo_list=groceries, slug="laundry", done=0)
 ```
 
-The `actions` mapping turns a state change into a sentence:
+Nothing declares a verb. One built-in sentence moves any field of any resource:
 
 ```gherkin
 Scenario: completing a task
   Given the task "laundry"
-  When I complete the task "laundry"
+  When the task "laundry" field "done" becomes "1"
   Then the task "laundry" field "done" is "1"
 ```
 
-`complete` is now a verb the suite understands, for every task, on both surfaces. Each system ships
-its own action types, and `Update` is sqlite's — it arrives from the same adapter the decorator did.
+To say it in the domain's own words, write a phrase over it — Gherkin, in the same `.feature` file,
+no Python:
 
-That action writes a row; it does not run `todo.py`. Actions reach a state cheaply, so a scenario
+```gherkin
+  @phrase
+  Scenario: I complete the task "{name}"
+    When the task "{name}" field "done" becomes "1"
+```
+
+```gherkin
+  When I complete the task "laundry"
+```
+
+`complete` is now a verb the suite understands, for every task, on both surfaces, and a reader can
+see what it means without opening a Python file.
+
+That sentence writes a row; it does not run `todo.py`. It reaches a state cheaply, so a scenario
 about *your application* completing a task must still act through the interface —
-`When I run "todo done laundry"`. A claim about an action's own effect is a claim about sqlite.
+`When I run "todo done laundry"`. A claim about its own effect is a claim about the database.
 
 ## One test, one difference
 

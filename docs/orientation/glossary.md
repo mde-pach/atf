@@ -28,20 +28,22 @@ fails as cleanly as a built-in.
 
 ## Action {#action}
 
-A domain verb declared on a resource, which turns into `When I complete the task "laundry"`. It puts
-the domain's own word in the scenario instead of the change the word stands for. It is not
-[running something](#running-something): an action changes a declared resource through its system,
-while running something invokes the product and keeps what came back.
-[Act](../reference/act.md#action) has the `actions={…}` syntax and what an adapter must implement to
-support one.
+Changing a declared resource's field in the middle of a test:
+`When the task "laundry" field "done" becomes "1"`. Nothing declares it; it reaches the adapter's
+`update`, which every adapter has. A [phrase](#phrase) over it is what puts the domain's own word in
+the scenario — `When I complete the task "laundry"` — instead of the change the word stands for.
+
+It is not [running something](#running-something): an action changes a declared resource through its
+system, while running something invokes the product and keeps what came back.
+[Act](../reference/act.md#action) has the sentence and the phrase that names it.
 
 ## Adapter {#adapter}
 
 The class that teaches ATF a system, shipping `find`, `create`, `update` and `delete`, and its
 decorator with it. One instance is built per system per environment, so it holds its own connection.
 It is not the [system](#system): the system is the decorator a resource wears, the adapter is the
-class behind that decorator. `@sqlite` throughout this documentation is the worked example of an
-adapter and is not part of ATF — it lives in the suite's own `adapters/sqlite.py`.
+class behind that decorator. `@sql.row` throughout this documentation is the worked example of an
+adapter, and `@sql.row` over the `sql` driver is the one ATF ships for it.
 [Arrange](../reference/arrange.md#adapter) has the full method set, the `Options` and
 `Settings` split, and what raising `atf.Unreachable` means.
 
@@ -197,10 +199,12 @@ means.
 
 ## System {#system}
 
-The decorator on a resource class — `@sqlite`, `@command`, `@browser`, `@filesystem`, `@process` —
-carrying that system's own typed configuration. It is the resource's type: the class is the shape,
-the decorator says what kind of thing it is and who builds it. Behind every system is an
-[adapter](#adapter), and `@sqlite` is one somebody wrote rather than one ATF ships.
+The decorator on a resource class — `@sql.row`, `@filesystem.file`, `@filesystem.directory`, `@browser.page`, `@shell.process` —
+carrying that system's own typed options. It is the resource's type: the class is the shape, the
+decorator says what kind of thing it is and who builds it. **A system is named after the thing, not
+the technology**: `file`, `directory` and `tree` are three systems over one filesystem. Behind every
+system is an [adapter](#adapter), and behind that a [driver](../reference/arrange.md#driver) holding
+the machinery. A system ATF does not ship for is an adapter somebody writes.
 [Arrange](../reference/arrange.md#system) lists the systems ATF ships and the options each takes.
 
 ## Using an interface {#using-an-interface}

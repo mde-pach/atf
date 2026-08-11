@@ -16,13 +16,13 @@ Two files. The first declares what exists; nothing in it touches anything.
 
 ```python
 # resources.py
-from adapters.sqlite import sqlite      # this suite's adapter, not ATF's
+from atf import sql      # this suite's adapter, not ATF's
 
-@sqlite(table="owners", unique_by="email")
+@todo.owner()
 class Owner:
     email: str
 
-@sqlite(table="lists", unique_by="slug", depends_on=[Owner])
+@todo.list(depends_on=[Owner])
 class TodoList:
     slug: str
 

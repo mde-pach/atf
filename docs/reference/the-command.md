@@ -60,14 +60,14 @@ The manifest used by every example on this page:
 ```yaml
 resources: [./resources.py]
 specs: ./specs
-extensions: [./adapters/sqlite.py]
+extensions: [./adapters/todo.py]
 default_env: local
 
 environments:
   local:
     mutable: true
-    sqlite:  { path: ./todo.db }
-    command: { prefix: "python todo.py" }
+    todo:    { path: ./todo.db }
+    shell: { prefix: "python todo.py" }
 ```
 
 `sqlite` is the suite's own [adapter](extending-atf.md#registering-an-adapter), not part of ATF;
@@ -92,9 +92,12 @@ given — nothing is written — and `2` on bad flags or a directory that is not
 $ atf init
 wrote atf.yaml
 wrote resources.py
-wrote conftest.py
 wrote specs
 ```
+
+Three files and no fourth. There is no `conftest.py` to write and no `pytest.ini`: ATF registers
+itself as a pytest plugin, so a suite is enabled by existing, and `pytest` collects it wherever in a
+repository it was scaffolded.
 
 - **In CI** — not shown. A pipeline runs against a suite that already exists.
 - **In the editor** — not shown. The editor needs a manifest to open, so `init` comes first.

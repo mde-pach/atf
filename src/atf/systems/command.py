@@ -1,13 +1,13 @@
-"""`@command` — a command-line invocation, and the `shell` fixture behind `When I run`."""
+"""`shell` — running things on this machine: a command line, or a long-lived process."""
 
 from __future__ import annotations
 
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import TypedDict
 
-from ..declare import Unreachable, adapter, declaration_of, name_of, values_of
+from ..declare import Unreachable, driver
 from ..spi import Record
 
 
@@ -15,7 +15,7 @@ def run(prefix: str, command: str, cwd: Path | None = None) -> Record:
     """Run one command line through an environment's prefix, and report what it did."""
     line = f"{prefix} {command}".strip() if prefix else command
     try:
-        finished = subprocess.run(  # noqa: S603 - running the command is what this system is for
+        finished = subprocess.run(  # noqa: S603 - running the command is what this driver is for
             shlex.split(line),
             cwd=cwd,
             capture_output=True,
@@ -33,50 +33,29 @@ def run(prefix: str, command: str, cwd: Path | None = None) -> Record:
     }
 
 
-@adapter("command")
-class Command:
-    """Command lines run through one environment's prefix."""
+@driver("shell")
+class Shell:
+    """Command lines run through one environment's prefix, and processes started from its `cwd`.
 
-    class Options(TypedDict, total=False):
-        """What the decorator takes, per resource."""
-
-        run: str
+    A command line is not a resource: it is something a test *does*, and what it produced lands in a
+    slot. A step, a pytest function and an adapter all ask for this by the name `shell`.
+    """
 
     class Settings(TypedDict, total=False):
         """What an environment configures."""
 
+        #: Put in front of every command a test runs.
         prefix: str
+        #: Where a command runs, and where a `shell.process` is started.
         cwd: str
+        #: How long a `shell.process` waits for a declared port, in seconds.
+        start_timeout: float
 
     def __init__(self, settings: Settings) -> None:
         self.prefix = settings.get("prefix", "")
         self.cwd = Path(settings.get("cwd", ".")).expanduser().resolve()
-        self.ran: dict[str, Record] = {}
+        self.start_timeout = float(settings.get("start_timeout", 20))
 
-    def _line(self, resource: Any) -> str:
-        declaration = declaration_of(resource)
-        written = values_of(resource).get("run") or declaration.options.get("run")
-        if not written:
-            raise Unreachable(f'{declaration.kind}: no command — write it as @command(run="...")')
-        return str(written)
-
-    def shell(self, command: str) -> Record:
-        """What the `shell` fixture calls, and what `When I run` reaches."""
+    def __call__(self, command: str) -> Record:
+        """`shell("todo list")` — what the fixture and `When I run` both reach."""
         return run(self.prefix, command, self.cwd)
-
-    def find(self, resource: Any) -> Record | None:
-        return self.ran.get(name_of(resource) or self._line(resource))
-
-    def create(self, resource: Any) -> Record:
-        record = self.shell(self._line(resource))
-        self.ran[name_of(resource) or self._line(resource)] = record
-        if not record["ok"]:
-            raise Unreachable(f"{record['command']} exited {record['exit_code']}: {record['output'].strip()}")
-        return record
-
-    def update(self, resource: Any, found: Record, changes: Record) -> Record:
-        """What a command line did is not edited; it is done again."""
-        return self.create(resource)
-
-    def delete(self, resource: Any, found: Record) -> None:
-        self.ran.pop(name_of(resource) or self._line(resource), None)

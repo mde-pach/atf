@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import graph, steps
+from . import graph, lives, steps
 from . import phrases as phrase_reader
-from .declare import declaration_of, name_of
+from .declare import name_of
 from .feature import Scenario
 from .loader import Suite, fixture_name
 from .steps import OPAQUE, READS, WRITES, Sentence, StepError
@@ -61,7 +61,22 @@ class Footprint:
 # --- Reading one test -----------------------------------------------------------------------------
 
 
-def of_sentences(suite: Suite, sentences: list[Sentence]) -> Footprint:
+def _outlives_the_run(node: Any, spans: dict[str, str] | None) -> bool:
+    """Whether this resource is still there after the run, so asking for it is not writing it.
+
+    `spans={}` is the first pass, taken before any span is known: the spans are read off what the
+    suite writes, so this answer cannot depend on them yet.
+    """
+    if spans == {}:
+        return True
+    if spans:
+        return spans.get(name_of(node), lives.FOREVER) == lives.FOREVER
+    return lives.of(node) == lives.FOREVER
+
+
+def of_sentences(
+    suite: Suite, sentences: list[Sentence], spans: dict[str, str] | None = None
+) -> Footprint:
     """The footprint of a resolved list of sentences, in the order they are said."""
     reads: set[str] = set()
     writes: set[str] = set()
@@ -79,9 +94,9 @@ def of_sentences(suite: Suite, sentences: list[Sentence]) -> Footprint:
         for name in subjects:
             for node in graph.closure(suite.resource(name)):
                 reads.add(name_of(node))
-                # Anything not `persistent` is made for this test and taken away again, so a test
-                # that asks for one is a test that writes it.
-                if declaration_of(node).scope != "persistent":
+                # Anything that does not outlive the run is made for this test and taken away
+                # again, so a test that asks for one is a test that writes it.
+                if not _outlives_the_run(node, spans):
                     writes.add(name_of(node))
             if step.touch == WRITES:
                 writes.add(name)
@@ -126,7 +141,9 @@ def _whole_kind(suite: Suite, sentence: Sentence, step: steps.Step) -> set[str]:
     return {name for name, node in suite.instances.items() if type(node) is cls}
 
 
-def of_scenario(suite: Suite, scenario: Scenario, phrases: dict[str, Any]) -> Footprint:
+def of_scenario(
+    suite: Suite, scenario: Scenario, phrases: dict[str, Any], spans: dict[str, str] | None = None
+) -> Footprint:
     """The footprint of one scenario, with its phrases expanded and its sentences bound to steps."""
     try:
         expanded = phrase_reader.expand(scenario, phrases)
@@ -136,11 +153,13 @@ def of_scenario(suite: Suite, scenario: Scenario, phrases: dict[str, Any]) -> Fo
         ]
     except (StepError, phrase_reader.PhraseError) as exc:
         return Footprint(unreadable=str(exc))
-    return of_sentences(suite, sentences)
+    return of_sentences(suite, sentences, spans)
 
 
-def of_function(suite: Suite, asked: list[str] | set[str]) -> Footprint:
-    """The footprint of a pytest function, from the fixtures it asks for by name."""
+def of_function(
+    suite: Suite, asked: list[str] | set[str], spans: dict[str, str] | None = None
+) -> Footprint:
+    """The footprint of a Python test, from the resources it asks for by name."""
     reads: set[str] = set()
     writes: set[str] = set()
     for name in asked:
@@ -148,7 +167,7 @@ def of_function(suite: Suite, asked: list[str] | set[str]) -> Footprint:
             continue
         for node in graph.closure(suite.resource(name)):
             reads.add(name_of(node))
-            if declaration_of(node).scope != "persistent":
+            if not _outlives_the_run(node, spans):
                 writes.add(name_of(node))
     return Footprint(reads=frozenset(reads), writes=frozenset(writes), opaque=(A_TEST_BODY,))
 

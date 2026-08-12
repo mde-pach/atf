@@ -1,9 +1,5 @@
-resources: [./resources.py]
-specs: ./specs
-default_env: local
-
 environments:
   local:
-    mutable: true
+    owner: atf
     filesystem: { root: ./tmp }
     shell:      { cwd: . }

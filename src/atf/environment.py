@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import lives
 from .declare import (
     DRIVERS,
     Unreachable,
@@ -19,11 +20,12 @@ from .manifest import Environment as EnvironmentConfig
 from .spi import Parent, Record, Resource, State, check, check_shape, offers
 
 
-def view(resource: Any) -> Resource:
-    """One declared resource, as an adapter sees it.
+def view(resource: Any, recognised_by: tuple[str, ...] = (), owner: str = "") -> Resource:
+    """One declared thing, as a system sees it.
 
-    Built at every call into an adapter, so an adapter never imports `values_of` or
-    `declaration_of` and never holds ATF's own objects.
+    Built at every call into a system, so a system never imports `values_of` or `declaration_of`
+    and never holds ATF's own objects. `recognised_by` is what the system itself said tells one of
+    these apart — see [Ground.recognition](#recognition). Nothing about it was typed by the author.
     """
     declaration = declaration_of(resource)
     record = instance_of(resource)
@@ -33,10 +35,10 @@ def view(resource: Any) -> Resource:
         name=record.name,
         options=dict(declaration.options),
         fields=dict(declaration.fields),
-        when_absent=declaration.when_absent,
-        scope=declaration.scope,
+        owner=owner or declaration.owner,
+        lives=lives.of(resource),
         values=scalars,
-        identity={name: scalars[name] for name in declaration.unique_by if name in scalars},
+        identity={name: scalars[name] for name in recognised_by if name in scalars},
         parents={
             name: Parent(kind=declaration_of(value).kind, key=instance_of(value).identity)
             for name, value in record.values.items()
@@ -70,10 +72,54 @@ class Ground:
     adapters: dict[str, Any] = field(default_factory=dict)
     #: The machinery each adapter works through, and what a step asks for by name.
     drivers: dict[str, Any] = field(default_factory=dict)
+    #: What recognises each kind, as its own system answered it. Asked once, then held.
+    recognitions: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def mutable(self) -> bool:
-        return self.config.mutable
+        """Whether ATF may make things here. An environment owned by *them* is looked at only."""
+        return self.config.owner == "atf"
+
+    def owner_of(self, resource: Any) -> str:
+        """Who is responsible for this thing existing, here.
+
+        Two levels, one word. An environment owned by *them* makes every resource in it observed,
+        whatever the resource said; otherwise the declaration answers.
+        """
+        if self.config.owner == "them":
+            return "them"
+        return declaration_of(resource).owner
+
+    def recognition(self, resource: Any) -> tuple[str, ...]:
+        """What tells one of these apart — **the system's answer, never the author's**.
+
+        A file is recognised by its path. A row by whatever the table holds unique. A page by its
+        URL. Asking the author to type it would be asking them to restate something the system
+        already holds. A system says so with a `recognised_by` attribute where there is only ever
+        one answer, or a `recognises` method where it has to look.
+        """
+        declaration = declaration_of(resource)
+        held = self.recognitions.get(declaration.kind)
+        if held is not None:
+            return held
+        adapter = self.adapter_for(resource)
+        fixed = getattr(type(adapter), "recognised_by", None)
+        if fixed is not None:
+            answer = tuple(fixed)
+        elif callable(getattr(adapter, "recognises", None)):
+            answer = tuple(adapter.recognises(view(resource, owner=self.owner_of(resource))))
+        else:
+            raise GroundError(
+                f"the {declaration.system!r} system does not say what recognises one of its things, "
+                f"so ATF cannot tell one {declaration.kind} from another.\n"
+                f"  A system answers that with a `recognised_by` attribute or a `recognises` method."
+            )
+        self.recognitions[declaration.kind] = answer
+        return answer
+
+    def view(self, resource: Any) -> Resource:
+        """This resource as its system sees it, with recognition and ownership already answered."""
+        return view(resource, self.recognition(resource), self.owner_of(resource))
 
     def adapter_for(self, resource: Any) -> Any:
         declaration = declaration_of(resource)
@@ -97,12 +143,12 @@ class Ground:
         if not callable(found):
             declaration = declaration_of(resource)
             raise Unreachable(
-                f"{declaration.kind}: the {declaration.system!r} adapter has no {method!r}, so one "
-                f"is never {_DONE[method]}. Declare it `when_absent=\"observe\"` if that is the point."
+                f"{declaration.kind}: the {declaration.system!r} system has no {method!r}, so one "
+                f'is never {_DONE[method]}. Declare it `owner="them"` if that is the point.'
             )
 
         def call(_: Any, *rest: Any) -> Any:
-            return found(view(resource), *rest)
+            return found(self.view(resource), *rest)
 
         return call
 
@@ -157,13 +203,18 @@ class Ground:
             by_system.setdefault(declaration_of(node).system, []).append(node)
 
         for system, mine in by_system.items():
+            for node in [one for one in mine if self.unresolved(one)]:
+                out[id(node)] = (State.ABSENT, None)
+            mine = [one for one in mine if id(one) not in out]
+            if not mine:
+                continue
             adapter = self.adapters.get(system)
             if adapter is None or not offers(type(adapter), "find_many"):
                 for node in mine:
                     out[id(node)] = self.find(node)
                 continue
             try:
-                answered = adapter.find_many([view(node) for node in mine])
+                answered = adapter.find_many([self.view(node) for node in mine])
             except Unreachable:
                 out.update({id(node): (State.UNREACHABLE, None) for node in mine})
                 continue
@@ -171,14 +222,25 @@ class Ground:
                 out[id(node)] = (State.PRESENT, record) if record is not None else (State.ABSENT, None)
         return out
 
+    def unresolved(self, resource: Any) -> bool:
+        """Whether what recognises this thing is still a hole `needs()` will fill.
+
+        Nothing can be asked about a thing that has no identity yet. It is absent until resolution
+        runs, and resolution runs when a test asks for one.
+        """
+        held = view(resource).values
+        return any(key not in held for key in self.recognition(resource))
+
     def find(self, resource: Any) -> tuple[State, Record | None]:
         """Ask the environment whether this resource is there. The one question, asked every time.
 
         Nothing is written down between askings: a row deleted by hand or a database reset overnight
         gives the right answer immediately.
         """
+        if self.unresolved(resource):
+            return State.ABSENT, None
         try:
-            found = self.adapter_for(resource).find(view(resource))
+            found = self.adapter_for(resource).find(self.view(resource))
         except Unreachable:
             return State.UNREACHABLE, None
         return (State.PRESENT, found) if found is not None else (State.ABSENT, None)

@@ -46,8 +46,8 @@ rather than only one resource's lineage, and each box is the same link its row i
 
 ## Where to go next
 
-- **[One engine, two surfaces](one-engine-two-surfaces.md)** — why the editor performs nothing the
+- **[The surface and the library](the-surface-and-the-library.md)** — why the editor performs nothing the
   command line cannot.
-- **[The editor](../reference/the-editor.md)** — the views, and what each one is for.
-- **[Test a web interface](../how-to/test-a-web-interface.md)** — the interface claims, and how a
+- **[The editor](../model.md)** — the views, and what each one is for.
+- **[Test a web interface](../index.md)** — the interface claims, and how a
   page is asked about by role and name.

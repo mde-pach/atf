@@ -1,19 +1,23 @@
-# Explanation
+# The essays
 
-Why ATF is built this way. Each page names what was rejected and what the choice costs.
+> Not required reading. Every page here is for somebody who has already used ATF and wants to know
+> why it is like that.
 
-[Declared, not executed](declared-not-executed.md) is the bet: preconditions as typed data, and what
-the graph then answers. [Why there is no state file](why-there-is-no-state-file.md) follows from it —
+Nothing in [Start](../index.md), [The model](../model.md) or [Extending](../extending.md) depends on
+any of these, and that constraint is enforced: a link from one of those pages into this directory is
+a build failure, because it would mean an argument leaked out of the page that owed it.
+
+[Declared, not executed](declared-not-executed.md) is the bet: preconditions as data, and what the
+graph then answers. [Why there is no state file](why-there-is-no-state-file.md) follows from it —
 recognition re-reads reality every run, so nothing has to be remembered.
 
-[One engine, two surfaces](one-engine-two-surfaces.md) explains why a Gherkin step compiles to a
-fixture request, so the two surfaces cannot diverge.
+[The surface and the library](the-surface-and-the-library.md) is why there is one place the spec
+lives, and why the library beside it is counted rather than forbidden.
 [Every failure names your sentence](every-failure-names-your-sentence.md) treats the red path as a
 constraint on the design rather than a feature added later.
 
-[What we borrowed](what-we-borrowed.md) credits Gherkin, pytest, ARIA and OpenLineage, and names the
-one thing on offer that ATF declined. [The concept budget](the-concept-budget.md) is the 27 concepts,
-why that is the number, and the rule that holds it there.
-
-None of this is needed to use ATF. Read it when a decision looks arbitrary and you want to know
-whether it was.
+[The concept budget](the-concept-budget.md) is the rule that keeps the model at thirteen: to add
+something, name what it replaces; to refuse something, name what covers it.
+[What we borrowed](what-we-borrowed.md) says where the ideas came from and what was left behind.
+[Why the editor is plain](why-the-editor-is-plain.md) is one page about a deliberate lack of
+polish.

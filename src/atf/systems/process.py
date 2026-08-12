@@ -17,6 +17,9 @@ from .command import Shell
 class Process:
     """Processes started from one working directory."""
 
+    #: A process is the command line it was started as. There is no second way to recognise one.
+    recognised_by = ("command",)
+
     class Options(TypedDict, total=False):
         """What the decorator takes, per resource."""
 
@@ -61,15 +64,15 @@ class Process:
     def check(self, resource: Resource) -> str:
         """Why this declaration cannot be honoured, or nothing.
 
-        `persistent` means a resource outlives the process that made it, and without a port this
-        system has no way to tell whether it did.
+        Living `forever` means outliving the process that made it, and without a port this system
+        has no way to tell whether it did.
         """
-        if resource.scope == "persistent" and not self._port(resource):
+        if resource.lives == "forever" and not self._port(resource):
             return (
-                f"{resource.kind} is scope=persistent and declares no port. A process is "
-                f"recognised by the port it answers on; without one, a process an earlier run "
-                f"started cannot be told from one that is gone. Declare a port, or use "
-                f"scope=session."
+                f"{resource.kind} lives forever and declares no port. A process is recognised by "
+                f"the port it answers on; without one, a process an earlier run started cannot be "
+                f"told from one that is gone. Declare a port, or let some scenario change it so "
+                f"that it lives for the test."
             )
         return ""
 
@@ -105,7 +108,7 @@ class Process:
     def create(self, resource: Resource) -> Record:
         command = self._command(resource)
         try:
-            handle = subprocess.Popen(  # noqa: S603 - the command is the declaration; running it is the point
+            handle = subprocess.Popen(
                 shlex.split(command),
                 cwd=self.cwd,
                 stdout=subprocess.PIPE,

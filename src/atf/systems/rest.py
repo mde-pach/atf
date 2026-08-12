@@ -61,6 +61,16 @@ class ApiRecord:
         collection_key: str
         #: What this API calls the identifier. Read for lineage and for `delete`.
         id_field: str
+        #: What tells one of these apart. An HTTP API has no schema to read, so it is said here.
+        known_by: list[str]
+
+    def recognises(self, resource: Resource) -> tuple[str, ...]:
+        """What tells one of these apart.
+
+        Read off `known_by` on the decorator, which is where a system with no schema takes it.
+        """
+        written = resource.options.get("known_by")
+        return tuple(str(one) for one in written) if written else ()
 
     def __init__(self, http: Http) -> None:
         self.client = http.client
@@ -91,9 +101,10 @@ class ApiRecord:
         out: Record = dict(resource.values)
         suffix = self._suffix(resource)
         for field, parent in resource.parents.items():
-            if parent.key is None:
-                raise Unreachable(f"{field}: the resource it points at has not been made")
-            out[f"{field}{suffix}"] = parent.key
+            # A parent with no key is a lineage edge and nothing more: it had to exist first, and
+            # the system that made it has no identifier to send.
+            if parent.key is not None:
+                out[f"{field}{suffix}"] = parent.key
         return out
 
     def _unwrap(self, payload: Any, resource: Resource) -> Any:
@@ -108,7 +119,11 @@ class ApiRecord:
     def find(self, resource: Resource) -> Record | None:
         identity = self._identity(resource)
         if not identity:
-            raise Unreachable(f"{resource.kind}: no unique_by, so nothing says which one it is")
+            raise Unreachable(
+                f"{resource.kind}: the http system cannot tell one of these apart. An HTTP API has "
+                f"no schema to read, so name the fields on the decorator: "
+                f'@http.record(path="...", known_by=["email"])'
+            )
         try:
             return self._by_path(resource, identity) or self._by_listing(resource, identity)
         except (httpx.HTTPError, ValueError) as exc:

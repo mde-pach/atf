@@ -1,17 +1,24 @@
-"""`@resource`, the system decorators built on it, and what a declaration records."""
+"""`needs()`, the system decorators, and what a declaration records: `owner`, `lives`, `needs`."""
 
 from __future__ import annotations
 
 import sys
+import typing
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-WHEN_ABSENT = ("make", "require", "observe")
-SCOPES = ("function", "session", "persistent")
+#: Who is responsible for a thing existing. `atf` may make it; `them` means ATF only looks.
+OWNERS = ("atf", "them")
+
+#: The three spans a resource can live for, longest first. Nobody picks one — it is read off the
+#: suite — but `lives=` overrides the reading for what ATF cannot see.
+FOREVER, THE_RUN, THE_TEST = "forever", "the run", "the test"
+SPANS = (FOREVER, THE_RUN, THE_TEST)
 
 
 class Unreachable(Exception):
-    """Raised by an adapter when the system it talks to cannot be reached.
+    """Raised by a system when the thing it talks to cannot be reached.
 
     The third thing an environment can say: `find` returning a record is present, `None` is absent,
     and this is a question that could not be asked. Never read as absence.
@@ -22,6 +29,87 @@ class DeclarationError(Exception):
     """Raised when a declaration cannot be read as one. Always at load, never inside a test."""
 
 
+# --- needs() --------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Need:
+    """How to get one when nobody gave one — the whole of resolution, at the hole it fills.
+
+    `resolver` is what produces the value: another declared kind, or any callable at all. A callable
+    may itself take resources, which is what makes a separate factory concept unnecessary.
+    """
+
+    #: What was written inside `needs(...)`, before the annotation was consulted. `None` is bare.
+    written: Any = None
+    #: What resolution actually calls or builds, after a bare `needs()` read the annotation.
+    resolver: Any = None
+    #: The declared kind this need is an edge to, where it is one. Otherwise nothing.
+    kind: type | None = None
+    #: The field this fills, for a message.
+    where: str = ""
+
+
+def needs(resolver: Any = None) -> Any:
+    """Declare how a field is filled when nobody gave it a value.
+
+    Bare, it resolves whatever the annotation names — the field says `Owner`, so writing `Owner`
+    again would be saying it twice. With an argument it names something else: another declared kind,
+    or any callable, which is where a team's own generator plugs in.
+
+    ATF never produces a value itself. Knowing what a valid email is means owning a domain
+    vocabulary, so `needs(fake.unique.email)` is the shape, and the provider is yours.
+    """
+    return Need(written=resolver)
+
+
+def _hints(cls: type) -> dict[str, Any]:
+    """Every annotation on this class, with string annotations resolved where they can be.
+
+    A suite module may say `from __future__ import annotations`, so every annotation may be a string.
+    """
+    try:
+        return typing.get_type_hints(cls)
+    except Exception:  # noqa: BLE001 - an annotation that will not resolve is reported per field
+        return {}
+
+
+def _read_needs(cls: type, annotations: dict[str, Any]) -> dict[str, Need]:
+    """Every `needs()` written as a default on this class, resolved to what it will call.
+
+    The class attribute goes: a field left unfilled must read as absent, not as ATF's bookkeeping.
+    """
+    hints = _hints(cls)
+    out: dict[str, Need] = {}
+    for name in annotations:
+        written = getattr(cls, name, None)
+        if not isinstance(written, Need):
+            continue
+        annotation = hints.get(name, annotations.get(name))
+        resolver = written.written if written.written is not None else annotation
+        if resolver is None or (written.written is None and not is_declared(resolver)):
+            said = getattr(annotation, "__name__", None) or str(annotation) or "nothing"
+            raise DeclarationError(
+                f"{cls.__name__}.{name}: `needs()` on its own resolves whatever the annotation "
+                f"names, and this one says {said}, which is not a declared kind.\n"
+                f"  Give it something that produces one: `needs(a_slug)`, `needs(fake.email)`."
+            )
+        if not is_declared(resolver) and not callable(resolver):
+            raise DeclarationError(
+                f"{cls.__name__}.{name}: `needs({resolver!r})` names neither a declared kind nor "
+                f"anything callable"
+            )
+        out[name] = Need(
+            written=written.written,
+            resolver=resolver,
+            kind=resolver if is_declared(resolver) else None,
+            where=f"{cls.__name__}.{name}",
+        )
+        if name in vars(cls):
+            delattr(cls, name)
+    return out
+
+
 @dataclass(frozen=True)
 class Declaration:
     """What a decorator recorded about a kind. Everything here belongs to ATF, not to a system."""
@@ -29,19 +117,23 @@ class Declaration:
     kind: str
     system: str
     options: dict[str, Any] = field(default_factory=dict)
-    unique_by: tuple[str, ...] = ()
-    depends_on: tuple[Any, ...] = ()
-    when_absent: str = "make"
-    scope: str = "persistent"
+    #: How each unfilled field is filled — lineage and value generation, in one place.
+    needs: dict[str, Need] = field(default_factory=dict)
+    #: `atf` or `them`. Who is responsible for one of these existing.
+    owner: str = "atf"
+    #: An override for the span ATF would otherwise read off the suite. Empty means derived.
+    lives: str = ""
     module: str = ""
-    # The class's own annotations, as written. They are the shape a reader sees and nothing more —
-    # no dependency is read from them, which is the whole point of `depends_on`.
+    #: The class's own annotations, as written. The shape a reader sees, and nothing more.
     fields: dict[str, Any] = field(default_factory=dict)
 
     @property
     def kinds_needed(self) -> tuple[type, ...]:
-        """The `depends_on` entries that name a kind, not a particular resource."""
-        return tuple(entry for entry in self.depends_on if isinstance(entry, type))
+        """The kinds this one has an edge to, read off the `needs()` written at each field."""
+        return tuple(dict.fromkeys(need.kind for need in self.needs.values() if need.kind is not None))
+
+    def need_for(self, field_name: str) -> Need | None:
+        return self.needs.get(field_name)
 
 
 @dataclass
@@ -55,15 +147,25 @@ class Instance:
     values: dict[str, Any] = field(default_factory=dict)
     depends_on: list[Any] = field(default_factory=list)
     name: str = ""
-    from_factory: bool = False
+    #: Whether resolution built this one. `False` for one a module names.
+    built: bool = False
+    #: Fields left to resolution. A thing with any of these is factorised.
+    resolved: set[str] = field(default_factory=set)
     #: What this resource was last found as, so a child can be checked against the parent it points
     #: at. Set when the resource is reconciled, and never read from anywhere else.
     identity: Any = None
     #: A copy a scenario made by patching a recognised field. Torn down with the scenario.
     ephemeral: bool = False
+    #: Fields a scenario took away with `without`. Resolution leaves these alone.
+    dropped: frozenset[str] = frozenset()
     #: Fields a scenario named in a variation. An explicit value always holds, even where the field
     #: would otherwise be left to whatever an action made of it.
     varied: frozenset[str] = frozenset()
+
+    @property
+    def factorised(self) -> bool:
+        """Whether anything about this one is left to resolution."""
+        return self.built or bool(self.resolved)
 
 
 # --- Reading a declared object -------------------------------------------------------------------
@@ -86,12 +188,12 @@ def instance_of(value: Any) -> Instance:
 
 
 def name_of(value: Any) -> str:
-    """A resource's name is its variable's name. One the factory built has none."""
+    """A resource's name is its variable's name. One resolution built has none."""
     return instance_of(value).name
 
 
 def values_of(value: Any) -> dict[str, Any]:
-    """The shape: the fields a suite declared, which is what an adapter writes."""
+    """The shape: the fields a suite declared, which is what a system writes."""
     return instance_of(value).values
 
 
@@ -104,18 +206,19 @@ def _init(self: Any, **values: Any) -> None:
     A value that is itself a resource is a parent as well as a value — the foreign-key case, where
     the shape has room for the parent and writing the dependency again would be saying it twice.
     """
-    depends_on = values.pop("depends_on", None) or []
-    if not isinstance(depends_on, list | tuple):
-        raise DeclarationError(f"{type(self).__name__}: depends_on must be a list of resources")
-    # The fields are ordinary attributes: `primary.email`, `groceries.owner.email`.
+    # A `Need` reaching here would be a field left to resolution and then handed back as a value.
+    values = {name: value for name, value in values.items() if not isinstance(value, Need)}
     self.__dict__.update(values)
+    declaration = declaration_of(self)
     self.__atf_resource__ = Instance(
-        kind=type(self).__name__,
+        kind=declaration.kind,
         values=values,
-        depends_on=[v for v in values.values() if is_resource(v)] + list(depends_on),
+        depends_on=[v for v in values.values() if is_resource(v)],
+        # Which holes resolution will fill is known now, not when it fills them. A thing is
+        # factorised the moment it leaves one open, and how long it lives follows from that.
+        resolved={name for name in declaration.needs if name not in values},
     )
     _check_declared(self, values)
-    _check_recognisable(self, values)
 
 
 def _check_declared(self: Any, values: dict[str, Any]) -> None:
@@ -136,29 +239,6 @@ def _check_declared(self: Any, values: dict[str, Any]) -> None:
             f"{declaration.kind} declares {declared}, and this one also sets {', '.join(unknown)}. "
             f"A resource carries the fields its class declares."
         )
-
-
-def _check_recognisable(self: Any, values: dict[str, Any]) -> None:
-    """Every field `unique_by` names must be a declared scalar of this resource.
-
-    Recognition is what says *which* resource this is, so a `unique_by` naming a field nothing
-    declares gives an adapter an empty identity — and an empty identity matches whatever comes
-    first. That is the quietest way to write to the wrong row, so it is refused at declaration.
-    """
-    declaration = declaration_of(self)
-    for name in declaration.unique_by:
-        if name not in values:
-            declared = ", ".join(sorted(values)) or "nothing"
-            raise DeclarationError(
-                f"{declaration.kind} is recognised by {name!r}, and this one declares {declared}. "
-                f"A resource is recognised by the fields it carries."
-            )
-        if is_resource(values[name]):
-            raise DeclarationError(
-                f"{declaration.kind} is recognised by {name!r}, which holds another resource. "
-                f"Recognition is by declared values; write the dependency in `depends_on` and "
-                f"recognise this one by a field of its own."
-            )
 
 
 def _repr(self: Any) -> str:
@@ -186,70 +266,30 @@ def _fields(cls: type) -> dict[str, Any]:
     return found
 
 
-def _recognised(cls: type, system: str, unique_by: str | tuple[str, ...] | list[str]) -> tuple[str, ...]:
-    """What recognises this resource: the adapter's own answer, or the one the suite wrote.
-
-    An adapter over something that can only be recognised one way says so once, and a declaration
-    then says nothing — a file is its path, and there was never a second way to put it.
-    """
-    fixed = getattr(ADAPTERS.get(system), "recognised_by", None)
-    if fixed is not None:
-        if unique_by:
-            raise DeclarationError(
-                f"{cls.__name__}: the {system!r} adapter recognises by {', '.join(fixed)}, so "
-                f"`unique_by` says nothing it does not already know — remove it"
-            )
-        return tuple(fixed)
-    return _recognition(cls, unique_by)
-
-
-def _recognition(cls: type, unique_by: str | tuple[str, ...] | list[str]) -> tuple[str, ...]:
-    """`unique_by` as a tuple of field names, whether one was written or several.
-
-    Several is for a resource unique only in combination — a plan recognised by its code *within a
-    region*. Every name is a field the resource carries. A parent is never one of them.
-    """
-    if isinstance(unique_by, str):
-        return (unique_by,) if unique_by else ()
-    if not isinstance(unique_by, list | tuple) or not all(isinstance(name, str) and name for name in unique_by):
-        raise DeclarationError(
-            f"{cls.__name__}: unique_by is {unique_by!r}; it is a field name, or several of them"
-        )
-    if len(set(unique_by)) != len(unique_by):
-        raise DeclarationError(f"{cls.__name__}: unique_by names the same field twice: {unique_by!r}")
-    return tuple(unique_by)
-
-
 def resource(
     *,
-    unique_by: str | tuple[str, ...] | list[str] = "",
-    depends_on: list[Any] | tuple[Any, ...] | None = None,
-    when_absent: str = "make",
-    scope: str = "persistent",
+    owner: str = "atf",
+    lives: str = "",
     _system: str = "",
     _options: dict[str, Any] | None = None,
 ):
     """The base decorator. Every system decorator is this one, with a system and its options bound.
 
-    `_system` and `_options` are how `@adapter` binds itself to it, and are not written by a suite.
+    `_system` and `_options` are how a system binds itself to it, and are not written by a suite.
     """
 
     def decorate(cls: type) -> type:
-        if when_absent not in WHEN_ABSENT:
+        if owner not in OWNERS:
             raise DeclarationError(
-                f"{cls.__name__}: when_absent is {when_absent!r}; it is one of {', '.join(WHEN_ABSENT)}"
+                f"{cls.__name__}: owner is {owner!r}; it is {' or '.join(repr(one) for one in OWNERS)} — "
+                f"who is responsible for one of these existing"
             )
-        if scope not in SCOPES:
-            raise DeclarationError(f"{cls.__name__}: scope is {scope!r}; it is one of {', '.join(SCOPES)}")
-        recognised = _recognised(cls, _system, unique_by)
+        if lives and lives not in SPANS:
+            raise DeclarationError(
+                f"{cls.__name__}: lives is {lives!r}; it is one of {', '.join(repr(one) for one in SPANS)}.\n"
+                f"  Leave it out unless ATF cannot see the truth: the span is read off the suite."
+            )
         fields = _fields(cls)
-        for entry in depends_on or ():
-            if not (isinstance(entry, type) and is_declared(entry)) and not is_resource(entry):
-                raise DeclarationError(
-                    f"{cls.__name__}: depends_on holds {entry!r}, which is neither a declared "
-                    f"resource nor one of their kinds"
-                )
-
         _bind(
             cls,
             "__atf_declaration__",
@@ -257,10 +297,9 @@ def resource(
                 kind=cls.__name__,
                 system=_system,
                 options=dict(_options or {}),
-                unique_by=recognised,
-                depends_on=tuple(depends_on or ()),
-                when_absent=when_absent,
-                scope=scope,
+                needs=_read_needs(cls, fields),
+                owner=owner,
+                lives=lives,
                 module=cls.__module__,
                 fields=fields,
             ),
@@ -278,27 +317,13 @@ def is_declared(cls: Any) -> bool:
 
 
 def system_decorator(name: str):
-    """The `@sqlite(...)` a system ships: `@resource`, plus that system's own options."""
+    """The `@sql.row(...)` a system ships: `@resource`, plus that system's own options."""
 
-    def decorator(
-        *,
-        unique_by: str | tuple[str, ...] | list[str] = "",
-        depends_on: list[Any] | tuple[Any, ...] | None = None,
-        when_absent: str = "make",
-        scope: str = "persistent",
-        **options: Any,
-    ):
-        return resource(
-            unique_by=unique_by,
-            depends_on=depends_on,
-            when_absent=when_absent,
-            scope=scope,
-            _system=name,
-            _options=options,
-        )
+    def decorator(*, owner: str = "atf", lives: str = "", **options: Any):
+        return resource(owner=owner, lives=lives, _system=name, _options=options)
 
     decorator.__name__ = name
-    decorator.__doc__ = f"Declare a resource of the `{name}` system."
+    decorator.__doc__ = f"Declare a thing of the `{name}` system."
     return decorator
 
 
@@ -312,7 +337,8 @@ def driver(name: str):
     """Register a driver: the machinery an adapter works through, and a step can ask for by name.
 
     A driver is built once per environment from the `atf.yaml` block of its own name, and is what
-    holds a connection, a browser or a shell.
+    holds a connection, a browser or a shell. Internal structure — a team writing an extension meets
+    one word, and it is *system*.
     """
 
     def decorate(cls: type) -> type:
@@ -324,7 +350,7 @@ def driver(name: str):
             )
         DRIVERS[name] = cls
         _bind(cls, "__atf_driver__", name)
-        # The driver is bound into its own module under its name, so `from adapters.sqlite import
+        # The driver is bound into its own module under its name, so `from systems.sqlite import
         # sqlite` reaches it and every adapter over it is an attribute: `@sqlite.row(...)`.
         module = sys.modules.get(cls.__module__)
         if module is not None and not hasattr(module, name):
@@ -339,7 +365,7 @@ RESERVED = ("self", "args", "kwargs")
 
 
 def _parameters(cls: type) -> tuple[str, ...]:
-    import inspect  # noqa: PLC0415
+    import inspect
 
     try:
         return tuple(inspect.signature(cls.__init__).parameters)
@@ -352,17 +378,12 @@ def drivers_wanted(cls: type) -> tuple[str, ...]:
     return tuple(name for name in _parameters(cls) if name not in RESERVED)
 
 
-
 def adapter(name: str, *, driver: str = ""):
     """Register an adapter class, and ship the `@<name>(...)` decorator that goes with it.
 
     `driver` is the machinery this kind of thing is made through. It namespaces the registration —
     `@adapter("row", driver="sqlite")` registers `sqlite.row` — and hangs the decorator off the
     driver, so a declaration says `@sqlite.row(...)` and names both at once.
-
-    The decorator is bound into the module where the adapter is written, so that
-    `from adapters.sqlite import sqlite` finds it — which is how every example in the documentation
-    imports one. `atf.system(name)` returns the same object for anyone who would rather be explicit.
 
     An adapter takes its drivers as `__init__` parameters, by name. It carries `Options` — what the
     decorator accepts, per resource — and no settings of its own; those belong to a driver.
@@ -374,7 +395,7 @@ def adapter(name: str, *, driver: str = ""):
         seen = ADAPTERS.get(registered)
         if seen is not None and (seen.__module__, seen.__qualname__) != (cls.__module__, cls.__qualname__):
             raise DeclarationError(
-                f"two adapters are registered as {registered!r}: "
+                f"two systems are registered as {registered!r}: "
                 f"{seen.__module__}.{seen.__qualname__} and {cls.__module__}.{cls.__qualname__}"
             )
         ADAPTERS[registered] = cls
@@ -383,12 +404,12 @@ def adapter(name: str, *, driver: str = ""):
             over = DRIVERS.get(driver)
             if over is None:
                 raise DeclarationError(
-                    f"{cls.__qualname__} is an adapter over the {driver!r} driver, and no "
+                    f"{cls.__qualname__} works through the {driver!r} driver, and no "
                     f"`@driver({driver!r})` is registered above it"
                 )
             if name in vars(over):
                 raise DeclarationError(
-                    f"the {driver!r} driver already has a {name!r}, so the {registered!r} adapter "
+                    f"the {driver!r} driver already has a {name!r}, so the {registered!r} system "
                     f"cannot hang its decorator there — rename one of them"
                 )
             _bind(over, name, staticmethod(system_decorator(registered)))
@@ -404,3 +425,27 @@ def adapter(name: str, *, driver: str = ""):
 def system(name: str) -> Any:
     """The decorator a system ships, by name."""
     return system_decorator(name)
+
+
+def resolver_wants(resolver: Callable[..., Any]) -> dict[str, Any]:
+    """What a resolver function asks for, by parameter name and annotation.
+
+    The one place a type annotation decides what to build, and it is a function signature.
+    """
+    import inspect
+
+    try:
+        signature = inspect.signature(resolver)
+    except (TypeError, ValueError):
+        return {}
+    hints: dict[str, Any] = {}
+    try:
+        hints = typing.get_type_hints(resolver)
+    except Exception:  # noqa: BLE001 - an unresolvable annotation asks for nothing
+        hints = {}
+    return {
+        name: hints.get(name, parameter.annotation)
+        for name, parameter in signature.parameters.items()
+        if parameter.kind
+        not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    }

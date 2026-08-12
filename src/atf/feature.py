@@ -1,4 +1,4 @@
-"""Reading a `.feature` file into scenarios and sentences."""
+"""Reading a `.feature` file into scenarios, phrases and sentences, and refusing three shapes."""
 
 from __future__ import annotations
 
@@ -9,9 +9,11 @@ from pathlib import Path
 from .steps import CONTINUATIONS, KEYWORDS
 
 TAG = re.compile(r"@([\w-]+)")
-OUTLINE_HOLE = re.compile(r"<([^>]+)>")
 
-SCENARIO_WORDS = ("Scenario Outline:", "Scenario Template:", "Scenario:", "Example:")
+SCENARIO_WORD = "Scenario:"
+PHRASE_WORD = "Phrase:"
+#: Written by somebody arriving from Cucumber. Each is refused by name, with what to write instead.
+REFUSED = ("Scenario Outline:", "Scenario Template:", "Examples:", "Scenarios:", "Background:", "Example:")
 
 
 class FeatureError(Exception):
@@ -22,8 +24,8 @@ class FeatureError(Exception):
 class Line:
     """One sentence, with its keyword already resolved through any `And`.
 
-    `keyword` is what runs the sentence; `written` is the word the author typed, which is what
-    `atf docs` and the editor read back.
+    `keyword` is what runs the sentence; `written` is the word the author typed, which is what the
+    editor and the rendered spec read back.
     """
 
     keyword: str
@@ -34,11 +36,6 @@ class Line:
     @property
     def said(self) -> str:
         return self.written or self.keyword.title()
-
-    def filled(self, values: dict[str, str]) -> Line:
-        """This sentence with its `<placeholders>` replaced by one row of an `Examples` table."""
-        text = OUTLINE_HOLE.sub(lambda hole: values.get(hole.group(1), hole.group(0)), self.text)
-        return Line(keyword=self.keyword, text=text, number=self.number, written=self.written)
 
 
 @dataclass
@@ -52,37 +49,65 @@ class Scenario:
     number: int = 0
     rule: str = ""
     feature: str = ""
-
-    @property
-    def is_phrase(self) -> bool:
-        return "phrase" in self.tags
+    #: Whether this block is vocabulary. Set by the word `Phrase:`, and by nothing else.
+    is_phrase: bool = False
+    #: Free text between the title and the first sentence. Read by anything that renders a
+    #: scenario, and never by anything that runs one.
+    description: str = ""
 
     @property
     def where(self) -> str:
         return f"{self.path}:{self.number}" if self.path else self.name
 
-    def filled(self, values: dict[str, str]) -> Scenario:
-        name = OUTLINE_HOLE.sub(lambda hole: values.get(hole.group(1), hole.group(0)), self.name)
-        return Scenario(
-            name=name,
-            lines=[line.filled(values) for line in self.lines],
-            tags=list(self.tags),
-            path=self.path,
-            number=self.number,
-            rule=self.rule,
-            feature=self.feature,
-        )
-
 
 @dataclass
 class Feature:
-    """One file: its scenarios, and the background every one of them starts with."""
+    """One file: the scenarios in it, and the phrases it teaches."""
 
     name: str = ""
     path: Path | None = None
-    background: list[Line] = field(default_factory=list)
     scenarios: list[Scenario] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
+    #: Free text between the title and the first Scenario or Phrase. What a feature file is *for*
+    #: is prose, and refusing to let somebody write it would be refusing the point of the format.
+    description: str = ""
+
+    @property
+    def phrases(self) -> list[Scenario]:
+        return [one for one in self.scenarios if one.is_phrase]
+
+    @property
+    def tests(self) -> list[Scenario]:
+        return [one for one in self.scenarios if not one.is_phrase]
+
+
+def _refusal(word: str, where: str) -> str:
+    """Why a Gherkin feature is not here, and the one concept that covers it."""
+    if word == "Background:":
+        return (
+            f"{where}: Background is not in this language.\n"
+            f"  It degrades the graph — every scenario in the file drags that resource's whole\n"
+            f"  closure whether it wanted it or not — and every rendering of a scenario loses it.\n"
+            f"  Write the setup as a named situation, and say it where it is used:\n"
+            f"      Phrase: a busy account\n"
+            f'        Given the owner "primary"\n'
+            f'        And the list "groceries"\n'
+            f"\n"
+            f"      Scenario: the index shows every list\n"
+            f"        Given a busy account"
+        )
+    return (
+        f"{where}: {word} is not in this language.\n"
+        f"  A phrase runs one scenario over several inputs, and each case reads as a sentence\n"
+        f"  rather than a cell decoded against a header row three lines up:\n"
+        f'      Phrase: rejecting the address "{{address}}"\n'
+        f'        When I add the address "{{address}}"\n'
+        f"        Then it failed\n"
+        f"\n"
+        f"      Scenario: badly formed addresses are refused\n"
+        f'        Given rejecting the address ""\n'
+        f'        And rejecting the address "not-an-email"'
+    )
 
 
 def read(path: Path) -> Feature:
@@ -92,9 +117,7 @@ def read(path: Path) -> Feature:
     rule = ""
     tags: list[str] = []
     keyword = ""
-    in_background = False
-    outline_of: Scenario | None = None
-    header: list[str] = []
+    described: list[str] = []
 
     for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = raw.strip()
@@ -108,19 +131,25 @@ def read(path: Path) -> Feature:
         if line.startswith("Feature:"):
             feature.name = line[len("Feature:") :].strip()
             feature.tags, tags = tags, []
-            scenario, outline_of, in_background, keyword = None, None, False, ""
+            scenario, keyword, described = None, "", []
             continue
 
         if line.startswith("Rule:"):
             rule = line[len("Rule:") :].strip()
-            scenario, outline_of, in_background, keyword = None, None, False, ""
+            scenario, keyword, described = None, "", []
             continue
 
-        if line.startswith("Background:"):
-            in_background, scenario, outline_of, keyword = True, None, None, ""
-            continue
+        refused = next((word for word in REFUSED if line.startswith(word)), "")
+        if refused:
+            raise FeatureError(_refusal(refused, f"{path}:{number}"))
 
-        started = next((word for word in SCENARIO_WORDS if line.startswith(word)), "")
+        if line.startswith("|"):
+            raise FeatureError(
+                f"{path}:{number}: a table. There are no tables in this language — "
+                f"write each case as a sentence, under a phrase."
+            )
+
+        started = next((word for word in (SCENARIO_WORD, PHRASE_WORD) if line.startswith(word)), "")
         if started:
             scenario = Scenario(
                 name=line[len(started) :].strip(),
@@ -129,38 +158,12 @@ def read(path: Path) -> Feature:
                 number=number,
                 rule=rule,
                 feature=feature.name,
+                is_phrase=started == PHRASE_WORD,
             )
-            # A phrase is vocabulary, not a test, so it does not inherit the background a test gets.
-            if not scenario.is_phrase:
-                scenario.lines.extend(
-                    Line(keyword=step.keyword, text=step.text, number=step.number, written=step.written)
-                    for step in feature.background
-                )
-            # An outline is a template, not a test. It is held here and one scenario per `Examples`
-            # row is appended instead, so nothing collects a scenario with `<holes>` still in it.
-            outline_of = scenario if started.startswith(("Scenario Outline", "Scenario Template")) else None
-            if outline_of is None:
-                feature.scenarios.append(scenario)
-            tags, in_background, keyword, header = [], False, "", []
-            continue
-
-        if line.startswith(("Examples:", "Scenarios:")):
-            if outline_of is None:
-                raise FeatureError(f"{path}:{number}: Examples with no Scenario Outline above it")
-            header = []
-            continue
-
-        if line.startswith("|"):
-            row = [cell.strip() for cell in line.strip("|").split("|")]
-            if outline_of is None:
-                raise FeatureError(
-                    f"{path}:{number}: a table, and the only table in the language is Examples "
-                    f"under a Scenario Outline. Write it as several sentences."
-                )
-            if not header:
-                header = row
-                continue
-            feature.scenarios.append(outline_of.filled(dict(zip(header, row, strict=False))))
+            feature.scenarios.append(scenario)
+            if described and not feature.description:
+                feature.description = "\n".join(described)
+            tags, keyword, described = [], "", []
             continue
 
         word, _, rest = line.partition(" ")
@@ -170,6 +173,13 @@ def read(path: Path) -> Feature:
         elif lowered in CONTINUATIONS:
             if not keyword:
                 raise FeatureError(f"{path}:{number}: {word!r} continues a keyword, and none came before it")
+        elif not keyword:
+            # Free text, before anything has been said. Gherkin calls it a description, and what a
+            # feature file is *for* is prose — refusing it would be refusing the point of the format.
+            described.append(line)
+            if scenario is not None:
+                scenario.description = "\n".join(described)
+            continue
         else:
             raise FeatureError(
                 f"{path}:{number}: {line!r} starts with {word!r}; a sentence starts with "
@@ -177,18 +187,15 @@ def read(path: Path) -> Feature:
             )
 
         sentence = Line(keyword=keyword, text=rest.strip(), number=number, written=word)
-        if in_background:
-            feature.background.append(sentence)
-        elif scenario is not None:
-            scenario.lines.append(sentence)
-        else:
-            raise FeatureError(f"{path}:{number}: a sentence outside any scenario")
+        if scenario is None:
+            raise FeatureError(f"{path}:{number}: a sentence outside any Scenario or Phrase")
+        scenario.lines.append(sentence)
 
     return feature
 
 
 def read_all(specs: Path) -> list[Feature]:
-    """Every feature under the specs directory, in a stable order."""
+    """Every feature in the suite, in a stable order."""
     if not specs.is_dir():
         return []
     return [read(path) for path in sorted(specs.rglob("*.feature"))]

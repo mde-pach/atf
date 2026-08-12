@@ -1,9 +1,5 @@
-resources: [./resources.py]
-specs: ./specs
-default_env: local
-
 environments:
   local:
-    mutable: true
+    owner: atf
     http:  { base_url: "http://127.0.0.1:8799" }
     shell: { cwd: . }

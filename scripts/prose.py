@@ -1,4 +1,4 @@
-"""Check what the docstrings and comments in `src/atf` say, for the two rules ruff cannot express.
+"""Check what the docstrings and comments in `src/atf` say, and that no required page cites an essay.
 
 A docstring or comment names what a scope **is**, or states what a function **does** — its contract
 and its edge cases. It does not argue why the code is this way, name what was considered instead,
@@ -84,7 +84,44 @@ def main() -> int:
         print(problem)
     if found:
         print(f"\n{len(found)} lines say why rather than what. A decision that needs recording is a commit message.")
-    return 1 if found else 0
+
+    leaked = essay_links()
+    for problem in leaked:
+        print(problem)
+    if leaked:
+        print(f"\n{len(leaked)} required pages depend on an essay. The four pages stand on their own.")
+    return 1 if (found or leaked) else 0
+
+
+
+
+# --- The documentation ---------------------------------------------------------------------------
+
+DOCS = Path(__file__).resolve().parents[1] / "docs"
+#: The pages a reader is expected to read. Four of them, and each has to stand on its own.
+REQUIRED = ("index.md", "model.md", "extending.md")
+#: Where an argument lives. An essay is read by somebody who already used ATF and wants to know why.
+ESSAYS = "explanation/"
+
+LINK = re.compile(r"\]\(([^)]+)\)")
+
+
+def essay_links() -> list[str]:
+    """A link from a required page into an essay, which means an argument leaked out of its page.
+
+    Enforced the way `--strict` is enforced, because the levels rule is only worth having if
+    something checks it. An essay may cite anything; a required page may cite no essay.
+    """
+    found: list[str] = []
+    for name in REQUIRED:
+        page = DOCS / name
+        if not page.is_file():
+            found.append(f"{name}: required, and it is not there")
+            continue
+        for target in LINK.findall(page.read_text(encoding="utf-8")):
+            if target.startswith(ESSAYS) or f"/{ESSAYS}" in target:
+                found.append(f"{name}: links into an essay ({target}); say it here or drop it")
+    return found
 
 
 if __name__ == "__main__":

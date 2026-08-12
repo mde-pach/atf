@@ -61,14 +61,23 @@ jobs:
         run: uv run tesh docs/
 
       # No `--config` anywhere: `atf.yaml` is at the root of this repository, so the command finds
-      # it the way it finds any project's.
-      - name: The feature files are well formed
-        run: uv run atf check
+      # it the way it finds any project's. `plan` gates on a suite that is not sound.
+      - name: The sentence reference is up to date
+        run: |
+          uv run python scripts/reference.py
+          git diff --exit-code docs/reference/sentences.md
 
-      # `tests/` is an ATF suite describing ATF, run the way a user runs one. Single-worker: the
-      # engine is, and the suite serves an editor on one port.
+      - name: The suite is sound
+        run: uv run atf plan
+
+      # `atf/` is an ATF suite describing ATF, run the way a user runs one. Single-worker: the
+      # suite serves an editor on one port.
       - name: The suite
-        run: uv run atf run
+        run: uv run atf run --jobs 1
+
+      # A single green run says nothing about residue. The second is where a leak lands.
+      - name: The suite, again
+        run: uv run atf run --jobs 1
 
       # Runs the suite twice over, so this comes after a plain run rather than replacing it.
       - name: The suite can still go red
@@ -89,5 +98,5 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/scaffolded"
           cd "${RUNNER_TEMP}/scaffolded"
           uv run --project "${{ github.workspace }}" atf init
-          uv run --project "${{ github.workspace }}" atf status local
+          uv run --project "${{ github.workspace }}" atf plan
           uv run --project "${{ github.workspace }}" atf run

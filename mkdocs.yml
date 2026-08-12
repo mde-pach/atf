@@ -43,68 +43,29 @@ theme:
     - content.action.edit
 
 nav:
-  - Start here:
-      - index.md
-      - The model: orientation/the-model.md
-      - Coming from another tool: orientation/coming-from-another-tool.md
-      - Glossary: orientation/glossary.md
+  # Four hand-written pages, and nothing in them may depend on an essay. `scripts/prose.py` gates it.
+  - Start: index.md
+  - The model: model.md
+  - Extending: extending.md
 
-  - Tutorial:
-      - tutorial/index.md
-      - 1. Run a suite: tutorial/1-run-a-suite.md
-      - 2. Write a test: tutorial/2-write-a-test.md
-      - 3. Declare what it needs: tutorial/3-declare-what-it-needs.md
-      - 4. Point it at your own system: tutorial/4-point-it-at-your-own-system.md
-
-  - Guides:
-      - how-to/index.md
-      - Getting going:
-          - Install ATF: how-to/install-atf.md
-          - Adopt ATF in an existing suite: how-to/adopt-atf-in-an-existing-suite.md
-      - Arrange:
-          - Add a resource: how-to/add-a-resource.md
-          - Give a resource a factory: how-to/give-a-resource-a-factory.md
-          - Depend on another resource: how-to/depend-on-another-resource.md
-          - Vary a resource for one test: how-to/vary-a-resource-for-one-test.md
-          - Require something you cannot create: how-to/require-something-you-cannot-create.md
-          - Make something fresh for each test: how-to/make-something-fresh-for-each-test.md
-      - Act and assert:
-          - Write a scenario: how-to/write-a-scenario.md
-          - Teach ATF a sentence: how-to/teach-atf-a-sentence.md
-          - Write a step in Python: how-to/write-a-step-in-python.md
-          - Assert a record field by field: how-to/assert-a-record-field-by-field.md
-          - Test a web interface: how-to/test-a-web-interface.md
-          - Test a command line: how-to/test-a-command-line.md
-      - Environments and runs:
-          - Configure an environment: how-to/configure-an-environment.md
-          - Run ATF in CI: how-to/run-atf-in-ci.md
-          - Run only what a change touched: how-to/run-only-what-a-change-touched.md
-          - Share an environment: how-to/share-an-environment.md
-          - Keep a large suite fast: how-to/keep-a-large-suite-fast.md
-          - Work out why it is red: how-to/work-out-why-it-is-red.md
-          - Teach ATF a new system: how-to/teach-atf-a-new-system.md
-
+  # Generated. `scripts/reference.py` writes the sentences; mkdocs-click writes the commands.
   - Reference:
-      - reference/index.md
-      - The three verbs:
-          - Arrange: reference/arrange.md
-          - Act: reference/act.md
-          - Assert: reference/assert.md
-      - Around them:
-          - The ground: reference/the-ground.md
-          - The record: reference/the-record.md
-      - Surfaces:
-          - The command: reference/the-command.md
-          - The editor: reference/the-editor.md
-          - Extending ATF: reference/extending-atf.md
+      - Sentences: reference/sentences.md
+      - Commands: reference/commands.md
 
-  - Advanced:
-      - advanced/index.md
-      - How ATF tests itself: advanced/how-atf-tests-itself.md
+  # Optional depth, for somebody who has already used ATF.
+  - Essays:
+      - explanation/index.md
+      - Declared, not executed: explanation/declared-not-executed.md
+      - The surface and the library: explanation/the-surface-and-the-library.md
+      - Why there is no state file: explanation/why-there-is-no-state-file.md
+      - Every failure names your sentence: explanation/every-failure-names-your-sentence.md
+      - The concept budget: explanation/the-concept-budget.md
+      - What we borrowed: explanation/what-we-borrowed.md
+      - Why the editor is plain: explanation/why-the-editor-is-plain.md
 
   - Explanation:
       - explanation/index.md
-      - One engine, two surfaces: explanation/one-engine-two-surfaces.md
       - Declared, not executed: explanation/declared-not-executed.md
       - Why there is no state file: explanation/why-there-is-no-state-file.md
       - Every failure names your sentence: explanation/every-failure-names-your-sentence.md

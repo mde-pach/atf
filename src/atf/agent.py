@@ -10,29 +10,37 @@ from .editor import Editor
 
 INSTALL = "`atf edit --mcp` needs the MCP SDK: uv sync --group mcp"
 
-#: What an agent may ask for. Each is a read of the same core the editor reads, or the one operation
-#: the editor can perform — and the argument names are the command line's.
+#: What an agent may ask for. **The six commands, and the reads the editor makes** — the argument
+#: names are the command line's, so an agent that can read the help can drive this.
 TOOLS: dict[str, dict[str, Any]] = {
-    "status": {
-        "description": "Where each resource stands in one environment. Never gates.",
-        "arguments": {"env": "which environment", "names": "which resources, or all of them"},
+    "plan": {
+        "description": "Is this suite sound, and what will happen? Lint, standing, drift, undeclared.",
+        "arguments": {"env": "which environment", "apply": "make what is missing, and run nothing"},
     },
-    "make": {
-        "description": "Make each resource and everything it needs. `dry_run` says what would change.",
-        "arguments": {"env": "which environment", "names": "which resources", "dry_run": "change nothing"},
+    "run": {
+        "description": "Run tests and record a run. `tests` names identities; without it, everything.",
+        "arguments": {
+            "env": "which environment",
+            "tests": "which test identities, or all of them",
+            "tag": "only scenarios carrying these tags",
+            "select": "only scenarios reaching this thing, kind, system, phrase or file",
+            "failed": "only tests whose last outcome here was failed",
+            "accept": "draft the claims for scenarios that promise none",
+        },
+    },
+    "explain": {
+        "description": "Everything about one thing: a thing, a kind, a system, a scenario, a phrase, a file.",
+        "arguments": {
+            "pointed_at": "what to explain, or nothing for the shape of the suite",
+            "env": "which environment",
+        },
     },
     "resource": {
-        "description": "One resource: its declaration, what is there, what would be created or changed.",
-        "arguments": {"name": "the resource"},
+        "description": "One thing: its declaration, what is there, what would be created or changed.",
+        "arguments": {"name": "the thing"},
     },
-    "impact": {
-        "description": "What breaks if a resource does. Reads the graph, not history.",
-        "arguments": {"name": "the resource, or nothing for the whole graph"},
-    },
-    "unused": {"description": "What nothing asks for.", "arguments": {}},
-    "check": {"description": "Every registered check over this suite.", "arguments": {}},
     "tests": {"description": "Every behaviour the suite describes, with its verdict.", "arguments": {}},
-    "graph": {"description": "Every resource, test and phrase, and the edges between them.", "arguments": {}},
+    "graph": {"description": "Every thing, test and phrase, and the edges between them.", "arguments": {}},
     "overview": {
         "description": "Can I ship: the verdict and the four things that could contradict it.",
         "arguments": {},
@@ -41,36 +49,21 @@ TOOLS: dict[str, dict[str, Any]] = {
         "description": "Every sentence this suite can say, so an agent writes what it can run.",
         "arguments": {},
     },
-    "run": {
-        "description": "Run tests and record a run. `tests` names identities; without it, everything.",
-        "arguments": {
-            "env": "which environment",
-            "tests": "which test identities, or all of them",
-            "tag": "only tests carrying these tags",
-            "select": "only tests naming this resource",
-            "failed": "only tests whose last outcome here was failed",
-        },
-    },
-    "docs": {
-        "description": "The specs as markdown, carrying the verdict each scenario last had.",
-        "arguments": {"env": "whose history supplies the verdicts", "out": "where to write"},
-    },
     "compose": {
         "description": "Write a scenario as a feature file. This performs nothing — it is text.",
         "arguments": {
-            "name": "the file to write under specs/",
+            "name": "the file to write in the suite",
             "scenario": "the scenario's title",
             "lines": "the sentences, each a [keyword, text] pair",
         },
     },
     "declare": {
-        "description": "What declaring a resource would look like, as Python to paste. Writes nothing.",
+        "description": "What declaring a thing would look like, as Python to paste. Writes nothing.",
         "arguments": {
             "kind": "the class name",
             "system": "which system it lives in",
-            "unique_by": "the field, or fields, that recognise it",
             "fields": "field name to its type, as text",
-            "depends_on": "the kinds it needs",
+            "needs": "field name to what fills it when nobody gives one",
         },
     },
     "explain_failure": {
@@ -78,12 +71,8 @@ TOOLS: dict[str, dict[str, Any]] = {
         "arguments": {"test": "the test identity", "env": "whose history to read"},
     },
     "footprint": {
-        "description": "What a test reads, what it writes, and what its effect nothing declares.",
+        "description": "What a test reads, what it writes, and which of its sentences declare no effect.",
         "arguments": {"test": "the test identity"},
-    },
-    "drift": {
-        "description": "What this environment holds that no longer matches its declaration.",
-        "arguments": {"env": "which environment", "names": "which resources, or all of them"},
     },
 }
 
@@ -94,25 +83,16 @@ def answer(editor: Editor, tool: str, arguments: dict[str, Any] | None = None) -
     config = str(editor.suite.manifest.path)
     editor.reload()
 
-    if tool == "status":
-        return _report(commands.status(given.get("env", ""), given.get("names") or [], manifest=editor.suite.manifest))
-    if tool == "make":
-        return _report(
-            commands.make(
-                given.get("env", ""),
-                given.get("names") or [],
-                dry_run=bool(given.get("dry_run")),
-                manifest=editor.suite.manifest,
-            )
-        )
+    if tool == "plan":
+        return commands.do_plan(
+            str(given.get("env", "")), apply=bool(given.get("apply")), config=config
+        ).data
+    if tool == "explain":
+        return commands.do_explain(
+            str(given.get("pointed_at", "")), str(given.get("env", "")), config=config
+        ).data
     if tool == "resource":
         return editor.resource(str(given["name"]))
-    if tool == "impact":
-        return commands.do_impact(str(given.get("name", "")), config=config).data
-    if tool == "unused":
-        return commands.do_unused(config=config).data
-    if tool == "check":
-        return commands.do_check(config=config).data
     if tool == "tests":
         return editor.tests()
     if tool == "graph":
@@ -122,7 +102,10 @@ def answer(editor: Editor, tool: str, arguments: dict[str, Any] | None = None) -
     if tool == "sentences":
         return {"sentences": core.sayable(editor.suite), "subjects": core.subjects(editor.suite)}
     if tool == "run":
-        from .entry import Options, do_run  # noqa: PLC0415 - one command, reached the same way
+        from .entry import (
+            Options,
+            do_run,
+        )
 
         answered = do_run(
             Options(config=config, quiet=True),
@@ -130,17 +113,18 @@ def answer(editor: Editor, tool: str, arguments: dict[str, Any] | None = None) -
             tag=tuple(given.get("tag") or ()),
             select=str(given.get("select", "")),
             failed=bool(given.get("failed")),
+            accept=bool(given.get("accept")),
+            contract=False,
             keyword="",
             tests=tuple(given.get("tests") or ()),
             report=(),
+            import_="",
+            format_="ctrf",
             no_make=False,
             dry_run=False,
+            jobs="1",
         )
-        return {"code": answered.code, **answered.data}
-    if tool == "docs":
-        return commands.do_docs(
-            out=str(given.get("out", "./atf-docs")), env=str(given.get("env", "")), config=config
-        ).data
+        return {"code": answered.code, **(answered.data or {})}
     if tool == "compose":
         path = editor.compose(
             str(given.get("name", "composed")),
@@ -150,8 +134,6 @@ def answer(editor: Editor, tool: str, arguments: dict[str, Any] | None = None) -
         return {"wrote": str(path)}
     if tool == "declare":
         return {"python": _declaration(given)}
-    if tool == "drift":
-        return commands.do_drift(str(given.get("env", "")), given.get("names") or [], config=config).data
     if tool == "footprint":
         return _footprint(editor, str(given["test"]))
     if tool == "explain_failure":
@@ -165,29 +147,27 @@ def _declaration(given: dict[str, Any]) -> str:
     Nothing is written to disk; what comes out is ordinary Python, for a person to read and paste.
     """
     kind = str(given.get("kind", "Thing"))
-    system = str(given.get("system", "sql"))
-    unique_by = given.get("unique_by") or ""
+    system = str(given.get("system", "sql.row"))
     fields = dict(given.get("fields") or {})
-    needs = list(given.get("depends_on") or [])
+    needs = dict(given.get("needs") or {})
 
-    written = f"unique_by={unique_by!r}" if isinstance(unique_by, str) else f"unique_by={list(unique_by)!r}"
-    if needs:
-        written += f", depends_on=[{', '.join(str(one) for one in needs)}]"
-    body = "\n".join(f"    {name}: {kind_of}" for name, kind_of in fields.items()) or "    pass"
-    return f"@{system}({written})\nclass {kind}:\n{body}\n"
+    lines = []
+    for name, written in fields.items():
+        filled = needs.get(name)
+        lines.append(f"    {name}: {written} = needs({filled})" if filled else f"    {name}: {written}")
+    body = "\n".join(lines) or "    pass"
+    return f"@{system}()\nclass {kind}:\n{body}\n"
 
 
 def _footprint(editor: Editor, test: str) -> dict[str, Any]:
     """What one test touches, worked out the way the run works it out."""
-    from . import footprint as reach  # noqa: PLC0415
+    from . import footprint as reach
 
     for feature in editor.features:
         if feature.path is None:
             continue
-        for scenario in feature.scenarios:
-            if scenario.is_phrase:
-                continue
-            from .runs import identity  # noqa: PLC0415
+        for scenario in feature.tests:
+            from .runs import identity
 
             if identity(feature.path, scenario.name, editor.root) != test:
                 continue
@@ -235,30 +215,10 @@ def _explain_failure(editor: Editor, test: str, env: str) -> dict[str, Any]:
     }
 
 
-def _report(report: commands.Report) -> dict[str, Any]:
-    """A command's answer as data, with `why` naming any resource that could not be made."""
-    if report.error:
-        return {"error": report.error, "code": report.code}
-    return {
-        "environment": report.env,
-        "code": report.code,
-        "resources": [
-            {
-                "name": outcome.name,
-                "state": str(outcome.state),
-                "did": str(outcome.did),
-                "changes": sorted(outcome.changes),
-                "why": outcome.why,
-            }
-            for outcome in report.outcomes
-        ],
-    }
-
-
 def _server_class() -> Any:
     """The SDK's server. `mcp>=2` is what the optional group pins, so it is `MCPServer`."""
     try:
-        from mcp.server.mcpserver import MCPServer  # noqa: PLC0415
+        from mcp.server.mcpserver import MCPServer
     except ImportError as exc:
         raise RuntimeError(INSTALL) from exc
     return MCPServer

@@ -2,24 +2,25 @@
 
 from __future__ import annotations
 
-import importlib.util
 import random
-import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 from typing_extensions import override
 
-from . import feature as feature_reader
 from . import (
+    claims,
+    conformance,  # noqa: F401 - imported so the contract's own sentences are registered
     footprint,
+    lives,
     reconcile,
     runs,
     runtime,
     steps,
     vocabulary,  # noqa: F401 - imported so its sentences are registered
 )
+from . import feature as feature_reader
 from . import phrases as phrase_reader
 from .declare import declaration_of
 from .environment import Ground, build_ground
@@ -41,9 +42,11 @@ class Loaded:
         chosen = load(root / "atf.yaml") if root else MANIFEST
         self.suite: Suite = load_suite(chosen)
         self.ground: Ground = build_ground(self.suite)
-        _import_step_modules(self.suite)
         self.features = feature_reader.read_all(self.suite.manifest.specs)
         self.phrases = phrase_reader.collect(self.features)
+        # How long each thing lives is read off what the suite changes, once, before anything runs.
+        # Teardown, the schedule and `atf plan` all have to answer it the same way.
+        lives.remember(lives.read(self.suite, self.features, self.phrases))
         #: Everything this run has made, across every test in it. A `session` resource is made
         #: by whichever test needed it first, so the ledger cannot live on one test's scope.
         self.made: list[Any] = []
@@ -51,33 +54,6 @@ class Loaded:
     @property
     def kinds(self) -> dict[str, type]:
         return {fixture_name(name): cls for name, cls in self.suite.kinds.items()}
-
-
-def _import_step_modules(suite: Suite) -> None:
-    """Import every module under `specs/` that is not a test, so its steps are registered.
-
-    A step a suite writes has to be registered before a scenario is matched against it, and pytest
-    only imports `test_*.py`. `specs/` is one flat namespace — the same one phrases live in — so a
-    `steps.py` beside a feature file is found without the manifest listing it.
-    """
-    specs = suite.manifest.specs
-    if not specs.is_dir():
-        return
-    root = str(specs.parent.resolve())
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    for path in sorted(specs.rglob("*.py")):
-        if path.name.startswith(("test_", "_")) or path.name == "conftest.py":
-            continue
-        name = ".".join(path.relative_to(specs.parent).with_suffix("").parts)
-        if name in sys.modules:
-            continue
-        spec = importlib.util.spec_from_file_location(name, path)
-        if spec is None or spec.loader is None:
-            continue
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[name] = module
-        spec.loader.exec_module(module)
 
 
 _LOADED: Loaded | None = None
@@ -99,11 +75,15 @@ ONLY: set[str] | None = None
 SCHEDULE: Any = None
 #: Node id to the resources a test actually reached, filled in as each test ends.
 OBSERVED: dict[str, set[str]] = {}
+#: `--accept`: a scenario that promises nothing gets its claims drafted back into the file.
+ACCEPT: bool = False
+#: What `--accept` wrote, by scenario title.
+DRAFTED: dict[str, int] = {}
 
 
 def observed(nodeid: str, state: Scope) -> None:
     """Keep what a test reached, beside what its sentences said it would."""
-    from .declare import name_of  # noqa: PLC0415
+    from .declare import name_of
 
     reached = {name_of(node) for node in state.arranged} | {name_of(node) for node in state.acted}
     OBSERVED[nodeid] = {name for name in reached if name}
@@ -146,6 +126,11 @@ def _instance_fixture(name: str):
 
 def _kind_fixture(kind: str):
     def fixture(request: pytest.FixtureRequest, atf: Scope) -> Any:
+        """Any of this kind, for a Python test asking by name.
+
+        The same call a scenario makes. One resolver, so the object a scenario got and the object a
+        Python test gets are the same object, in the same span, torn down at the same moment.
+        """
         chosen = DECISIONS.get((request.node.nodeid, kind), "")
         if chosen:
             return atf.arrange(kind, chosen)
@@ -165,7 +150,7 @@ def _is_a_suite() -> bool:
     """
     if MANIFEST is not None:
         return True
-    from .manifest import ManifestError, find  # noqa: PLC0415
+    from .manifest import ManifestError, find
 
     try:
         find()
@@ -176,12 +161,12 @@ def _is_a_suite() -> bool:
 
 def pytest_configure(config: pytest.Config) -> None:
     """Load the suite, then mint a fixture per declared resource and per kind."""
-    global _LOADED  # noqa: PLW0603 - one suite per pytest session is one process-wide fact
+    global _LOADED
     if not _is_a_suite():
         return
-    from .environment import GroundError  # noqa: PLC0415
-    from .loader import SuiteError  # noqa: PLC0415
-    from .manifest import ManifestError  # noqa: PLC0415
+    from .environment import GroundError
+    from .loader import SuiteError
+    from .manifest import ManifestError
 
     try:
         _LOADED = Loaded()
@@ -218,7 +203,7 @@ def atf(request: pytest.FixtureRequest) -> Any:
     yield state
     observed(request.node.nodeid, state)
     # Function scope ends here; session scope ends with the run. Persistent is never torn down.
-    reconcile.teardown(state.ground, reconcile.scoped(state.made, "function"), undone)
+    reconcile.teardown(state.ground, reconcile.living(state.made, lives.THE_TEST), undone)
     reconcile.restore(state.ground, state.acted, state.loosed, undone)
     state.ground.rollback(undone)
     runtime.finish()
@@ -278,7 +263,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Remove what the run owns, in reverse lineage order. Persistent resources are not touched."""
     if _LOADED is None:
         return
-    reconcile.teardown(_LOADED.ground, reconcile.scoped(_LOADED.made, "session"))
+    reconcile.teardown(_LOADED.ground, reconcile.living(_LOADED.made, lives.THE_RUN))
 
 
 def _driver_fixture(name: str):
@@ -343,25 +328,54 @@ class ScenarioItem(pytest.Item):
         try:
             for sentence in self.sentences or self.resolve():
                 _run_sentence(state, sentence)
+            if ACCEPT:
+                self._draft(state)
         except Exception:
             # Before teardown: a page a scenario was looking at is closed the moment its Screen goes.
             ARTEFACTS[self.nodeid] = capture(self.nodeid)
             raise
         finally:
             observed(self.nodeid, state)
-            reconcile.teardown(state.ground, reconcile.scoped(state.made, "function"), undone)
+            reconcile.teardown(state.ground, reconcile.living(state.made, lives.THE_TEST), undone)
             reconcile.restore(state.ground, state.acted, state.loosed, undone)
             state.ground.rollback(undone)
             runtime.finish()
 
+    def _draft(self, state: Scope) -> None:
+        """Propose the claims this scenario did not make, and write them into the file."""
+        from . import (
+            accept,
+        )
+
+        if not accept.promises_nothing(self.scenario) or self.scenario.path is None:
+            return
+        claims = accept.draft(state.happened[-1] if state.happened else None)
+        DRAFTED[self.scenario.name] = accept.write_into(Path(self.scenario.path), self.scenario, claims)
+
     @override
     def repr_failure(self, excinfo: Any, style: Any = None) -> str:
-        """Name the sentence, not the frame. Every failure names your sentence."""
+        """Name the sentence, then the chain that put the thing under it there.
+
+        Every framework prints the assertion. Only ATF can print why the thing under the assertion
+        existed — and **the last line is the command that investigates it**, which is how `enter`
+        gets discovered without documentation and what turns red output from a report into a next
+        step.
+        """
+        from . import enter
+
         where = getattr(excinfo.value, "atf_sentence", None)
-        head = f"{self.scenario.path}:{self.scenario.number}  Scenario: {self.scenario.name}"
+        out = [f"{self.scenario.path}:{self.scenario.number}  Scenario: {self.scenario.name}"]
         if where is not None:
-            return f"{head}\n  {where.keyword.title()} {where.text}\n\n{excinfo.value}"
-        return f"{head}\n\n{excinfo.value}"
+            out.append(f"  {where.keyword.title()} {where.text}")
+        out += ["", f"  {excinfo.value}"]
+
+        reached = sorted(footprint_of(self).touches)
+        if reached and _LOADED is not None:
+            drawn = enter.graph_of(_LOADED.suite, _LOADED.ground, reached)
+            if drawn:
+                out += ["", *drawn]
+        out += ["", f'  → atf enter "{self.scenario.name}"']
+        return "\n".join(out)
 
     @override
     def reportinfo(self):
@@ -369,49 +383,46 @@ class ScenarioItem(pytest.Item):
 
 
 def _run_sentence(state: Scope, sentence: Sentence) -> None:
+    """Run one sentence, and let whatever an act produced become `it`."""
     step: Step | None = sentence.step
     if step is None:
         raise StepError(steps.undefined(sentence.keyword, sentence.text))
-    if getattr(step.function, "__atf_claim__", None) is not None:
-        from .registries import resolve_claim_arguments  # noqa: PLC0415
-
-        arguments = resolve_claim_arguments(step, sentence.values, state)
-    else:
-        arguments = dict(sentence.values)
-        for name in step.parameters:
-            arguments[name] = _supply(state, name)
+    arguments = dict(sentence.values)
+    for name in step.parameters:
+        arguments[name] = _supply(state, name)
     try:
         result = step.function(**arguments)
     except Exception as exc:
         setattr(exc, "atf_sentence", sentence)  # noqa: B010 - the sentence travels with the failure
         raise
-    if step.target:
-        state.remember(step.target, result)
+    if step.keyword == steps.CHECK:
+        # A check may raise, answer true or false, or answer `(held, message)`. One decorator, one
+        # act: taking values and answering true-or-false with a message.
+        try:
+            claims.held(result, subject="")
+        except Exception as exc:
+            setattr(exc, "atf_sentence", sentence)  # noqa: B010
+            raise
+    elif step.keyword == steps.ACT and result is not None:
+        state.remember(result)
 
 
 def _supply(state: Scope, name: str) -> Any:
-    """What a step asks for, from inside a scenario. The same names a pytest function may take.
-
-    A slot is looked up last, so a declared resource is never shadowed by whatever an earlier
-    sentence happened to call its result.
-    """
+    """What a step asks for, from inside a scenario. The same names a Python test may take."""
     if name == "atf":
         return state
     if name in state.ground.drivers:
         return state.ground.drivers[name]
     if name in state.suite.instances:
         return state.arrange(fixture_name(declaration_of(state.suite.resource(name)).kind), name)
-    if name in loaded().kinds:
+    # The scope's own suite, never the session's: `atf enter` runs sentences with no pytest
+    # session around them.
+    if any(fixture_name(one) == name for one in state.suite.kinds):
         return state.the(name)
-    # `When I run "…" as "listing"` fills a slot, and `def _(listing)` is how a step reads it back.
-    if name in state.slots:
-        return state.slots[name]
-    filled = ", ".join(sorted(state.slots)) or "nothing yet"
     built = ", ".join(sorted(state.ground.drivers)) or "none"
     raise StepError(
         f"a step asks for {name!r}, and nothing declares it.\n"
-        f"  It is not a resource, not a kind, not a driver ({built}), and not a slot this test has "
-        f"filled ({filled})."
+        f"  It is not a thing, not a kind, and not a system ({built})."
     )
 
 
@@ -464,13 +475,9 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
                     f"{', '.join(sorted(candidates))}.\n"
                     f"    Ask for the one you mean by name."
                 )
-            elif not candidates and not hasattr(kinds[kind], "factory"):
-                problems.append(
-                    f"{item.nodeid}\n"
-                    f"    '{kind}' asks for a {kinds[kind].__name__}, nothing is in scope, and it "
-                    f"has no factory.\n    Name the one you mean, or give it a factory."
-                )
             else:
+                # Nothing in scope is not a problem: resolution builds one, filling every hole the
+                # kind left to `needs()`.
                 DECISIONS[(item.nodeid, kind)] = candidates[0] if candidates else ""
 
     if problems:
@@ -485,7 +492,7 @@ def _lay_out(config: pytest.Config, items: list[pytest.Item]) -> None:
     The layout is worked out over everything the selection kept, so a shard is a slice of the same
     answer every other shard is slicing.
     """
-    global SCHEDULE  # noqa: PLW0603 - one layout per collection is one process-wide fact
+    global SCHEDULE
     SCHEDULE = footprint.schedule({item.nodeid: footprint_of(item) for item in items})
 
     mine: set[str] | None = None
@@ -507,29 +514,29 @@ def _lay_out(config: pytest.Config, items: list[pytest.Item]) -> None:
 
 def _apply_selection(items: list[pytest.Item]) -> tuple[list[pytest.Item], list[pytest.Item]]:
     """Split the collected tests into what this run asked for and what it did not."""
-    suite = loaded().suite
-    wanted: set[str] | None = None
-    if SELECTION.select:
-        from .runner import resources_reaching
-
-        wanted = resources_reaching(suite, SELECTION.resource, downstream=SELECTION.downstream)
-
     kept: list[pytest.Item] = []
     dropped: list[pytest.Item] = []
     for item in items:
-        if _chosen(item, wanted):
+        if _chosen(item):
             kept.append(item)
         else:
             dropped.append(item)
     return kept, dropped
 
 
-def _chosen(item: pytest.Item, wanted: set[str] | None) -> bool:
+def _chosen(item: pytest.Item) -> bool:
+    """Whether this run asked for this test.
+
+    A tag narrows only when `--tag` was given; `--select` narrows by the titles it resolved to.
+    """
     if SELECTION.tags and not any(item.get_closest_marker(tag) for tag in SELECTION.tags):
         return False
     if SELECTION.failed and item.nodeid not in SELECTION.failed_ids:
         return False
-    return wanted is None or bool(wanted & footprint_of(item).touches)
+    if SELECTION.titles is not None:
+        title = getattr(getattr(item, "scenario", None), "name", "") or item.name
+        return title in SELECTION.titles
+    return True
 
 
 #: One footprint per collected test, worked out once and read by selection, sharding and the schedule.

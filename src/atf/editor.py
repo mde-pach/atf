@@ -9,13 +9,12 @@ from datetime import UTC
 from pathlib import Path
 from typing import Any
 
-from . import core, markers, runs
-from .commands import make as make_resources
+from . import core, kinds, runs
 from .environment import build_ground
 from .loader import SuiteError, load_suite
 from .manifest import load
 
-VIEWS = ("overview", "catalogue", "graph", "tests", "composer", "activity", "environments")
+VIEWS = ("overview", "catalogue", "graph", "tests", "sentences", "composer", "activity", "environments")
 
 
 def _as_node(node: core.Node) -> dict[str, Any]:
@@ -38,7 +37,9 @@ class Editor:
         here: a request naming one is answered against that one, and `?env=` is how a link carries
         it.
         """
-        from .plugin import Loaded  # noqa: PLC0415 - the specs are only needed by the editor here
+        from .plugin import (
+            Loaded,
+        )
 
         self.env = env or self.default_env
         self.suite = load_suite(load(self.manifest_path) if self.manifest_path else None)
@@ -53,11 +54,15 @@ class Editor:
     # --- The views, each one a call into core ---------------------------------------------------
 
     def faults(self) -> list[dict[str, str]]:
-        """What `atf check` finds, through the same call the command makes."""
-        from .commands import do_check  # noqa: PLC0415 - the editor reaches one command, as `make` does
+        """What `atf plan` finds wrong with the suite, through the same call the command makes."""
+        from . import (
+            plan as planning,
+        )
 
-        found = do_check(config=str(self.manifest_path) if self.manifest_path else None)
-        return [dict(one) for one in found.data.get("faults", [])]
+        return [
+            {"where": one.where, "why": one.what, "check": "lint"}
+            for one in planning.lint(self.suite, self.features, self.phrases)
+        ]
 
     def overview(self) -> dict[str, Any]:
         summary = core.overview(self.ground, self.root, faults=len(self.faults()))
@@ -73,7 +78,7 @@ class Editor:
 
     def catalogue(self) -> list[dict[str, Any]]:
         return [
-            {"kind": one.kind, "system": one.system, "scope": one.scope, "declared": one.declared, "states": one.states}
+            {"kind": one.kind, "system": one.system, "owner": one.owner, "declared": one.declared, "states": one.states}
             for one in core.catalogue(self.ground)
         ]
 
@@ -152,7 +157,10 @@ class Editor:
 
     def run_one(self, id: str) -> dict[str, Any]:
         """Run one test. **The same call the command makes**: `atf run` with this identity named."""
-        from .entry import Options, do_run  # noqa: PLC0415 - the editor reaches one command, as `make` does
+        from .entry import (
+            Options,
+            do_run,
+        )
 
         answer = do_run(
             Options(config=str(self.manifest_path) if self.manifest_path else None, quiet=True),
@@ -181,7 +189,7 @@ class Editor:
             "offers": [
                 {"keyword": one.keyword, "sentence": one.sentence, "why": one.why} for one in offered
             ],
-            "markers": sorted(f"#{name}" for name in markers.REGISTRY),
+            "kinds": kinds.offered(),
             "quiet": core.why_no_when(self.ground, self.suite),
             "subjects": core.subjects(self.suite),
         }
@@ -202,11 +210,12 @@ class Editor:
         return path
 
     def unused(self) -> dict[str, list[str]]:
-        """What nothing asks for. **The same call the command makes**, with the same answer."""
-        from .commands import do_unused  # noqa: PLC0415 - the editor reaches one command, as `make` does
+        """What nothing asks for. **The same call `atf explain` makes**, with the same answer."""
+        from . import (
+            explain as explaining,
+        )
 
-        found = do_unused(config=str(self.manifest_path) if self.manifest_path else None)
-        return {key: [str(one) for one in value] for key, value in found.data.items()}
+        return explaining.loose(self.suite, self.features, self.phrases)
 
     def activity(self) -> list[dict[str, Any]]:
         return [
@@ -223,15 +232,15 @@ class Editor:
 
     def formats(self) -> list[str]:
         """Every registered report format, which is what a completed run can be exported as."""
-        from .reports import formats  # noqa: PLC0415
+        from .reports import formats
 
         return formats()
 
     def export(self, id: str, format_: str) -> tuple[str, str]:
         """One run written out in a registered format, as text. The same writer `--report` uses."""
-        import tempfile  # noqa: PLC0415
+        import tempfile
 
-        from .reports import REGISTRY, ReportError, write  # noqa: PLC0415
+        from .reports import REGISTRY, ReportError, write
 
         if format_ not in REGISTRY:
             raise ReportError(f"no report format called {format_!r}")
@@ -248,15 +257,19 @@ class Editor:
     # --- The one button ---------------------------------------------------------------------
 
     def make(self, name: str) -> dict[str, Any]:
-        """Make one resource. **The same call the command makes**, with the same answer."""
-        report = make_resources(self.ground.config.name, [name], manifest=self.suite.manifest)
+        """Make one thing. **The same call `atf plan --apply` makes**, with the same answer."""
+        from . import (
+            plan as planning,
+        )
+
+        outcomes = planning.apply(self.ground, self.suite, [name])
         self.reload()
         return {
-            "code": report.code,
-            "error": report.error,
+            "code": 0,
+            "error": "",
             "resources": [
                 {"name": o.name, "state": str(o.state), "did": str(o.did), "why": o.why}
-                for o in report.outcomes
+                for o in outcomes
             ],
         }
 
@@ -349,7 +362,7 @@ def render_overview(editor: Editor) -> str:
 
 def _ago(stamp: str) -> str:
     """`6 minutes ago`, which is what a person reads a timestamp as."""
-    from datetime import datetime  # noqa: PLC0415
+    from datetime import datetime
 
     try:
         when = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
@@ -382,22 +395,18 @@ def render_catalogue(editor: Editor) -> str:
         f"<td>{one['declared']} declared</td>"
         f"<td>{html.escape(' · '.join(f'{n} {w}' for w, n in one['states'].items()))}</td>"
         f"<td><code>{html.escape(one['system'])}</code></td>"
-        f"<td>{html.escape(_scope(one['scope']))}</td></tr>"
+        f"<td>{html.escape(_owner(one['owner']))}</td></tr>"
         for one in editor.catalogue()
     )
     return page("Catalogue", f"<table>{rows}</table>", "catalogue")
 
 
-#: What a scope means for a resource that is absent when you look: it is made when a test asks.
-_SCOPES = {
-    "function": "function scope — made per test",
-    "session": "session scope — made once per run",
-    "persistent": "",
-}
+#: Who is responsible for one of these existing. `atf` is the common case and says nothing.
+_OWNERS = {"atf": "", "them": "the environment owns it — ATF only looks"}
 
 
-def _scope(scope: str) -> str:
-    return _SCOPES.get(scope, scope)
+def _owner(owner: str) -> str:
+    return _OWNERS.get(owner, owner)
 
 
 def render_kind(editor: Editor, kind: str) -> str:
@@ -629,6 +638,60 @@ def render_test(editor: Editor, id: str) -> str:
     return page(one["label"], body, "tests")
 
 
+def render_sentences(editor: Editor) -> str:
+    """Every sentence this suite can say, grouped by what brought it.
+
+    Generated from the registrations and from the suite's own phrases, so the page a team reads is
+    their vocabulary and not ATF's plus a note about extending.
+    """
+    from . import kinds as kind_registry
+    from . import steps as registry
+
+    blocks = ""
+    for module in sorted({one.module for one in registry.REGISTRY}):
+        rows = "".join(
+            f"<tr><td><code>{html.escape(one.keyword.title())} {html.escape(one.pattern)}</code></td>"
+            f"<td>{html.escape(_summary(one))}</td></tr>"
+            for one in sorted(
+                (one for one in registry.REGISTRY if one.module == module),
+                key=lambda one: (one.keyword, one.pattern),
+            )
+        )
+        blocks += f"<h2>{html.escape(_brought_by(module))}</h2><table>{rows}</table>"
+
+    if editor.phrases:
+        rows = "".join(
+            f"<tr><td><code>{html.escape(pattern)}</code></td>"
+            f"<td><small>{html.escape(str(one.where))}</small></td></tr>"
+            for pattern, one in sorted(editor.phrases.items())
+        )
+        blocks += f"<h2>This suite's phrases</h2><table>{rows}</table>"
+
+    blocks += (
+        "<h2>Kinds</h2><p>"
+        + " ".join(f"<code>{html.escape(one)}</code>" for one in kind_registry.offered())
+        + "</p>"
+    )
+    return page("Sentences", blocks, "sentences")
+
+
+def _summary(step: Any) -> str:
+    """The first line of a step's docstring, which is what it does."""
+    said = (step.function.__doc__ or "").strip().splitlines()
+    return said[0] if said else ""
+
+
+def _brought_by(module: str) -> str:
+    """Which system a word came from, said the way somebody looking for it would say it."""
+    if module == "atf.vocabulary":
+        return "Things"
+    if module.startswith("atf.systems."):
+        return f"The {module.rsplit('.', 1)[1]} system"
+    if module.startswith("atf."):
+        return module.rsplit(".", 1)[1].replace("_", " ").title()
+    return f"{module} — this suite's own"
+
+
 def render_composer(editor: Editor, so_far: list[str] | None = None) -> str:
     """The offers for this position, each one a button that takes it.
 
@@ -663,8 +726,8 @@ def render_composer(editor: Editor, so_far: list[str] | None = None) -> str:
         blocks += f"<h2>Contributing no When</h2><ul>{quiet}</ul>"
 
     blocks += (
-        "<h2>Markers</h2><p>"
-        + " ".join(f"<code>{html.escape(one)}</code>" for one in offered["markers"])
+        "<h2>Kinds</h2><p>"
+        + " ".join(f"<code>{html.escape(one)}</code>" for one in offered["kinds"])
         + "</p>"
     )
 
@@ -750,6 +813,7 @@ RENDERERS = {
     "catalogue": render_catalogue,
     "graph": render_graph,
     "tests": render_tests,
+    "sentences": render_sentences,
     "composer": render_composer,
     "activity": render_activity,
     "environments": render_environments,
@@ -766,13 +830,13 @@ def answering(editor: Editor, env: str = "") -> Editor:
 
 def _form_defaults() -> tuple[Any, Any, Any]:
     """The composer's form fields, built once: a call in a default argument is a lint error."""
-    from fastapi import Form  # noqa: PLC0415
+    from fastapi import Form
 
     return Form(default="composed.feature"), Form(default="a scenario"), Form(default=[])
 
 
 def _query_default() -> Any:
-    from fastapi import Query  # noqa: PLC0415
+    from fastapi import Query
 
     return Query(default=[])
 
@@ -783,8 +847,13 @@ _WRITTEN = _query_default()
 
 def build_app(editor: Editor) -> Any:
     """A FastAPI app over the editor. Every route is one call into `core`, through `Editor`."""
-    from fastapi import FastAPI  # noqa: PLC0415 - only the editor needs a web framework
-    from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+    from fastapi import FastAPI
+    from fastapi.responses import (
+        HTMLResponse,
+        JSONResponse,
+        PlainTextResponse,
+        RedirectResponse,
+    )
 
     app = FastAPI(title="atf edit", docs_url=None, redoc_url=None)
 
@@ -797,7 +866,7 @@ def build_app(editor: Editor) -> Any:
         return HTMLResponse(render_tests(answering(editor, env), verdict, tag))
 
     @app.get("/composer", response_class=HTMLResponse)
-    def _composer(env: str = "", l: list[str] = _WRITTEN) -> Any:  # noqa: E741 - `l` is the query name
+    def _composer(env: str = "", l: list[str] = _WRITTEN) -> Any:  # noqa: E741 - the query parameter is named by the URL
         return HTMLResponse(render_composer(answering(editor, env), list(l)))
 
     for view, render in RENDERERS.items():
@@ -814,7 +883,7 @@ def build_app(editor: Editor) -> Any:
         env: str = "",
         name: str = _NAME,
         scenario: str = _SCENARIO,
-        l: list[str] = _LINES,  # noqa: E741 - `l` is the field name the links write
+        l: list[str] = _LINES,  # noqa: E741 - the form field is named by the URL
     ) -> Any:
         """The Write button. **This performs nothing** — it is text, and only text."""
         answering(editor, env)
@@ -932,7 +1001,7 @@ def build_app(editor: Editor) -> Any:
     @app.get("/api/tools")
     def _tools() -> Any:
         """What `atf edit --mcp` offers, as data, readable without the SDK installed."""
-        from .agent import TOOLS  # noqa: PLC0415
+        from .agent import TOOLS
 
         return JSONResponse(TOOLS)
 
@@ -967,9 +1036,9 @@ LOOPBACK = "127.0.0.1"
 
 def serve(manifest: Path | None, env: str, port: int) -> None:
     """Start the server on loopback, and print where. Blocks until interrupted."""
-    import uvicorn  # noqa: PLC0415
+    import uvicorn
 
-    print(f"atf edit on http://{LOOPBACK}:{port}")  # noqa: T201 - the port is the whole message
+    print(f"atf edit on http://{LOOPBACK}:{port}")
     uvicorn.run(build_app(Editor(manifest, env)), host=LOOPBACK, port=port, log_level="warning")
 
 

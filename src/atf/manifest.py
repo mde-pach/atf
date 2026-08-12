@@ -1,4 +1,4 @@
-"""`atf.yaml`: five top-level keys, and the environments under them."""
+"""`atf.yaml`: one key, `environments`, and what each of them holds."""
 
 from __future__ import annotations
 
@@ -10,8 +10,16 @@ from typing import Any
 import yaml
 
 MANIFEST_NAME = "atf.yaml"
-KEYS = ("resources", "specs", "extensions", "default_env", "environments")
+#: The one directory a suite lives in. Discovered, never registered.
+SUITE_DIR = "atf"
+KEYS = ("environments",)
 ENV_REF_SUFFIX = "_env"
+
+#: Who is responsible for what an environment holds. `atf` may make things here; `them` means ATF
+#: may only look, whatever any single resource said.
+OWNERS = ("atf", "them")
+#: The one key inside an environment that is not a system's settings block, beside `owner`.
+INHERITS = "from"
 
 
 class ManifestError(Exception):
@@ -20,11 +28,16 @@ class ManifestError(Exception):
 
 @dataclass(frozen=True)
 class Environment:
-    """One environment: whether ATF may change it, and the settings each system reads."""
+    """One environment: who owns what is in it, and the settings each system reads."""
 
     name: str
-    mutable: bool = False
+    owner: str = "atf"
     settings: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    @property
+    def mutable(self) -> bool:
+        """Whether ATF may make things here — the same fact `owner` states, read as a question."""
+        return self.owner == "atf"
 
     def for_system(self, system: str) -> dict[str, Any] | None:
         """This system's settings here, or nothing when the environment does not configure it."""
@@ -33,23 +46,34 @@ class Environment:
 
 @dataclass(frozen=True)
 class Manifest:
-    """A suite, as its manifest describes it. Paths are resolved against the manifest's directory."""
+    """A suite, as its manifest describes it, and the directory the rest of it was found in."""
 
     path: Path
     root: Path
-    resources: tuple[Path, ...]
-    specs: Path
-    extensions: tuple[Path, ...]
-    default_env: str
     environments: dict[str, Environment]
 
+    @property
+    def suite(self) -> Path:
+        """Where the suite is: `atf/` beside the manifest. Nothing registers it."""
+        return self.root / SUITE_DIR
+
+    @property
+    def specs(self) -> Path:
+        """Where the scenarios are. The same directory — a suite is one flat namespace."""
+        return self.suite
+
+    @property
+    def default_env(self) -> str:
+        """The first environment written. Order in the file is the answer, so nothing repeats it."""
+        return next(iter(self.environments), "")
+
     def env(self, name: str = "") -> Environment:
-        """One environment by name, defaulting to `ATF_ENV`, then to the manifest's own default."""
+        """One environment by name, defaulting to `ATF_ENV`, then to the first one written."""
         wanted = name or os.environ.get("ATF_ENV") or self.default_env
         try:
             return self.environments[wanted]
         except KeyError:
-            known = ", ".join(sorted(self.environments)) or "none"
+            known = ", ".join(self.environments) or "none"
             raise ManifestError(f"unknown environment {wanted!r} (known: {known})") from None
 
 
@@ -89,53 +113,24 @@ def load(path: Path | None = None) -> Manifest:
 
     for key in raw:
         if key not in KEYS:
-            problems.append(f"{key}: not a manifest key; they are {', '.join(KEYS)}")
-
-    resources = _paths(raw.get("resources"), "resources", root, problems)
-    if not resources:
-        problems.append("resources: required — the module(s) that declare what the suite needs")
-    extensions = _paths(raw.get("extensions"), "extensions", root, problems)
-
-    specs_raw = raw.get("specs", "./specs")
-    if not isinstance(specs_raw, str):
-        problems.append("specs: a path to the directory holding the feature files")
-        specs_raw = "./specs"
-    specs = (root / specs_raw).resolve()
-
-    default_env = raw.get("default_env")
-    if not isinstance(default_env, str) or not default_env:
-        problems.append("default_env: required, and a non-empty string")
-        default_env = ""
+            problems.append(
+                f"{key}: not a manifest key; the only one is {', '.join(KEYS)}. "
+                f"ATF finds {SUITE_DIR}/ beside this file, so nothing points at a path."
+            )
 
     environments = _environments(raw.get("environments"), problems)
-    if default_env and environments and default_env not in environments:
-        problems.append(f"default_env: {default_env!r} has no entry under environments")
 
     if problems:
         raise ManifestError(f"{path}: invalid manifest:\n  - " + "\n  - ".join(problems))
 
-    return Manifest(
-        path=path,
-        root=root,
-        resources=resources,
-        specs=specs,
-        extensions=extensions,
-        default_env=default_env,
-        environments=environments,
-    )
-
-
-def _paths(value: Any, key: str, root: Path, problems: list[str]) -> tuple[Path, ...]:
-    if value is None:
-        return ()
-    items = [value] if isinstance(value, str) else value
-    if not isinstance(items, list) or not all(isinstance(item, str) for item in items):
-        problems.append(f"{key}: a path, or a list of them")
-        return ()
-    return tuple((root / item).resolve() for item in items)
+    return Manifest(path=path, root=root, environments=environments)
 
 
 def _environments(value: Any, problems: list[str]) -> dict[str, Environment]:
+    """Every environment, each resolved against the one it says it comes `from`.
+
+    An environment may only come `from` one already written above it.
+    """
     if value is None:
         problems.append("environments: required, and a mapping of name to what that environment holds")
         return {}
@@ -149,21 +144,56 @@ def _environments(value: Any, problems: list[str]) -> dict[str, Environment]:
         if not isinstance(entry, dict):
             problems.append(f"environments.{name}: a mapping")
             continue
-        mutable = entry.get("mutable", False)
-        if not isinstance(mutable, bool):
-            problems.append(f"environments.{name}.mutable: true or false; it is false unless stated")
-            mutable = False
-        settings: dict[str, dict[str, Any]] = {}
+        base = _base(str(name), entry, out, value, problems)
+        owner = entry.get("owner", base.owner if base else "atf")
+        if owner not in OWNERS:
+            problems.append(
+                f"environments.{name}.owner: {owner!r}; it is "
+                f"{' or '.join(repr(one) for one in OWNERS)} — who may make what is in here"
+            )
+            owner = "atf"
+        settings: dict[str, dict[str, Any]] = dict(base.settings) if base else {}
         for system, block in entry.items():
-            if system == "mutable":
+            if system in ("owner", INHERITS):
                 continue
             block = block or {}
             if not isinstance(block, dict):
                 problems.append(f"environments.{name}.{system}: a mapping of setting to value")
                 continue
-            settings[str(system)] = resolve_env_refs(dict(block), f"environments.{name}.{system}")
-        out[str(name)] = Environment(name=str(name), mutable=mutable, settings=settings)
+            merged = {**settings.get(str(system), {}), **block}
+            settings[str(system)] = resolve_env_refs(merged, f"environments.{name}.{system}")
+        out[str(name)] = Environment(name=str(name), owner=str(owner), settings=settings)
     return out
+
+
+def _base(
+    name: str,
+    entry: dict[str, Any],
+    done: dict[str, Environment],
+    everything: dict[str, Any],
+    problems: list[str],
+) -> Environment | None:
+    """The environment this one says it comes `from`, which must already have been read."""
+    inherits = entry.get(INHERITS)
+    if inherits is None:
+        return None
+    if not isinstance(inherits, str):
+        problems.append(f"environments.{name}.{INHERITS}: the name of another environment")
+        return None
+    if inherits == name:
+        problems.append(f"environments.{name}.{INHERITS}: an environment cannot come from itself")
+        return None
+    if inherits in done:
+        return done[inherits]
+    if inherits in everything:
+        problems.append(
+            f"environments.{name}.{INHERITS}: {inherits!r} is written below this one — "
+            f"an environment comes from one already written"
+        )
+    else:
+        known = ", ".join(everything) or "none"
+        problems.append(f"environments.{name}.{INHERITS}: no environment {inherits!r} (known: {known})")
+    return None
 
 
 def resolve_env_refs(value: Any, where: str = "") -> Any:

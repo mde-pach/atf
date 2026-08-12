@@ -1,21 +1,62 @@
-# ATF — Another Test Framework
+# ATF
 
-**Preconditions are declared as data rather than executed as setup code.** Declaring them buys a
-graph the framework holds — what depends on what, and which tests need which things — and that graph
-is what no other test framework has.
+**Preconditions declared as data, rather than executed as setup code.**
+
+Every other test framework arranges by running code: a `setUp`, a fixture, a factory call. ATF
+declares what must exist, as ordinary classes and variables, and works the rest out — the order
+things are made in, how long each one lives, which tests can run beside which, and what breaks if
+one of them changes.
+
+Nothing else here is the differentiator. Everything else is kept small so that it does not compete
+with this for your attention.
+
+## A whole suite, on one screen
+
+```
+myapp/
+  atf.yaml
+  atf/
+    things.py        the nouns
+    words.py         the words ATF did not ship
+    lists.feature    the tests
+```
+
+Four files. **No key in the manifest points at any of them** — ATF finds `atf/` the way pytest finds
+`conftest.py`.
+
+### `atf.yaml`
+
+```yaml
+environments:
+  local:
+    owner: atf                      # ATF may make things here
+    sql:   { path: ./local.db }
+    shell: { prefix: todo }
+
+  staging:
+    from:  local                    # everything above, then the differences
+    owner: them                     # ATF may only look
+    sql:   { url: postgres://reader@staging/todo }
+```
+
+One key, and the first environment is the default. `from:` exists because the only repetition left
+in a manifest is the second environment restating the first, and you should be able to see what
+makes staging different by reading what staging says.
+
+### `atf/things.py`
 
 ```python
-# resources.py
-from atf import sql      # your suite's adapter, not ATF's
+from atf import needs, sql
 
 
-@todo.owner()
+@sql.row(table="owners")
 class Owner:
-    email: str
+    email: str = needs(fake.unique.email)
 
 
-@todo.list(depends_on=[Owner])
+@sql.row(table="lists")
 class TodoList:
+    owner: Owner = needs()          # this is the edge
     slug: str
 
 
@@ -23,121 +64,86 @@ primary   = Owner(email="primary@example.com")
 groceries = TodoList(owner=primary, slug="groceries")
 ```
 
+A domain class with one framework word in it. `needs()` says how to get one when nobody gave one —
+which is what a default *is*, and why it earns the default slot. Nothing else in the class belongs
+to ATF.
+
+**ATF does not generate values.** Producing a valid email means knowing an email has an `@` in it,
+and a framework that knows that ends up maintaining a validation library nobody wanted from it. So
+`needs()` takes whatever you already use: faker, a function of your own, a fixture you had before
+ATF arrived.
+
+### `atf/lists.feature`
+
 ```gherkin
+Feature: lists belong to their owner
+
 Scenario: a list shows under its owner
-  Given the todo_list "groceries"
+  Given the list "groceries"
   When I run "todo show primary@example.com"
-  Then the result field "output" contains "groceries"
+  Then it mentions "groceries"
 ```
 
-Nothing says "owners before lists". `depends_on` does, and one sentence pulls the whole chain: the
-owner is made, then the list, then the test runs.
+## What that buys you
 
-## The same thing as a pytest function
+Because the arrangement is data rather than code, ATF can answer things a framework normally cannot:
 
-```python
-def test_a_list_shows_under_its_owner(groceries: TodoList, shell):
-    result = shell(f"todo show {groceries.owner.email}")
-    assert "groceries" in result["output"]
-```
+- **It parallelises itself.** Two scenarios that share nothing permanent cannot interfere, and the
+  graph knows it — so the suite runs concurrently, correctly, with no flag and no marker on a test.
+- **It works out how long each thing lives.** Mutated by some scenario → the test. Resolved rather
+  than declared → the run. Declared with fixed values → forever. Nobody types a scope, so nobody
+  types the wrong one.
+- **A failure prints why the thing under the assertion existed** — the whole chain — and ends with
+  the command that puts you back inside it.
+- **`atf plan` lints without a database**, because a dead environment is a line in the plan rather
+  than a reason to refuse to start.
 
-Neither is a re-implementation of the other. **A resource is a pytest fixture**, and the scenario and
-the function reach the same engine — which is the claim the project is built to keep.
+## Six commands
 
-## What that buys
-
-Because the dependency is declared rather than executed, these answer without running a test:
+| Question | Command |
+| --- | --- |
+| Start me off | `atf init` |
+| Is this suite sound, and what will happen? | `atf plan` |
+| Run the tests | `atf run` |
+| Put me inside this failure | `atf enter` |
+| Tell me everything about this | `atf explain <thing>` |
+| Let me look around | `atf edit` |
 
 ```console
-$ atf status local          # present · absent · unreachable, asked of the environment now
-$ atf impact groceries      # what breaks if that changes, resources and tests together
-$ atf unused                # what nothing asks for
-$ atf run --select +primary # only the tests that reach it
+$ atf plan
+
+  147 scenarios
+    8 python tests using atf resources        ← not in the spec
+
+  local
+    140 present · 6 absent · 1 drifted
+      absent      groceries                will be made
+      drifted     primary                  email
+      undeclared  owners a-stray@example.com
 ```
 
-**Presence is asked, never remembered.** There is no state file, so a row deleted by hand or a
-database reset overnight gives the right answer immediately.
-
-## Getting started
+## Getting going
 
 ```console
-$ atf init                  # a manifest, an empty resources.py, an empty specs/
-$ atf status local          # where each resource stands
-$ atf make local            # make what is missing
-$ atf run                   # run the tests, record the run
-$ atf edit                  # the same answers, in a browser
+$ pip install atf
+$ atf init
 ```
 
-Three exit codes and no fourth: `0` passed, `1` a test failed, `2` the run never started. The reason
-travels in the message, and `--json` carries a machine-readable code for anything that wants to
-branch on why.
+`atf init` looks around for what is already there — a compose file, an `.env`, a database URL, a
+command on your path — declares what it finds, writes one scenario, runs it, and prints green. The
+first five minutes are the entire adoption decision, so it does not spend them handing you an empty
+file.
 
-## The systems it ships
+Then read [Start](docs/index.md), which is one path end to end. [The model](docs/model.md) is one
+page, for when the shape stops being obvious.
 
-`file`, `directory`, `tree`, `page`, `process`, `rest` and `sql`. **There is no backend and never
-was** — ATF is pointed at whatever a team already has. `sql` is the one exception the argument
-allows: every documentation example declares rows in a table, so the rows in a table are shipped.
-It takes a `path` to a database file or a `url` to one elsewhere, and reads the driver off the
-scheme. Anything else is an adapter somebody writes:
+## Documentation
 
-```python
-@adapter("redis")
-class Redis:
-    def find(self, resource): ...
-    def create(self, resource): ...
-    def update(self, resource, found, changes): ...
-    def delete(self, resource, found): ...
-```
+- [Start](docs/index.md) — one path, end to end, ending green
+- [The model](docs/model.md) — thirteen concepts, four bands, one page
+- [Extending](docs/extending.md) — write a system, teach a sentence
+- [Sentences](docs/reference/sentences.md) and [Commands](docs/reference/commands.md), both generated
 
-That ships `@redis(...)` with it, and the editor renders it — a catalogue entry, a graph node, a
-composer sentence — without a line of editor code changing. `@sql.row` throughout the documentation
-is exactly this: the worked example, living in the suite that uses it.
+## Licence
 
-`atf verify-adapter <resource>` puts one through the contract — create, read back, update, delete,
-and delete again — against a copy it marks and removes.
-
-## How ATF tests itself
-
-ATF's own suite is an ATF suite. `atf.yaml` at the root, `tests/resources.py`, scenarios under
-`tests/specs`. It scaffolds a small suite on disk, starts `atf edit` over it, opens a page in a real
-browser and drives the `atf` command against it — using four of the five shipped systems and no
-adapter of its own.
-
-```console
-$ atf run
-62 passed
-```
-
-Run it twice. One green run says nothing about residue.
-
-## Conventions
-
-Four, and they are conventions rather than tests. Some were tests that read ATF's own source with a
-regular expression, which is a linter's job wearing a test's costume.
-
-- **No hardcoded credentials, and no blanket `type: ignore`.** Enforced by ruff (`S105`–`S107`,
-  `PGH`), named in `pyproject.toml`.
-- **No literal `http://` or `https://` under `src/atf/`.** A host belongs in a manifest, behind a
-  `*_env` pointer. Review's job.
-- **The scaffold must run green.** CI scaffolds a suite with `atf init` and runs it with nothing
-  else set up, because that is what a newcomer is handed.
-- **A comment says what a scope is or what a function does.** Not why it is that way, not what it
-  replaced, not what else was considered. A decision that needs recording is a commit message, where
-  it is read by whoever asks why rather than by everyone who asks what. Enforced mechanically for
-  length and for the phrases that always mean rationale — `uv run python scripts/prose.py`, in CI
-  beside `ruff check`, which itself holds a docstring to a one-line summary (`D200`, `D205`, `D400`)
-  — and the rest is review's job.
-
-The documentation is MkDocs Material, organised by [Diátaxis](https://diataxis.fr), and built with
-`--strict` in CI.
-
-## Reading further
-
-- [Documentation](docs/index.md) — the model, a tutorial, how-to guides, and reference
-- [`docs/advanced/how-atf-tests-itself.md`](docs/advanced/how-atf-tests-itself.md) — the suite above,
-  shown whole
-- [`examples/`](examples) — a SQLite suite, the same domain over HTTP, and the shipped systems alone
-
-```console
-$ uv run --group docs mkdocs serve
-```
+See [LICENSE](LICENSE).

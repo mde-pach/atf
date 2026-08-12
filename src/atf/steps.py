@@ -14,6 +14,9 @@ from .patterns import CAPTURE_RE, literal_length, pattern_regex
 
 GIVEN, WHEN, THEN = "given", "when", "then"
 KEYWORDS = (GIVEN, WHEN, THEN)
+#: What a suite calls the two decorators. `Given` is `needs()` said in prose and is ATF's own; a
+#: system or a suite teaches an act and a check, and there is nothing else to teach.
+ACT, CHECK = WHEN, THEN
 
 # How a step reaches what its sentence names. `opaque` is an effect the graph cannot follow, which
 # is what a shell command or a step somebody wrote is until it says otherwise.
@@ -35,7 +38,6 @@ class Step:
     keyword: str
     pattern: str
     function: Callable[..., Any]
-    target: str = ""
     module: str = ""
     #: What running this does to what it names, as one of `EFFECTS`. Empty takes the default.
     effect: str = ""
@@ -73,12 +75,31 @@ class Step:
     def regex(self) -> re.Pattern[str]:
         return re.compile(f"^{pattern_regex(self.pattern)}$")
 
+    @property
+    def quoted(self) -> frozenset[str]:
+        """The holes this pattern writes between quotes.
+
+        A hole inside quotes is *text somebody wrote*, so it reads its escapes — the same promise
+        the quotes make everywhere else. Decidable from the pattern, so nothing has to be declared.
+        """
+        return frozenset(
+            name
+            for name in self.placeholders
+            if f'"{{{name}}}"' in self.pattern or f'"{{{name}:' in self.pattern
+        )
+
     def match(self, sentence: str) -> dict[str, str] | None:
         """The values this sentence fills the holes with, or nothing when it is a different step."""
         found = self.regex.match(sentence.strip())
         if found is None:
             return None
-        return dict(zip(self.placeholders, found.groups(), strict=False))
+        from .literals import unescape  # noqa: PLC0415 - one rule about quotes, in one module
+
+        quoted = self.quoted
+        return {
+            name: (unescape(value) if name in quoted else value)
+            for name, value in zip(self.placeholders, found.groups(), strict=False)
+        }
 
     @property
     def written_at(self) -> str:
@@ -94,7 +115,7 @@ REGISTRY: list[Step] = []
 
 
 def register(
-    keyword: str, pattern: str, target: str = "", effect: str = ""
+    keyword: str, pattern: str, effect: str = ""
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     def decorate(function: Callable[..., Any]) -> Callable[..., Any]:
         if effect and effect not in EFFECTS:
@@ -103,7 +124,6 @@ def register(
             keyword=keyword,
             pattern=pattern,
             function=function,
-            target=target,
             module=getattr(function, "__module__", ""),
             effect=effect,
         )
@@ -122,23 +142,26 @@ def register(
     return decorate
 
 
-def given(
-    pattern: str, *, target: str = "", effect: str = ""
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """A sentence that arranges. `target` names the fixture its return value is bound to."""
-    return register(GIVEN, pattern, target, effect)
+def given(pattern: str, *, effect: str = "") -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """A sentence that arranges. ATF's own, and a system rarely needs one."""
+    return register(GIVEN, pattern, effect)
 
 
-def when(
-    pattern: str, *, target: str = "", effect: str = ""
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """A sentence that acts. `effect` says what it does to what it names; a `When` is `opaque` without one."""
-    return register(WHEN, pattern, target, effect)
+def act(pattern: str, *, effect: str = "") -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """A sentence that does something. Whatever it returns becomes `it`.
+
+    `effect` says what it does to what it names; an act is `opaque` without one, which is to say
+    its effect is treated as any effect at all.
+    """
+    return register(ACT, pattern, effect)
 
 
-def then(pattern: str, *, effect: str = "") -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """A sentence that claims."""
-    return register(THEN, pattern, "", effect)
+def check(pattern: str, *, effect: str = "") -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """A sentence that answers true or false, with a message.
+
+    A check may raise, or answer `True`/`False`, or answer `(held, message)`.
+    """
+    return register(CHECK, pattern, effect)
 
 
 def matching(keyword: str, sentence: str) -> Step | None:
@@ -173,9 +196,13 @@ def _overlap(pattern: str, sentence: str) -> int:
 def arranged_first(sentences: list[Sentence]) -> None:
     """Refuse a scenario that arranges after it has begun to act.
 
-    Every `Given` comes before every `When` and `Then`. Arranging brings a resource and its whole
+    Every `Given` comes before every `When` and `Then`. Arranging brings a thing and its whole
     lineage back to what the declaration says, so a `Given` after a `When` writes over what that
     `When` just did — and the scenario claims on a value nothing in it put there.
+
+    `Then` before a later `When` is fine, and is the point of `it`: assert before you act again and
+    you never need to name a result. Purist Gherkin calls that bad form; that is dogma, and it is
+    costing readability to serve it.
     """
     acted: Sentence | None = None
     for sentence in sentences:
@@ -185,8 +212,7 @@ def arranged_first(sentences: list[Sentence]) -> None:
             raise StepError(
                 f"Given {sentence.text!r} arranges, and this scenario has already acted:\n"
                 f"    {acted.keyword.title()} {acted.text}\n"
-                f"  Every Given comes first — arrange, then act, then claim. Move it up, or write "
-                f"it as its own scenario."
+                f"  Every Given comes first. Move it up, or write it as its own scenario."
             )
 
 

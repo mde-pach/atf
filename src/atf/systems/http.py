@@ -132,7 +132,7 @@ class SessionAuth(httpx.Auth):
             value = payload.get(str(self.token_key))
             return None if value is None else str(value)
         for key in _TOKEN_KEYS:
-            if key in payload and payload[key]:
+            if payload.get(key):
                 return str(payload[key])
         return None
 

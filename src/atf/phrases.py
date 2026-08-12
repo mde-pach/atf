@@ -30,6 +30,12 @@ class Phrase:
         return re.compile(f"^{pattern_regex(self.pattern)}$")
 
     def match(self, sentence: str) -> dict[str, str] | None:
+        """The values this sentence fills the holes with, or `None` where it says a different phrase.
+
+        **A phrase with no holes matches with an empty dict**, and `{}` is falsy — so every caller
+        compares against `None`. Reading this as a boolean is how "0 scenarios say it" gets printed
+        about a phrase every scenario says.
+        """
         found = self.regex.match(sentence.strip())
         return dict(zip(self.holes, found.groups(), strict=False)) if found else None
 

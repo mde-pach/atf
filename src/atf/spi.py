@@ -19,10 +19,10 @@ class Parent:
 
 @dataclass(frozen=True)
 class Resource:
-    """One declared resource, as an adapter sees it.
+    """One declared thing, as a system sees it.
 
     `values` holds the declared scalars and `parents` the lineage, already resolved to the keys the
-    parents were made as — an adapter never looks a parent up again.
+    parents were made as — a system never looks a parent up again.
     """
 
     kind: str
@@ -32,8 +32,10 @@ class Resource:
     values: Record
     identity: Record
     parents: dict[str, Parent]
-    when_absent: str = "make"
-    scope: str = "persistent"
+    #: `atf` or `them` — who is responsible for one of these existing, here.
+    owner: str = "atf"
+    #: `forever`, `the run` or `the test`. Read off the suite; a system never chooses it.
+    lives: str = "forever"
 
 
 class State(StrEnum):
@@ -68,14 +70,24 @@ class Adapter(Protocol):
     def delete(self, resource: Any, found: Record) -> None: ...
 
 
-# `find` is the only one every adapter answers. A thing that is looked at and never made — a page,
+# `find` is the only one every system answers. A thing that is looked at and never made — a page,
 # a table somebody else owns — implements this and nothing else.
 REQUIRED = ("find",)
-# `create`, `update` and `delete` are what a thing ATF makes needs; an adapter without one refuses
+# `create`, `update` and `delete` are what a thing ATF makes needs; a system without one refuses
 # that operation by name. `browse` adds a sentence, `find_many` answers about several resources at
-# once, and `begin`/`rollback` wrap a test.
+# once, `recognises` says what tells one of these apart, and `begin`/`rollback` wrap a test.
 WRITES = ("create", "update", "delete")
-OPTIONAL = (*WRITES, "browse", "find_many", "begin", "rollback", "capture", "describe", "close")
+OPTIONAL = (
+    *WRITES,
+    "browse",
+    "find_many",
+    "recognises",
+    "begin",
+    "rollback",
+    "capture",
+    "describe",
+    "close",
+)
 
 
 class SpiError(Exception):
@@ -111,7 +123,7 @@ def check(cls: type, kind: str, given: Record, where: str) -> Record:
 
     try:
         annotations = get_type_hints(declared)
-    except Exception as exc:  # noqa: BLE001 - a type that will not resolve is the adapter's bug, reported as one
+    except Exception as exc:
         raise SpiError(f"{where}: {cls.__qualname__}.{kind} cannot be read: {exc}") from exc
 
     required = set(getattr(declared, "__required_keys__", frozenset(annotations)))

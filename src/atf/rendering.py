@@ -20,14 +20,7 @@ TONE = {
 def render(feature: Feature, verdicts: dict[str, str], *, with_verdicts: bool = True) -> str:
     """One feature file as one markdown page."""
     lines = [f"# {feature.name or (feature.path.stem if feature.path else 'Feature')}", ""]
-    if feature.background:
-        lines += ["## Background", ""]
-        lines += [f"- **{line.said}** {line.text}" for line in feature.background]
-        lines.append("")
-
-    for scenario in feature.scenarios:
-        if scenario.is_phrase:
-            continue
+    for scenario in feature.tests:
         verdict = verdicts.get(scenario.name, str(Verdict.NEVER_RUN))
         heading = f"## {scenario.name}"
         lines.append(f"{heading}  \n`{verdict}`" if with_verdicts else heading)

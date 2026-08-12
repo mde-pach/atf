@@ -154,8 +154,8 @@ def now() -> str:
 def revision(root: Path) -> str:
     """The version control revision, if the suite is in one. Never fatal."""
     try:
-        found = subprocess.run(  # noqa: S603
-            ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
+        found = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
             cwd=root,
             capture_output=True,
             text=True,

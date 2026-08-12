@@ -8,9 +8,7 @@ from typing import Any
 
 import pytest
 
-from . import graph, runs
-from .declare import instance_of
-from .loader import Suite
+from . import runs
 from .runs import Outcome, Run, TestOutcome, Where
 
 
@@ -19,56 +17,30 @@ class Selection:
     """What chose the tests, kept on the run so a partial one is never mistaken for a full one."""
 
     tags: list[str] = field(default_factory=list)
-    select: str = ""
     failed: bool = False
     keyword: str = ""
+    #: The scenario titles `--select` resolved to, or nothing where it was not given. Worked out by
+    #: `atf explain`, from the sentences — never from a label somebody had to remember to add.
+    titles: set[str] | None = None
     #: The order the tests ran in, where anything chose one. Recorded so a run can be repeated.
     seed: int | None = None
     #: Resolved from history when `failed` is set, so the plugin does not read history itself.
     failed_ids: set[str] = field(default_factory=set)
 
-    @property
-    def downstream(self) -> bool:
-        """`+groceries` widens to anything that depends on `groceries`."""
-        return self.select.startswith("+")
-
-    @property
-    def resource(self) -> str:
-        return self.select.lstrip("+")
-
     def as_json(self) -> dict[str, Any]:
         return {
             "tag": self.tags or None,
-            "select": self.select or None,
+            "select": sorted(self.titles) if self.titles is not None else None,
             "failed": self.failed,
             "seed": self.seed,
         }
 
     def is_empty(self) -> bool:
-        return not (self.tags or self.select or self.failed or self.keyword)
+        return not (self.tags or self.titles is not None or self.failed or self.keyword)
 
 
 class SelectionError(Exception):
     """Raised when a selection names something the suite does not declare — never started, exit 2."""
-
-
-def resources_reaching(suite: Suite, name: str, *, downstream: bool) -> set[str]:
-    """Which resource names satisfy this `--select`.
-
-    Without `+`, exactly the one named. With `+`, that one and everything standing on it — a test
-    naming a `Task` is a test that reaches the `TodoList` under it.
-    """
-    if name not in suite.instances:
-        known = ", ".join(sorted(suite.instances)) or "none"
-        raise SelectionError(f'no resource "{name}" in this suite (declared: {known})')
-    wanted = {name}
-    if downstream:
-        target = suite.resource(name)
-        wanted |= {
-            instance_of(other).name
-            for other in graph.dependents(target, suite.instances.values())
-        }
-    return wanted
 
 
 @dataclass

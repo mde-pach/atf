@@ -15,7 +15,7 @@ class Owner:
     email: str
 ```
 
-`unique_by="email"` is a question, not a label. Before a test that needs `primary`, ATF asks the
+recognition is a question, not a label. Before a test that needs `primary`, ATF asks the
 environment whether a row in `owners` has that email. Three answers are possible — `present`,
 `absent`, `unreachable` — and there is no fourth that comes from memory.
 
@@ -26,7 +26,7 @@ find  →  nothing        → create
 ```
 
 Create and update happen only where the environment
-[may be changed](../reference/the-ground.md#may-be-changed). The environment converges on the
+[may be changed](../model.md). The environment converges on the
 declaration every run, and ATF gets there on a declaration and a query, without remembering a thing.
 
 An absent resource is not a blocker. Naming a resource is precisely what makes ATF create it; naming
@@ -34,7 +34,7 @@ a field is precisely what makes ATF put it back.
 
 ATF computes that diff, never the adapter. An adapter answers `find`, `create`, `update` and
 `delete`; working out which fields differ is the framework's job. That is what lets
-`atf make --dry-run` print what provisioning would alter before it alters anything, and why the
+`atf plan` print what provisioning would alter before it alters anything, and why the
 editor can show the same list before anybody presses anything.
 
 ## Terraform, fairly
@@ -61,9 +61,9 @@ Two things, and they are real.
 
 **It cannot delete what it no longer declares.** Remove `groceries` from `resources.py` and the row
 stays where it was. ATF has no memory that the list was ever its doing, so the row is now an orphan.
-Terraform would destroy it on the next apply; that is the whole point of state. `atf make` only ever
-adds or corrects. The one exception is [scope](../reference/arrange.md#scope): a `scope="function"`
-resource is removed after the test that used it, and a `scope="session"` one when the run ends,
+Terraform would destroy it on the next apply; that is the whole point of state. `atf plan --apply` only ever
+adds or corrects. The one exception is [scope](../model.md): a `the test`
+resource is removed after the test that used it, and a `the run` one when the run ends,
 because those removals are bounded by a process that is still running and can remember. A long-lived
 environment accumulates. If that matters, truncating it is your job, not the framework's.
 
@@ -103,7 +103,7 @@ system, every time.
 a shorter half-life and a subtler failure: you learn about drift halfway through a run, in a later
 test, which is the same "wrong test, wrong moment" problem the design works hardest to avoid.
 
-ATF does keep memory for exactly one run. A `scope="session"` resource is recognised once and reused
+ATF does keep memory for exactly one run. A `the run` resource is recognised once and reused
 by every test that asks for it. That is a cache, and it is honest to call it one. It dies with the
 process, which is the property that makes it safe.
 
@@ -112,13 +112,13 @@ own things. It would buy back the one thing reconciliation cannot do, and it was
 three reasons. It pushes ATF's naming into your data. It only works on systems with somewhere to put
 a tag, which rules out several adapters. And it makes recognition a two-part rule — the key *and* the
 tag — which breaks the resources that matter most: anything declared
-[`when_absent="require"`](../reference/arrange.md#when-it-is-not-there) is owned by the environment
+[`owner="them"`](../model.md) is owned by the environment
 and will never carry ATF's tag.
 
 ## One thing ATF does remember
 
 History. Which runs happened, and what each test did. That is what `atf run --failed` reads, what
-`atf docs` folds into a verdict, and what `atf import-run` brings back from CI.
+`atf explain` folds into a verdict, and what `atf run --import` brings back from CI.
 
 History is memory about **runs**, and a run is a past event: it is finished and it cannot drift. A
 state file is memory about the **environment**, and an environment changes while you are not looking.
@@ -128,7 +128,7 @@ ATF remembers the first and refuses to remember the second.
 
 - **[Declared, not executed](declared-not-executed.md)** — why the declarations are static while the
   environment is not, and why both statements are true at once.
-- **[Require something you cannot create](../how-to/require-something-you-cannot-create.md)** — what
+- **[Require something you cannot create](../index.md)** — what
   to do about the resources your environment owns rather than your suite.
-- **[The ground](../reference/the-ground.md)** — where `mutable` is defined, and what an immutable
+- **[The ground](../model.md)** — where `mutable` is defined, and what an immutable
   environment still runs.

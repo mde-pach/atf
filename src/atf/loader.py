@@ -1,4 +1,4 @@
-"""Importing what a manifest names, and reading the declarations that came back."""
+"""Finding `atf/` beside the manifest, importing it, and reading what it declared."""
 
 from __future__ import annotations
 
@@ -10,12 +10,30 @@ from pathlib import Path
 from typing import Any
 
 from . import graph
-from .declare import ADAPTERS, Declaration, DeclarationError, declaration_of, instance_of, is_declared, is_resource
-from .manifest import Manifest, load
+from .declare import (
+    ADAPTERS,
+    Declaration,
+    DeclarationError,
+    declaration_of,
+    instance_of,
+    is_declared,
+    is_resource,
+)
+from .manifest import SUITE_DIR, Manifest, load
 
 
 class SuiteError(Exception):
-    """Raised when what the manifest names cannot be loaded, or does not read as a suite."""
+    """Raised when what was found cannot be loaded, or does not read as a suite."""
+
+
+#: A module in a suite that is not part of its vocabulary: a Python test, a private helper, pytest's
+#: own file. Everything else is imported so that whatever it declares is registered.
+def _is_library(path: Path) -> bool:
+    return path.name.startswith("test_")
+
+
+def _is_skipped(path: Path) -> bool:
+    return path.name.startswith(("test_", "_")) or path.name == "conftest.py"
 
 
 @dataclass(frozen=True)
@@ -26,30 +44,27 @@ class Suite:
     kinds: dict[str, type] = field(default_factory=dict)
     instances: dict[str, Any] = field(default_factory=dict)
     adapters: dict[str, type] = field(default_factory=dict)
+    #: Every `test_*.py` in the suite — the library surface. Counted by `atf plan`, never a spec.
+    library: tuple[Path, ...] = ()
 
     def declaration(self, kind: str) -> Declaration:
         try:
             return declaration_of(self.kinds[kind])
         except KeyError:
             known = ", ".join(sorted(self.kinds)) or "none"
-            raise SuiteError(f"no resource kind called {kind!r} (declared: {known})") from None
+            raise SuiteError(f"no kind called {kind!r} (declared: {known})") from None
 
     def resource(self, name: str) -> Any:
         try:
             return self.instances[name]
         except KeyError:
             known = ", ".join(sorted(self.instances)) or "none"
-            raise SuiteError(f"no resource called {name!r} (declared: {known})") from None
+            raise SuiteError(f"nothing called {name!r} (declared: {known})") from None
 
     @property
     def order(self) -> list[Any]:
         """Every declared resource, in the order they would be made."""
         return graph.order(self.instances.values())
-
-    @property
-    def unmet(self) -> list[graph.Unmet]:
-        """Every requirement nothing named, across the whole suite."""
-        return [problem for node in self.instances.values() for problem in graph.unmet(node)]
 
 
 def fixture_name(kind: str) -> str:
@@ -57,14 +72,32 @@ def fixture_name(kind: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", kind).lower()
 
 
+def modules_in(suite: Path) -> list[Path]:
+    """Every module of a suite's vocabulary, in a stable order."""
+    if not suite.is_dir():
+        return []
+    return [path for path in sorted(suite.rglob("*.py")) if not _is_skipped(path)]
+
+
+def library_in(suite: Path) -> list[Path]:
+    """Every Python test in a suite. Not the spec, and counted so that saying so is unavoidable."""
+    if not suite.is_dir():
+        return []
+    return [path for path in sorted(suite.rglob("*.py")) if _is_library(path)]
+
+
 def load_suite(manifest: Manifest | None = None) -> Suite:
-    """Import what the manifest names, then read what was declared."""
+    """Find the suite beside the manifest, import it, then read what was declared."""
     manifest = manifest or load()
+    where = manifest.suite
+    if not where.is_dir():
+        raise SuiteError(
+            f"{manifest.path.parent} has no {SUITE_DIR}/ beside its {manifest.path.name}.\n"
+            f"  A suite is one directory: the things, the words and the scenarios. "
+            f"Run `atf init` to start one."
+        )
 
-    for path in manifest.extensions:
-        _import_file(path, manifest.root)
-
-    modules = [_import_file(path, manifest.root) for path in manifest.resources]
+    modules = [_import_file(path, where) for path in modules_in(where)]
 
     kinds: dict[str, type] = {}
     instances: dict[str, Any] = {}
@@ -88,6 +121,7 @@ def load_suite(manifest: Manifest | None = None) -> Suite:
         kinds=kinds,
         instances=instances,
         adapters=dict(ADAPTERS),
+        library=tuple(library_in(where)),
     )
 
 
@@ -98,7 +132,7 @@ def _collect_kind(value: type, kinds: dict[str, type], problems: list[str]) -> N
         kinds[kind] = value
     elif seen is not value:
         problems.append(
-            f"two resource kinds are called {kind!r}: "
+            f"two kinds are called {kind!r}: "
             f"{seen.__module__}.{seen.__name__} and {value.__module__}.{value.__name__}"
         )
 
@@ -107,20 +141,20 @@ def _collect_instance(attribute: str, value: Any, instances: dict[str, Any], pro
     record = instance_of(value)
     if record.name and record.name != attribute:
         problems.append(
-            f"the resource {record.name!r} is also bound to {attribute!r}; a resource has one name, "
+            f"the resource {record.name!r} is also bound to {attribute!r}; a thing has one name, "
             f"which is its variable's"
         )
         return
     seen = instances.get(attribute)
     if seen is not None and seen is not value:
-        problems.append(f"two resources are called {attribute!r}, declared in different modules")
+        problems.append(f"two things are called {attribute!r}, declared in different modules")
         return
     record.name = attribute
     instances[attribute] = value
 
 
 def _refuse_name_collisions(kinds: dict[str, type], instances: dict[str, Any], problems: list[str]) -> None:
-    """A resource named after a kind shadows the fixture that means "any of that kind"."""
+    """A resource named after a kind shadows the name that means "any of that kind"."""
     by_fixture: dict[str, list[str]] = {}
     for kind in kinds:
         by_fixture.setdefault(fixture_name(kind), []).append(f"the kind {kind}")
@@ -131,25 +165,25 @@ def _refuse_name_collisions(kinds: dict[str, type], instances: dict[str, Any], p
             problems.append(f"{' and '.join(claimants)} both want the name {name!r} — rename one")
 
 
-def _import_file(path: Path, root: Path) -> Any:
-    """Import one file the manifest names, under the name the suite's own code would import it by.
+def _import_file(path: Path, where: Path) -> Any:
+    """Import one module of the suite, under the plain name a module beside it would import it by.
 
-    Risk 7 of MIGRATION.md is that a resource's name comes from a variable, so the same file
-    imported under two names declares two of everything. That is why this puts the suite root on
-    `sys.path` and imports by dotted name: `extensions: [./adapters/sqlite.py]` and a resources
-    module saying `from adapters.sqlite import sqlite` then reach one module object, not two.
+    The suite directory goes on the front of `sys.path` and the project behind it, so `words.py` is
+    `words` and the product beside the manifest is importable by its own name.
     """
-    if not path.is_file():
-        raise SuiteError(f"{path}: the manifest names this file, and it is not there")
-
-    root = root.resolve()
+    where = where.resolve()
     # Always to the front, never merely present: a second suite loaded in the same process must
     # win over the first, and then the first must win again if it is reloaded.
-    if str(root) in sys.path:
-        sys.path.remove(str(root))
-    sys.path.insert(0, str(root))
+    if str(where) in sys.path:
+        sys.path.remove(str(where))
+    sys.path.insert(0, str(where))
+    # The project, appended so a suite can import the product it tests. Never prepended: a
+    # directory called `atf` beside the manifest would shadow the installed package.
+    beside = str(where.parent)
+    if beside not in sys.path:
+        sys.path.append(beside)
 
-    name = _module_name(path, root)
+    name = _module_name(path, where)
     _evict_if_stale(name, path)
     try:
         if name in sys.modules:
@@ -164,10 +198,10 @@ def _import_file(path: Path, root: Path) -> Any:
 def _evict_if_stale(name: str, path: Path) -> None:
     """Drop a cached module of this name that came from somewhere else.
 
-    `sys.modules` is keyed by dotted name, and a dotted name is only unique inside one suite root.
-    Two suites both holding a `resources.py` therefore collide, and the second silently gets the
-    first one's declarations. Anything loading more than one suite in a process meets this: the
-    editor, a tool comparing two suites, and ATF's own tests.
+    `sys.modules` is keyed by name, and a name is only unique inside one suite. Two suites both
+    holding a `things.py` therefore collide, and the second silently gets the first's declarations.
+    Anything loading more than one suite in a process meets this: the editor, a tool comparing two
+    suites, and ATF's own tests.
     """
     cached = sys.modules.get(name)
     if cached is None or getattr(cached, "__file__", None) == str(path):
@@ -176,14 +210,12 @@ def _evict_if_stale(name: str, path: Path) -> None:
         del sys.modules[cached_name]
 
 
-def _module_name(path: Path, root: Path) -> str:
-    """The dotted name this file has when the suite root is on the path."""
+def _module_name(path: Path, where: Path) -> str:
+    """The name this file has when the suite directory is on the path."""
     try:
-        relative = path.resolve().relative_to(root)
+        relative = path.resolve().relative_to(where)
     except ValueError:
-        raise SuiteError(
-            f"{path}: sits outside {root}, and a manifest names files inside the suite it describes"
-        ) from None
+        raise SuiteError(f"{path}: sits outside {where}, and a suite is one directory") from None
     parts = relative.with_suffix("").parts
     bad = [part for part in parts if not re.fullmatch(r"[A-Za-z_]\w*", part)]
     if bad:

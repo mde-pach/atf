@@ -56,9 +56,16 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/atf"]
 
+# The contract every system holds ships with ATF, because it is a feature file rather than a
+# command: `atf run --contract` puts it in front of a suite's own scenarios.
+[tool.hatch.build.targets.wheel.force-include]
+"src/atf/contract.feature" = "atf/contract.feature"
+
 [tool.ruff]
 target-version = "py311"
 line-length = 120
+# The scaffolded suites `atf plan --apply` writes are somebody else's source, generated here.
+exclude = [".workspaces"]
 [tool.ruff.lint]
 # `S105`-`S107` are flake8-bandit's hardcoded-credential rules and `PGH` is pygrep-hooks: no
 # hardcoded credential, and no blanket `type: ignore`.
@@ -85,7 +92,7 @@ convention = "pep257"
 [tool.ruff.lint.per-file-ignores]
 # A fixture that writes a password is writing a fixture; these rules are aimed at the framework.
 # `D205` too: a test's docstring is the claim it makes, a body with no API summary in front of it.
-"tests/**" = ["S105", "S106", "S107", "D205"]
+"atf/**" = ["S105", "S106", "S107", "D205"]
 # The templates `atf init` writes are strings here and source code in somebody else's project.
 "src/atf/scaffold.py" = ["S105", "S106", "S107"]
 
@@ -100,4 +107,4 @@ missing-override-decorator = "error"
 possibly-unresolved-reference = "error"
 
 [tool.pytest.ini_options]
-testpaths = ["tests/specs"]
+testpaths = ["atf"]

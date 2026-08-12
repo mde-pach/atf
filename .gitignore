@@ -22,3 +22,9 @@ site/
 examples/**/*.db
 examples/shipped/tmp/
 atf-docs/
+.workspaces/
+
+# Reports the suite's own scenarios write when a run is pointed at the repo root.
+out.json
+tally.txt
+atf-docs/

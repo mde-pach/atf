@@ -1,20 +1,16 @@
-resources: [./resources.py]
-extensions: [./adapters/todo.py]
-specs: ./specs
-default_env: local
-
 environments:
   local:
-    mutable: true
-    todo: { path: ./todo.db }
-    sql:  { path: ./todo.db }
+    owner: atf                    # ATF may make things here
+    todo:  { path: ./todo.db }
+    sql:   { path: ./todo.db }
     shell: { prefix: "python todo.py" }
 
-  # No `mutable`, so it is false. ATF reads this environment and changes nothing in it.
-  readonly:
-    todo: { path: ./todo.db }
-    sql:  { path: ./todo.db }
+  # ATF may only look here. Every thing in it becomes observed, whatever any one of them said.
+  theirs:
+    from:  local
+    owner: them
 
   staging:
-    todo: { path: ./staging.db }
-    sql:  { path: ./staging.db }
+    from:  local
+    todo:  { path: ./staging.db }
+    sql:   { path: ./staging.db }

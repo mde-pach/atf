@@ -5,8 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import graph
-from .declare import Unreachable, declaration_of, instance_of, is_resource, name_of, values_of
+from . import graph, lives
+from .declare import (
+    Unreachable,
+    declaration_of,
+    instance_of,
+    is_resource,
+    name_of,
+    values_of,
+)
 from .environment import Ground
 from .model import compare
 from .spi import Did, Record, State
@@ -123,8 +130,15 @@ def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Reconcili
                 changes=changes,
                 why=f"the {ground.config.name} environment is not mutable",
             )
-        if declaration.when_absent == "observe":
-            return Reconciliation(resource, State.PRESENT, Did.LEFT_ALONE, record=found, changes=changes, why="observe")
+        if ground.owner_of(resource) == "them":
+            return Reconciliation(
+                resource,
+                State.PRESENT,
+                Did.LEFT_ALONE,
+                record=found,
+                changes=changes,
+                why="they own it, so ATF only looks",
+            )
         if dry_run:
             return Reconciliation(resource, State.PRESENT, Did.UPDATED, record=found, changes=changes, why="dry run")
         return Reconciliation(
@@ -136,15 +150,13 @@ def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Reconcili
         )
 
     # Absent from here down.
-    if declaration.when_absent == "require":
+    if ground.owner_of(resource) == "them":
         return Reconciliation(
             resource,
             State.ABSENT,
             Did.LEFT_ALONE,
-            why=f"it is declared `when_absent=\"require\"`, and {ground.config.name} does not have it",
+            why=f'it is declared `owner="them"`, and {ground.config.name} does not have it',
         )
-    if declaration.when_absent == "observe":
-        return Reconciliation(resource, State.ABSENT, Did.LEFT_ALONE, why="it is declared `when_absent=\"observe\"`")
     if not ground.mutable:
         return Reconciliation(
             resource,
@@ -230,9 +242,8 @@ def _learn_parents(ground: Ground, resources: list[Any]) -> None:
 
 
 def _would(ground: Ground, resource: Any) -> Did:
-    """What `atf make` would do about an absent resource, without doing it."""
-    declaration = declaration_of(resource)
-    if declaration.when_absent in ("require", "observe") or not ground.mutable:
+    """What a run would do about an absent resource, without doing it."""
+    if ground.owner_of(resource) == "them" or not ground.mutable:
         return Did.LEFT_ALONE
     return Did.CREATED
 
@@ -270,9 +281,8 @@ def browse(ground: Ground, resource: Any) -> list[Record]:
             f"the {declaration.system} system cannot be listed — its adapter implements no `browse`"
         )
     try:
-        from .environment import view  # noqa: PLC0415
 
-        return list(ground.adapter_for(resource).browse(view(resource)))
+        return list(ground.adapter_for(resource).browse(ground.view(resource)))
     except Unreachable:
         raise
 
@@ -292,7 +302,7 @@ def restore(
     written_by_test = loosed or {}
     out: list[Reconciliation] = []
     for node in resources:
-        if scope_of(node) != "persistent" or not ground.mutable:
+        if lives.of(node) != lives.FOREVER or not ground.mutable:
             continue
         if declaration_of(node).system in rolled_back:
             continue
@@ -326,14 +336,14 @@ def restore(
 def teardown(ground: Ground, resources: list[Any], undone: list[str] | None = None) -> list[Reconciliation]:
     """Remove these, **always in reverse lineage order**, so a list goes before its owner.
 
-    It runs after a failure too. A `persistent` resource is never passed here: outliving the process
+    It runs after a failure too. Something living `forever` is never passed here: outliving the process
     is what makes re-runs cheap and recognition worth having. A system named in `undone` rolled the
     whole test back, and has nothing left to delete.
     """
     rolled_back = set(undone or ())
     out: list[Reconciliation] = []
     for node in graph.teardown_order(resources):
-        if scope_of(node) == "persistent" or declaration_of(node).system in rolled_back:
+        if lives.of(node) == lives.FOREVER or declaration_of(node).system in rolled_back:
             continue
         state, found = ground.find(node)
         if state is not State.PRESENT or found is None:
@@ -348,21 +358,16 @@ def teardown(ground: Ground, resources: list[Any], undone: list[str] | None = No
     return out
 
 
-def scope_of(resource: Any) -> str:
-    """How long this resource lives. A copy varied on a recognised field lives for the test."""
-    return "function" if instance_of(resource).ephemeral else declaration_of(resource).scope
-
-
-def scoped(resources: list[Any], scope: str) -> list[Any]:
-    """Just the resources of one scope, for whoever owns that scope's end."""
-    return [node for node in resources if scope_of(node) == scope]
+def living(resources: list[Any], span: str) -> list[Any]:
+    """Just the things of one span, for whoever owns that span's end."""
+    return [node for node in resources if lives.of(node) == span]
 
 
 def ephemeral(resources: list[Any]) -> list[Any]:
-    """Everything ATF will take away again — anything not `persistent`."""
-    return [node for node in resources if scope_of(node) != "persistent"]
+    """Everything ATF will take away again — anything that does not live `forever`."""
+    return [node for node in resources if lives.of(node) != lives.FOREVER]
 
 
 def unnamed(resource: Any) -> bool:
-    """Whether a factory built this resource. `False` for one a module names."""
-    return instance_of(resource).from_factory
+    """Whether resolution built this thing. `False` for one a module names."""
+    return instance_of(resource).built

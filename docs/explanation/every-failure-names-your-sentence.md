@@ -10,7 +10,7 @@ a frame in somebody else's file.
 **A claim names both sides and their kinds.** When
 
 ```gherkin
-Then the result field "exit_code" is "0"
+Then its exit code is 0
 ```
 
 fails, the message carries what was expected, what was found, and the kind of each. `"0"` and `0` are
@@ -30,8 +30,8 @@ not a diagnosis on its own. The state of the page at the moment of the claim is,
 instant the browser closes.
 
 **A failure about a resource names the resource, not the assert that came after it.** A resource that
-is missing gets created. One that *cannot* be created — a `when_absent="require"` row the environment
-does not have, an [immutable](../reference/the-ground.md#may-be-changed) environment, a system that
+is missing gets created. One that *cannot* be created — a `owner="them"` row the environment
+does not have, an [immutable](../model.md) environment, a system that
 is `unreachable` — fails the test then and there, naming the thing it could not get. There is no
 blocked state: a run has three outcomes, and a fourth would put a word in every report to explain a
 case most people never hit. What it must not do is fail with a red assert about a value it never had
@@ -60,18 +60,18 @@ def _(invoice, amount):
     claims.field_is(invoice, "total", amount)
 ```
 
-[Markers](../reference/assert.md#marker) come from the same constraint. A claim should be exact about
+[Markers](../reference/sentences.md) come from the same constraint. A claim should be exact about
 the fields that matter and honest about the ones that cannot be predicted:
 
 ```gherkin
 Then the todo_list "groceries" field "slug" is "groceries"
-And the todo_list "groceries" field "id" is #uuid
+And the todo_list "groceries" id is any uuid
 ```
 
 Without markers the second line has two futures, and both are bad: it fails on every run because the
 id changed, or somebody deletes it and the record stops being checked for having an id at all.
-`#uuid` keeps the strict version writable — exact about the kind, silent about the value. A failure
-inside a [phrase](../reference/act.md#phrase) reports the line inside the phrase as well as the
+`any uuid` keeps the strict version writable — exact about the kind, silent about the value. A failure
+inside a [phrase](../reference/sentences.md) reports the line inside the phrase as well as the
 sentence that called it, because compression that hid which field went wrong would have been the
 wrong trade here.
 
@@ -84,8 +84,8 @@ system is unreachable, or one widely-used resource's declaration is wrong, every
 depends on it goes red at once. A hundred red lines, each correctly naming its own sentence, none of
 them naming the cause. Breadth is not a diagnosis.
 
-ATF reduces this rather than removing it. `atf status <env>` answers the environment question without
-running anything, and `atf check` answers the well-formedness question. Between them they turn a
+ATF reduces this rather than removing it. `atf plan <env>` answers the environment question without
+running anything, and `atf plan` answers the well-formedness question. Between them they turn a
 hundred red lines into one sentence about a missing thing, provided you ask before you run. But a
 team that has moved all of its testing into scenarios has fewer small, isolated tests to bisect with,
 and that is a genuine loss. When a lot goes red at once, the first question is what changed in the
@@ -108,14 +108,14 @@ floor should not depend on discipline.
 the run is over and the re-run may well be green.
 
 **A fluent assertion library** — chained matchers with their own vocabulary. Declined on the concept
-budget. Gherkin's `Then` already reads aloud, and the [claim](../reference/assert.md#claim)
+budget. Gherkin's `Then` already reads aloud, and the [claim](../reference/sentences.md)
 vocabulary is small enough to hold in one page.
 
 ## Where to go next
 
-- **[Work out why it is red](../how-to/work-out-why-it-is-red.md)** — this page as a procedure, for
+- **[Work out why it is red](../index.md)** — this page as a procedure, for
   the morning you actually need it.
-- **[One engine, two surfaces](one-engine-two-surfaces.md)** — why a pytest function and a scenario
+- **[The surface and the library](the-surface-and-the-library.md)** — why a pytest function and a scenario
   fail the same way.
-- **[Assert](../reference/assert.md)** — every claim and marker defined once, with what each one says
+- **[Assert](../reference/sentences.md)** — every claim and marker defined once, with what each one says
   when it fails.

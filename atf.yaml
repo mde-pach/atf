@@ -1,11 +1,10 @@
-resources: [./tests/resources.py]
-specs: ./tests/specs
-extensions: [./tests/vocabulary.py]
-default_env: local
-
 environments:
   local:
-    mutable: true
+    owner: atf                    # ATF may make things here
     filesystem: { root: ./.workspaces }
     shell:      { prefix: "uv run atf --config .workspaces/suite/atf.yaml", cwd: . }
     browser:    { base_url: "http://127.0.0.1:8791", headless: true }
+
+  theirs:
+    from:  local                  # everything above, then the differences
+    owner: them                   # ATF may only look

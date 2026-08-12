@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import footprint, graph, reconcile, runs, steps
+from . import footprint, graph, lives, reconcile, runs, steps
 from .declare import declaration_of, instance_of, is_resource, name_of, values_of
 from .environment import Ground
 from .loader import Suite, fixture_name
@@ -95,7 +95,7 @@ class KindSummary:
 
     kind: str
     system: str
-    scope: str
+    owner: str
     declared: int
     states: dict[str, int]
 
@@ -137,7 +137,7 @@ def catalogue(ground: Ground) -> list[KindSummary]:
             KindSummary(
                 kind=kind,
                 system=declaration.system,
-                scope=declaration.scope,
+                owner=declaration.owner,
                 declared=len(mine),
                 states=states,
             )
@@ -162,8 +162,9 @@ def instances(ground: Ground, kind: str) -> list[dict[str, Any]]:
             "state": str(outcome.state),
             "changes": sorted(outcome.changes),
             "recognised_by": {
-                key: values_of(node).get(key) for key in declaration_of(node).unique_by
+                key: values_of(node).get(key) for key in ground.recognition(node)
             },
+            "lives": lives.of(node),
         }
         for node, outcome in zip(mine, reconcile.status(ground, mine), strict=True)
     ]
@@ -199,14 +200,14 @@ def detail(ground: Ground, name: str) -> ResourceDetail:
         declaration={
             "fields": {k: str(v) for k, v in declaration.fields.items()},
             "options": declaration.options,
-            "when_absent": declaration.when_absent,
-            "scope": declaration.scope,
-            "depends_on": [
-                name_of(entry) if is_resource(entry) else getattr(entry, "__name__", str(entry))
-                for entry in declaration.depends_on
-            ],
+            "owner": ground.owner_of(resource),
+            "lives": lives.of(resource),
+            "needs": {
+                name: (need.kind.__name__ if need.kind else getattr(need.resolver, "__name__", "?"))
+                for name, need in declaration.needs.items()
+            },
         },
-        recognised_by={key: values_of(resource).get(key) for key in declaration.unique_by},
+        recognised_by={key: values_of(resource).get(key) for key in ground.recognition(resource)},
         found=found,
         would_create=body if state is State.ABSENT else None,
         would_change={
@@ -218,16 +219,12 @@ def detail(ground: Ground, name: str) -> ResourceDetail:
 
 
 def _can_make(ground: Ground, resource: Any, state: State) -> tuple[bool, str]:
-    """Whether this resource can be made here, and what stops it."""
+    """Whether ATF may make this here, and what stops it. One word, asked at two levels."""
     declaration = declaration_of(resource)
     if state is State.UNREACHABLE:
         return False, f"the {declaration.system} system is unreachable"
-    if not ground.mutable:
-        return False, f"{ground.config.name} is not mutable"
-    if declaration.when_absent == "require":
-        return False, 'it is declared `when_absent="require"`'
-    if declaration.when_absent == "observe":
-        return False, 'it is declared `when_absent="observe"`'
+    if ground.owner_of(resource) == "them":
+        return False, f"{ground.config.name} does not own it — ATF only looks"
     return True, ""
 
 
@@ -247,8 +244,8 @@ class Node:
 def spine(suite: Suite, features: list[Any], phrases: dict[str, Any]) -> list[Node]:
     """Every resource, test and phrase, reachable by moving along an edge.
 
-    The edges are the ones the model already has: a resource reaches another through `depends_on`, a
-    test reaches what it names, a scenario reaches a phrase by saying its sentence.
+    The edges are the ones the model already has: a thing reaches another through the `needs()` at
+    its field, a test reaches what it names, a scenario reaches a phrase by saying its sentence.
     """
     nodes = [
         Node(
@@ -277,7 +274,8 @@ def _reached(scenario: Any, suite: Suite, phrases: dict[str, Any]) -> list[str]:
     nested = sorted(
         name
         for name, phrase in phrases.items()
-        if name != scenario.name and any(phrase.match(line.text) for line in scenario.lines)
+        if name != scenario.name
+        and any(phrase.match(line.text) is not None for line in scenario.lines)
     )
     return footprint.arranged(suite, footprint.of_scenario(suite, scenario, phrases)) + nested
 
@@ -419,14 +417,14 @@ def tests(
 
 
 def _functions(suite: Suite) -> list[tuple[Path, str, list[str]]]:
-    """Every `test_` function under the specs directory, with the fixtures it asks for by name."""
-    import ast  # noqa: PLC0415 - only this reads a test module without importing it
+    """Every Python test in the suite, with the things it asks for by name.
+
+    These are the library surface, and what `atf plan` counts under `python tests`.
+    """
+    import ast
 
     found: list[tuple[Path, str, list[str]]] = []
-    specs = suite.manifest.specs
-    if not specs.is_dir():
-        return found
-    for path in sorted(specs.rglob("test_*.py")):
+    for path in suite.library:
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except (OSError, SyntaxError):
@@ -530,9 +528,6 @@ def offers(
     """
     suite = ground.suite
     arranged = {name for keyword, text in so_far if keyword == "given" for name in _named(text, suite)}
-    slots = {"result"} if any(keyword == "when" for keyword, _ in so_far) else set()
-    slots |= {slot for _, text in so_far for slot in _slots(text)}
-
     acted = any(keyword in ("when", "then") for keyword, _ in so_far)
 
     out: list[Offer] = []
@@ -540,9 +535,8 @@ def offers(
         for name, node in sorted(suite.instances.items()):
             kind = fixture_name(declaration_of(node).kind)
             out.append(Offer("Given", f'the {kind} "{name}"', "declared by this suite"))
-        for kind, cls in sorted(suite.kinds.items()):
-            if hasattr(cls, "factory"):
-                out.append(Offer("Given", f"a {fixture_name(kind)}", "it has a factory"))
+        for kind in sorted(suite.kinds):
+            out.append(Offer("Given", f"a {fixture_name(kind)}", "resolution can build one"))
 
     for name in sorted(arranged):
         node = suite.instances[name]
@@ -553,8 +547,8 @@ def offers(
                 out.append(
                     Offer(
                         "When",
-                        f'the {kind} "{name}" field "{field_name}" becomes ""',
-                        "it is arranged above, and this environment may be changed",
+                        f'the {kind} "{name}" {field_name} becomes ""',
+                        "it is arranged above, and ATF owns this environment",
                     )
                 )
         if ground.can(node, "browse"):
@@ -563,14 +557,14 @@ def offers(
         for field_name in sorted(values_of(node)):
             if not is_resource(values_of(node)[field_name]):
                 out.append(
-                    Offer("Then", f'the {kind} "{name}" field "{field_name}" is ""', "it is arranged above")
+                    Offer("Then", f'the {kind} "{name}" {field_name} is ""', "it is arranged above")
                 )
 
-    if "command" in ground.adapters:
-        out.append(Offer("When", 'I run ""', "this environment configures a command prefix"))
-    for slot in sorted(slots):
-        out.append(Offer("Then", f'the {slot} field "exit_code" is "0"', f"{slot} was produced above"))
-        out.append(Offer("Then", f'the {slot} field "output" contains ""', f"{slot} was produced above"))
+    if "shell" in ground.drivers:
+        out.append(Offer("When", 'I run ""', "this environment configures a shell"))
+    if acted:
+        out.append(Offer("Then", "its exit code is 0", "something happened above"))
+        out.append(Offer("Then", 'it mentions ""', "something happened above"))
 
     for pattern in sorted(phrases):
         keyword = _phrase_keyword(phrases[pattern])
@@ -584,12 +578,6 @@ def _named(text: str, suite: Suite) -> list[str]:
     return [word.strip('"') for word in text.split() if word.strip('"') in suite.instances]
 
 
-def _slots(text: str) -> list[str]:
-    import re  # noqa: PLC0415
-
-    return re.findall(r'as "([^"]+)"', text)
-
-
 def _phrase_keyword(phrase: Any) -> str:
     """A phrase is offered under the verb its own body uses, undistinguished from a built-in."""
     keywords = {line.keyword for line in getattr(phrase, "lines", [])}
@@ -601,7 +589,7 @@ def _phrase_keyword(phrase: Any) -> str:
 
 
 def why_no_when(ground: Ground, suite: Suite) -> list[str]:
-    """Systems that contribute no `When`, and why — an adapter with neither `act` nor `browse`."""
+    """Systems that contribute no `When`, and why — one with neither `act` nor `browse`."""
     quiet: list[str] = []
     for kind, cls in sorted(suite.kinds.items()):
         node = next((one for one in suite.instances.values() if type(one) is cls), None)
@@ -648,15 +636,16 @@ def activity(root: Path, environment: str) -> list[runs.Run]:
 
 
 def environments(suite: Suite) -> list[dict[str, Any]]:
-    """Every environment, what it may do, and which systems it configures."""
+    """Every environment, who owns what is in it, and which systems it configures."""
     return [
         {
             "name": name,
+            "owner": config.owner,
             "mutable": config.mutable,
             "systems": sorted(config.settings),
             "default": name == suite.manifest.default_env,
         }
-        for name, config in sorted(suite.manifest.environments.items())
+        for name, config in suite.manifest.environments.items()
     ]
 
 

@@ -22,15 +22,17 @@ def _table(
     name: str,
     columns: list[tuple[str, str]],
     keys: list[str],
-    unique: list[str],
+    unique: list[tuple[str, ...]],
     parents: dict[str, str],
 ) -> dict[str, Any]:
-    """One table, in the shape `atf adopt` reads."""
+    """One table, as the facts recognition and a written declaration are both read from."""
     return {
         "table": name,
         "columns": [{"name": one, "type": kind} for one, kind in columns],
         "key": keys[0] if len(keys) == 1 else "",
-        "unique_by": unique[0] if unique else "",
+        #: Every unique constraint, shortest first. A row unique only in combination is one entry.
+        "uniques": sorted(unique, key=len),
+        "unique_by": unique[0][0] if unique and len(unique[0]) == 1 else "",
         "parents": parents,
     }
 
@@ -66,6 +68,7 @@ class Database:
         self.transactional = bool(settings.get("transactional", False))
         self._connection: Any = None
         self._open = False
+        self._schema: list[dict[str, Any]] | None = None
 
     @property
     def where(self) -> str:
@@ -85,7 +88,7 @@ class Database:
             raise Unreachable(f"the sql system needs {self.module_name} to reach {self.where}") from exc
         try:
             self._connection = self._connect(module)
-        except Exception as exc:  # noqa: BLE001 - a database that will not open is unreachable
+        except Exception as exc:
             raise Unreachable(f"cannot open {self.where}: {exc}") from exc
         return self._connection
 
@@ -98,7 +101,7 @@ class Database:
         cursor = self.db.cursor()
         try:
             cursor.execute(statement, values)
-        except Exception as exc:  # noqa: BLE001 - a statement the schema refuses is unreachable
+        except Exception as exc:
             raise Unreachable(f"{statement}: {exc}") from exc
         if cursor.description is None:
             return []
@@ -109,7 +112,7 @@ class Database:
         cursor = self.db.cursor()
         try:
             cursor.execute(statement, values)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise Unreachable(f"{statement}: {exc}") from exc
         if not self._open:
             self.db.commit()
@@ -127,6 +130,12 @@ class Database:
             return [self._describe_sqlite(name) for name in self._sqlite_tables()]
         return [self._describe_standard(name) for name in self._standard_tables()]
 
+    def schema(self) -> list[dict[str, Any]]:
+        """The same, read once and held. Recognition asks this per kind, and the answer is fixed."""
+        if self._schema is None:
+            self._schema = self.describe()
+        return self._schema
+
     # --- sqlite, through its pragmas --------------------------------------------------------------
 
     def _sqlite_tables(self) -> list[str]:
@@ -142,13 +151,13 @@ class Database:
             str(one["from"]): str(one["table"])
             for one in self.rows(f"PRAGMA foreign_key_list({table})")
         }
-        unique: list[str] = []
+        unique: list[tuple[str, ...]] = []
         for index in self.rows(f"PRAGMA index_list({table})"):
             if not index.get("unique"):
                 continue
-            named = [str(one["name"]) for one in self.rows(f"PRAGMA index_info({index['name']})")]
-            if len(named) == 1 and named[0] not in keys:
-                unique.append(named[0])
+            named = tuple(str(one["name"]) for one in self.rows(f"PRAGMA index_info({index['name']})"))
+            if named and set(named) != set(keys):
+                unique.append(named)
         return _table(table, [(str(one["name"]), str(one["type"])) for one in columns], keys, unique, parents)
 
     # --- everything else, through information_schema -----------------------------------------------
@@ -178,11 +187,13 @@ class Database:
             (table,),
         )
         keys = [str(one["column_name"]) for one in constraints if one["constraint_type"] == "PRIMARY KEY"]
-        unique = [
-            str(one["column_name"])
-            for one in constraints
-            if one["constraint_type"] == "UNIQUE" and str(one["column_name"]) not in keys
-        ]
+        grouped: dict[str, list[str]] = {}
+        for one in constraints:
+            if one["constraint_type"] == "UNIQUE":
+                grouped.setdefault(str(one.get("constraint_name", one["column_name"])), []).append(
+                    str(one["column_name"])
+                )
+        unique = [tuple(columns) for columns in grouped.values() if set(columns) != set(keys)]
         parents = {
             str(one["column_name"]): str(one["points_at"])
             for one in constraints
@@ -209,7 +220,7 @@ class Database:
         self._open = False
         try:
             self.db.rollback()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise Unreachable(f"the transaction could not be rolled back: {exc}") from exc
 
     def _run_raw(self, statement: str) -> None:
@@ -221,7 +232,7 @@ class Database:
 
 @adapter("row", driver="sql")
 class Row:
-    """One row in a table, recognised by the columns `unique_by` names."""
+    """One row in a table, recognised by whatever the table holds unique."""
 
     class Options(TypedDict, total=False):
         """What the decorator takes, per resource."""
@@ -239,6 +250,27 @@ class Row:
     def table(self, resource: Resource) -> str:
         return str(resource.options.get("table") or resource.kind.lower())
 
+    def recognises(self, resource: Resource) -> tuple[str, ...]:
+        """What tells one row from another: **whatever the table holds unique**.
+
+        The author writes nothing. Uniqueness is structure the schema already holds, and asking for
+        it back would be asking somebody to restate what this system can look up.
+        """
+        table = self.table(resource)
+        for one in self.sql.schema():
+            if one["table"] != table:
+                continue
+            # Shortest first, so a single unique column beats a composite one that also fits.
+            for columns in [*one["uniques"], (one["key"],) if one["key"] else ()]:
+                if columns and all(column in resource.fields for column in columns):
+                    return tuple(str(column) for column in columns)
+            held = ", ".join(str(c["name"]) for c in one["columns"]) or "no columns"
+            raise Unreachable(
+                f"{table} holds nothing unique that {resource.kind} declares.\n"
+                f"  The table has {held}, and a row is recognised by what the table holds unique."
+            )
+        raise Unreachable(f"{table}: no such table, so nothing recognises a {resource.kind}")
+
     def _id_field(self, resource: Resource) -> str:
         return str(resource.options.get("id_field", "id"))
 
@@ -248,14 +280,30 @@ class Row:
     # --- What a resource declared -----------------------------------------------------------------
 
 
+    def _held(self, resource: Resource) -> set[str]:
+        """Every column this table has, as the schema says."""
+        table = self.table(resource)
+        for one in self.sql.schema():
+            if one["table"] == table:
+                return {str(column["name"]) for column in one["columns"]}
+        return set()
+
     def _columns(self, resource: Resource) -> Record:
-        """The declared fields, and each parent as the key of the row it was made as."""
+        """The declared fields, and each parent as the key of the row it was made as.
+
+        A parent the table has no column for is left out. Something can have to exist first and
+        leave no trace in the row, and whether it does is a fact the schema holds.
+        """
         columns: Record = dict(resource.values)
         suffix = self._suffix(resource)
+        held = self._held(resource)
         for field, parent in resource.parents.items():
+            key = f"{field}{suffix}"
+            if held and key not in held:
+                continue
             if parent.key is None:
                 raise Unreachable(f"{field}: the parent it points at has not been made")
-            columns[f"{field}{suffix}"] = parent.key
+            columns[key] = parent.key
         return columns
 
     # --- The four ---------------------------------------------------------------------------------
@@ -266,7 +314,7 @@ class Row:
             raise Unreachable(f"{resource.kind}: nothing to recognise it by")
         where = " AND ".join(f"{column} = {self.sql.mark}" for column in identity)
         found = self.sql.rows(
-            f"SELECT * FROM {self.table(resource)} WHERE {where}",  # noqa: S608 - names come from the declaration
+            f"SELECT * FROM {self.table(resource)} WHERE {where}",
             tuple(identity.values()),
         )
         return found[0] if found else None
@@ -287,7 +335,7 @@ class Row:
         for (table, column), mine in grouped.items():
             wanted = [one.identity[column] for one in mine]
             rows = self.sql.rows(
-                f"SELECT * FROM {table} WHERE {column} IN ({self.sql.marks(len(wanted))})",  # noqa: S608
+                f"SELECT * FROM {table} WHERE {column} IN ({self.sql.marks(len(wanted))})",
                 tuple(wanted),
             )
             by_value = {str(row.get(column)): row for row in rows}
@@ -299,7 +347,7 @@ class Row:
         columns = self._columns(resource)
         names = ", ".join(columns)
         self.sql.execute(
-            f"INSERT INTO {self.table(resource)} ({names}) VALUES ({self.sql.marks(len(columns))})",  # noqa: S608
+            f"INSERT INTO {self.table(resource)} ({names}) VALUES ({self.sql.marks(len(columns))})",
             tuple(columns.values()),
         )
         found = self.find(resource)
@@ -311,7 +359,7 @@ class Row:
         assignments = ", ".join(f"{column} = {self.sql.mark}" for column in changes)
         key = self._id_field(resource)
         self.sql.execute(
-            f"UPDATE {self.table(resource)} SET {assignments} WHERE {key} = {self.sql.mark}",  # noqa: S608
+            f"UPDATE {self.table(resource)} SET {assignments} WHERE {key} = {self.sql.mark}",
             (*changes.values(), found[key]),
         )
         return {**found, **changes}
@@ -319,7 +367,7 @@ class Row:
     def delete(self, resource: Resource, found: Record) -> None:
         key = self._id_field(resource)
         self.sql.execute(
-            f"DELETE FROM {self.table(resource)} WHERE {key} = {self.sql.mark}",  # noqa: S608
+            f"DELETE FROM {self.table(resource)} WHERE {key} = {self.sql.mark}",
             (found[key],),
         )
 
@@ -327,5 +375,5 @@ class Row:
 
     def browse(self, resource: Resource) -> list[Record]:
         """Every row of this kind."""
-        return self.sql.rows(f"SELECT * FROM {self.table(resource)}")  # noqa: S608
+        return self.sql.rows(f"SELECT * FROM {self.table(resource)}")
 

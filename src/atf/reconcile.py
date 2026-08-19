@@ -16,7 +16,7 @@ from .declare import (
 )
 from .environment import Ground
 from .model import compare
-from .spi import Did, Record, State
+from .spi import Did, Payload, State
 
 
 class ProvisionError(Exception):
@@ -30,8 +30,8 @@ class Reconciliation:
     resource: Any
     state: State
     did: Did
-    record: Record | None = None
-    changes: Record = field(default_factory=dict)
+    record: Payload | None = None
+    changes: Payload = field(default_factory=dict)
     why: str = ""
 
     @property
@@ -39,10 +39,10 @@ class Reconciliation:
         return name_of(self.resource) or declaration_of(self.resource).kind
 
 
-def declared_values(resource: Any) -> Record:
+def declared_values(resource: Any) -> Payload:
     """The fields ATF writes when it creates: everything declared that is not another resource.
 
-    A field holding a parent is left out; the adapter resolves it. `comparable_values` is what a
+    A field holding a parent is left out; the system resolves it. `comparable_values` is what a
     diff is taken over.
     """
     return {name: value for name, value in values_of(resource).items() if not is_resource(value)}
@@ -51,24 +51,24 @@ def declared_values(resource: Any) -> Record:
 def parent_key(resource: Any, field_name: str) -> str:
     """What a record calls the parent held in this field.
 
-    `owner` is written as `owner_id`, unless the adapter names a `parent_suffix` option.
+    `owner` is written as `owner_id`, unless the system's own class names a `parent_suffix`.
     """
-    suffix = declaration_of(resource).options.get("parent_suffix", "_id")
+    suffix = getattr(type(resource), "parent_suffix", "_id")
     return f"{field_name}{suffix}"
 
 
-def parent_identity(parent: Any, record: Record) -> Any:
+def parent_identity(parent: Any, record: Payload) -> Any:
     """What a parent's record is known by, so a child can be checked against it."""
-    return record.get(str(declaration_of(parent).options.get("id_field", "id")))
+    return record.get(str(getattr(type(parent), "id_field", "id")))
 
 
-def parent_changes(resource: Any, found: Record) -> Record:
+def parent_changes(resource: Any, found: Payload) -> Payload:
     """Parents this record no longer points at.
 
-    Checked only where the record carries the key. An adapter that spells lineage some other way
+    Checked only where the record carries the key. A system that spells lineage some other way
     contributes nothing here.
     """
-    out: Record = {}
+    out: Payload = {}
     for field_name, value in values_of(resource).items():
         if not is_resource(value):
             continue
@@ -94,7 +94,7 @@ def same_value(found: Any, declared: Any) -> bool:
     return compare.matches(found, declared)
 
 
-def diff(resource: Any, found: Record) -> Record:
+def diff(resource: Any, found: Payload) -> Payload:
     """The declared fields the found record does not already satisfy."""
     changed = {
         name: value
@@ -168,14 +168,14 @@ def ensure(ground: Ground, resource: Any, *, dry_run: bool = False) -> Reconcili
         return Reconciliation(resource, State.ABSENT, Did.CREATED, changes=declared_values(resource), why="dry run")
 
     try:
-        record = ground.perform(resource, "create")(resource)
+        record = ground.perform(resource, "create")()
     except Unreachable as exc:
         return Reconciliation(resource, State.UNREACHABLE, Did.LEFT_ALONE, why=str(exc))
     _remember_identity(resource, record)
     return Reconciliation(resource, State.PRESENT, Did.CREATED, record=record, changes=declared_values(resource))
 
 
-def _remember_identity(resource: Any, record: Record) -> None:
+def _remember_identity(resource: Any, record: Payload) -> None:
     """Keep what this resource was found as, so its children can be checked against it.
 
     `provision` walks a closure parents-first, so a child's parents have each been through here.
@@ -184,9 +184,9 @@ def _remember_identity(resource: Any, record: Record) -> None:
     instance_of(resource).identity = parent_identity(resource, record)
 
 
-def _apply(ground: Ground, resource: Any, found: Record, changes: Record) -> Record:
+def _apply(ground: Ground, resource: Any, found: Payload, changes: Payload) -> Payload:
     try:
-        return ground.perform(resource, "update")(resource, found, changes)
+        return ground.perform(resource, "update")(changes)
     except Unreachable:
         raise
     except Exception as exc:
@@ -251,7 +251,7 @@ def _would(ground: Ground, resource: Any) -> Did:
 # --- The two optional methods ----------------------------------------------------------------------
 
 
-def change(ground: Ground, resource: Any, changes: Record) -> Record:
+def change(ground: Ground, resource: Any, changes: Payload) -> Payload:
     """Write fields onto a resource that is already there.
 
     The act-time twin of a variation: `Given ... but "done" is "true"` says it before the test runs,
@@ -269,20 +269,19 @@ def change(ground: Ground, resource: Any, changes: Record) -> Record:
     return _apply(ground, resource, found, changes)
 
 
-def browse(ground: Ground, resource: Any) -> list[Record]:
-    """Every record of this resource's kind — `Then the environment has 2 todo_list`.
+def browse(ground: Ground, resource: Any) -> list[Payload]:
+    """Every record of this resource's kind — `Then there are 2 todo_lists`.
 
     A system without `browse` can answer about a resource you named and nothing about the set of
-    them, which is a fact about the adapter and is reported as one.
+    them, which is a fact about the class and is reported as one.
     """
     declaration = declaration_of(resource)
     if not ground.can(resource, "browse"):
         raise ProvisionError(
-            f"the {declaration.system} system cannot be listed — its adapter implements no `browse`"
+            f"the {declaration.system} system cannot be listed — its class implements no `browse`"
         )
     try:
-
-        return list(ground.adapter_for(resource).browse(ground.view(resource)))
+        return list(resource.browse())
     except Unreachable:
         raise
 
@@ -350,7 +349,7 @@ def teardown(ground: Ground, resources: list[Any], undone: list[str] | None = No
             out.append(Reconciliation(node, state, Did.LEFT_ALONE, why="it was not there"))
             continue
         try:
-            ground.perform(node, "delete")(node, found)
+            ground.perform(node, "delete")()
         except Unreachable as exc:
             out.append(Reconciliation(node, State.UNREACHABLE, Did.LEFT_ALONE, why=str(exc)))
             continue

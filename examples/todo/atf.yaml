@@ -1,16 +1,11 @@
 environments:
   local:
-    owner: atf                    # ATF may make things here
-    todo:  { path: ./todo.db }
+    owner: atf                 # ATF may make things here. `them` means it may only look.
+    http:  { base_url: "http://127.0.0.1:8801" }
     sql:   { path: ./todo.db }
-    shell: { prefix: "python todo.py" }
+    shell: { cwd: . }
 
-  # ATF may only look here. Every thing in it becomes observed, whatever any one of them said.
+  # The same application, read-only. Every thing in it becomes observed, whatever any one said.
   theirs:
     from:  local
     owner: them
-
-  staging:
-    from:  local
-    todo:  { path: ./staging.db }
-    sql:   { path: ./staging.db }

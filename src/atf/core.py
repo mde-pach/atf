@@ -162,7 +162,7 @@ def instances(ground: Ground, kind: str) -> list[dict[str, Any]]:
             "state": str(outcome.state),
             "changes": sorted(outcome.changes),
             "recognised_by": {
-                key: values_of(node).get(key) for key in ground.recognition(node)
+                key: values_of(node).get(key) for key in declaration_of(node).key
             },
             "lives": lives.of(node),
         }
@@ -199,7 +199,8 @@ def detail(ground: Ground, name: str) -> ResourceDetail:
         state=str(state),
         declaration={
             "fields": {k: str(v) for k, v in declaration.fields.items()},
-            "options": declaration.options,
+            # `at` is whichever system's own setting, where it has one — not every system does.
+            "at": getattr(type(resource), "at", ""),
             "owner": ground.owner_of(resource),
             "lives": lives.of(resource),
             "needs": {
@@ -207,7 +208,7 @@ def detail(ground: Ground, name: str) -> ResourceDetail:
                 for name, need in declaration.needs.items()
             },
         },
-        recognised_by={key: values_of(resource).get(key) for key in ground.recognition(resource)},
+        recognised_by={key: values_of(resource).get(key) for key in declaration.key},
         found=found,
         would_create=body if state is State.ABSENT else None,
         would_change={

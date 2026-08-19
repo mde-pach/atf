@@ -37,9 +37,9 @@ WHERE = {
 HEAD = """\
 # Sentences
 
-Every sentence a suite can say, generated from the registrations. **Nothing here is hand-written**,
-so it cannot go stale, and a team's own words appear the day they write them —
-`atf edit` serves this page for the suite in front of you.
+Every sentence a suite can say, generated from the registrations. Nothing here is hand-written, so
+it cannot go stale, and a team's own words appear the day they write them — `atf edit` serves this
+page for the suite in front of you.
 
 A sentence is `Given` (arrange), `When` (act) or `Then` (check). `And` and `But` continue whichever
 came before them.
@@ -50,12 +50,17 @@ VALUES = """\
 
 Quoting carries the type, and nothing else does.
 
-| Written | What it is |
-| --- | --- |
-| `"0"` | the text |
-| `0` | the number |
-| `true`, `false` | the boolean |
-| `nothing` | not there at all |
+`"0"`
+:   the text
+
+`0`
+:   the number
+
+`true`, `false`
+:   the boolean
+
+`nothing`
+:   not there at all
 
 Text between quotes reads its escapes: `\\n`, `\\t`, `\\\\`, `\\"`.
 
@@ -65,9 +70,8 @@ Where the value is not the point, say what sort of thing must be there.
 
 {kinds}
 
-A team registers its own with `@kind("iban")`. **ATF ships none that know a domain** — an `iban` is
-your vocabulary, and a framework that learned it would spend its life maintaining a validation
-library nobody wanted from it.
+A team registers its own with `@kind("iban")`. ATF ships none that know a domain — an `iban` is your
+vocabulary.
 """
 
 
@@ -76,15 +80,16 @@ def band(keyword: str) -> str:
 
 
 def rows(module: str) -> list[str]:
-    """One table per module, in the order a reader meets the words."""
+    """One entry per sentence, in the order a reader meets the words."""
     mine = [one for one in steps.REGISTRY if one.module == module]
     if not mine:
         return []
-    out = ["", "| Sentence | What it does |", "| --- | --- |"]
+    out = [""]
     for one in sorted(mine, key=lambda step: (step.keyword, step.pattern)):
         said = (one.function.__doc__ or "").strip().splitlines()
-        first = said[0] if said else ""
-        out.append(f"| `{band(one.keyword)} {one.pattern}` | {first} |")
+        out.append(f"`{band(one.keyword)} {one.pattern}`")
+        out.append(f":   {said[0] if said else ''}")
+        out.append("")
     return out
 
 

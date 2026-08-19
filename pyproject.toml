@@ -48,6 +48,9 @@ browser = ["playwright>=1.40"]
 # What a suite installs to let `atf edit --mcp` answer agents. A framework does not decide that
 # every suite serves agents; the type check needs it, so this repository installs it.
 mcp = ["mcp>=2"]
+examples = [
+    "sqlalchemy>=2.0.52",
+]
 
 [build-system]
 requires = ["hatchling"]

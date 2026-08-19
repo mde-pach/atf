@@ -17,7 +17,7 @@ from .declare import (
 )
 from .environment import Ground
 from .loader import Suite, fixture_name
-from .spi import Record, State
+from .spi import Payload, State
 
 
 class ScopeError(Exception):
@@ -243,14 +243,14 @@ class Scope:
             )
         return found[0] if found else self.a(kind)
 
-    def look_up(self, kind: str, name: str) -> Record | None:
+    def look_up(self, kind: str, name: str) -> Payload | None:
         """Ask the environment for that resource's record, right now."""
         self.flush()
         resource = self._in_scope_named(name) or self.resolve(self._declared(kind, name))
         _, found = self.ground.find(resource)
         return found
 
-    def change(self, kind: str, name: str, changes: Record) -> Any:
+    def change(self, kind: str, name: str, changes: Payload) -> Any:
         """Write fields onto a resource mid-test, and remember which ones so they can be put back."""
         self.flush()
         resource = self._in_scope_named(name) or self.resolve(self._declared(kind, name))
@@ -259,7 +259,7 @@ class Scope:
         self.loosed.setdefault(id(resource), set()).update(changes)
         return self.remember(reconcile.change(self.ground, resource, changes))
 
-    def browse(self, kind: str) -> list[Record]:
+    def browse(self, kind: str) -> list[Payload]:
         self.flush()
         cls = self._kind(kind)
         example = next((node for node in self.arranged if type(node) is cls), None)
@@ -328,7 +328,7 @@ class Scope:
         record.built = original.built
         record.resolved = set(original.resolved) - set(patch)
         record.dropped = frozenset(dropped)
-        recognised = set(self.ground.recognition(resource))
+        recognised = set(declaration_of(resource).key)
         record.ephemeral = original.ephemeral or bool(set(patch) & recognised)
         record.varied = original.varied | frozenset(patch)
         return copy

@@ -1,5 +1,5 @@
 site_name: ATF
-site_description: A test framework whose preconditions are declared as typed data rather than executed as setup.
+site_description: A test framework where what a test needs to exist is declared as typed data, and the graph comes with it.
 repo_url: https://github.com/mde-pach/atf
 repo_name: mde-pach/atf
 edit_uri: edit/main/docs/
@@ -28,9 +28,7 @@ theme:
         icon: material/weather-sunny
         name: Switch to light mode
   features:
-    # Ordinary collapsible sections: the sidebar lists the five modes and opens
-    # only the one you are in. Not tabs — they hid too much — and not
-    # `navigation.sections`, which forces every section open at once.
+    # Collapsible sections: the sidebar lists the pages and opens the one you are in.
     - navigation.indexes
     - navigation.instant
     - navigation.tracking
@@ -43,39 +41,25 @@ theme:
     - content.action.edit
 
 nav:
-  # Four hand-written pages, and nothing in them may depend on an essay. `scripts/prose.py` gates it.
+  # One tutorial that ends green, then one page per thing somebody wants to do.
   - Start: index.md
-  - The model: model.md
-  - Extending: extending.md
+  - Guides:
+      - Arranging what a test needs: guides/arranging.md
+      - Running it somewhere else: guides/environments.md
+      - Leaving nothing behind: guides/cleanup.md
+      - When it goes red: guides/failures.md
+      - Running less of it: guides/choosing.md
+      - Saying it in your own words: guides/words.md
+      - Somewhere ATF has not heard of: guides/systems.md
 
   # Generated. `scripts/reference.py` writes the sentences; mkdocs-click writes the commands.
   - Reference:
       - Sentences: reference/sentences.md
       - Commands: reference/commands.md
 
-  # Optional depth, for somebody who has already used ATF.
-  - Essays:
-      - explanation/index.md
-      - Declared, not executed: explanation/declared-not-executed.md
-      - The surface and the library: explanation/the-surface-and-the-library.md
-      - Why there is no state file: explanation/why-there-is-no-state-file.md
-      - Every failure names your sentence: explanation/every-failure-names-your-sentence.md
-      - The concept budget: explanation/the-concept-budget.md
-      - What we borrowed: explanation/what-we-borrowed.md
-      - Why the editor is plain: explanation/why-the-editor-is-plain.md
-
-  - Explanation:
-      - explanation/index.md
-      - Declared, not executed: explanation/declared-not-executed.md
-      - Why there is no state file: explanation/why-there-is-no-state-file.md
-      - Every failure names your sentence: explanation/every-failure-names-your-sentence.md
-      - What we borrowed: explanation/what-we-borrowed.md
-      - Why the editor is plain: explanation/why-the-editor-is-plain.md
-      - The concept budget: explanation/the-concept-budget.md
-
 markdown_extensions:
   - admonition
-  # The option lists in reference/the-command.md are rendered from the Click group itself, so
+  # The option lists in reference/commands.md are rendered from the Click group itself, so
   # there is no second copy of a flag to go stale.
   - mkdocs-click
   - attr_list
@@ -91,7 +75,6 @@ markdown_extensions:
   - pymdownx.snippets
   - pymdownx.tabbed:
       alternate_style: true
-  - tables
 
 exclude_docs: |
   _context/

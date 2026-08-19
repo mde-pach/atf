@@ -7,12 +7,12 @@ import subprocess
 from pathlib import Path
 from typing import Any, TypedDict
 
-from ..declare import Unreachable, driver
-from ..spi import Record
+from ..declare import Driver, Unreachable
+from ..spi import Payload
 from ..steps import act, check
 
 
-def run(prefix: str, command: str, cwd: Path | None = None) -> Record:
+def run(prefix: str, command: str, cwd: Path | None = None) -> Payload:
     """Run one command line through an environment's prefix, and report what it did."""
     line = f"{prefix} {command}".strip() if prefix else command
     try:
@@ -34,8 +34,7 @@ def run(prefix: str, command: str, cwd: Path | None = None) -> Record:
     }
 
 
-@driver("shell")
-class Shell:
+class Shell(Driver):
     """Command lines run through one environment's prefix, and processes started from its `cwd`.
 
     A command line is not a resource: it is something a test *does*, and what it produced lands in a
@@ -56,8 +55,11 @@ class Shell:
         self.prefix = settings.get("prefix", "")
         self.cwd = Path(settings.get("cwd", ".")).expanduser().resolve()
         self.start_timeout = float(settings.get("start_timeout", 20))
+        #: Every process `shell.process` started through this driver, keyed by command line. Lives
+        #: as long as the driver does — one environment, freshly empty on every build.
+        self.running: dict[str, Any] = {}
 
-    def __call__(self, command: str) -> Record:
+    def __call__(self, command: str) -> Payload:
         """`shell("todo list")` — what a Python test and `When I run` both reach."""
         return run(self.prefix, command, self.cwd)
 
@@ -69,7 +71,7 @@ class Shell:
 
 
 @act('I run "{command}"')
-def _run(command: str, shell: Shell) -> Record:
+def _run(command: str, shell: Shell) -> Payload:
     """`When I run "todo show primary@example.com"`. What it produced becomes `it`."""
     return shell(command)
 

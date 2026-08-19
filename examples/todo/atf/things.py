@@ -1,90 +1,76 @@
-"""What this suite needs to exist before a test runs.
+"""What a test needs to exist before it runs.
 
-`@todo.owner` and `@todo.list` are this suite's own, written once in `todo_system.py` over the
-application's own API. The rest use ATF's built-in `@sql.row`, which is what a suite reaches for
-when a thing has no interface of its own to go through.
-
-Every edge in the graph is a `needs()` at the field that holds it — including `Report`, which has no
-field for its owner until `needs()` gives it one.
+`Owner` and `TodoList` belong to the API, so they are declared over it. `Task` is a row the API has
+no endpoint for, so it is declared over the database. Both systems ship with ATF.
 """
 
-from todo_system import todo
+from __future__ import annotations
 
-from atf import needs, sql
+from pathlib import Path
+
+from models import open_database
+
+from atf import needs
+from atf.resources.process import Process
+from atf.resources.rest import Record
+from atf.resources.sql import Row
+
+# The application owns its schema, and opening the database is what creates it. Done here so that
+# `atf plan` can read what the tables hold unique before anything has been run.
+open_database(str(Path(__file__).resolve().parents[1] / "todo.db"))
 
 
 def an_email() -> str:
-    """Whatever varies. ATF does not generate values; this is the suite's own provider."""
+    """Whatever varies. ATF generates no values; this is the suite's own provider."""
     from itertools import count
 
     an_email.n = getattr(an_email, "n", count(1))
     return f"generated-{next(an_email.n)}@example.com"
 
 
-@todo.owner()
-class Owner:
-    email: str = needs(an_email)
+class Api(Process, lives="the run"):
+    """The API under test, started for the run and stopped when it ends.
 
-
-@todo.list()
-class TodoList:
-    owner: Owner = needs()
-    slug: str = needs(lambda: "generated")
-
-
-@sql.row(table="tasks")
-class Task:
-    """Nothing here declares a verb.
-
-    `complete` and `reopen` are phrases in `lists.feature`, each standing over one `becomes`
-    sentence, and `done` is an ordinary field held to what it says.
+    `port` is what makes it safe: the process does not count as made until the port answers, so
+    nothing downstream races it.
     """
 
+    command: Process.Key[str] = "python api.py"
+    port: int = 8801
+
+
+class Listed(Record):
+    """What `Owner` and `TodoList` share: this API answers a listing as `{"items": [...]}`.
+
+    Not a config option every other API would carry and never use — an override, written once,
+    beside the two declarations it applies to. `find`'s own field-matching logic is untouched;
+    only how the raw collection is fetched changes.
+    """
+
+    def _collection(self, params: dict | None = None) -> list[dict]:
+        url = type(self)._path()
+        response = self.http.client.get(url, params=dict(params or {}))
+        return response.json().get("items", [])
+
+
+class Owner(Listed, at="/owners"):
+    api: Api = needs()
+    email: Record.Key[str] = needs(an_email)
+
+
+class TodoList(Listed, at="/lists"):
+    owner: Owner = needs()
+    slug: Record.Key[str]
+
+
+class Task(Row, at="tasks"):
     todo_list: TodoList = needs()
-    slug: str
-    done: bool
+    slug: Row.Key[str]
+    done: bool = False
 
 
-@sql.row(table="reports")
-class Report:
-    """Written per owner, and storing only its own slug and a rendered body.
-
-    The owner is a field with no column behind it: the report has to have one, and the table keeps
-    no trace of which. The system leaves out what the schema has no column for.
-    """
-
-    owner: Owner = needs()
-    slug: str
-    body: str
-
-
-@sql.row(table="plans", owner="them")
-class Plan:
-    """The environment's job. ATF names one; it never makes one."""
-
-    code: str
-
-
-@sql.row(table="tenants")
-class Tenant:
-    """Recognised by its code within a region — which the table says, and nothing here repeats."""
-
-    region: str
-    code: str
-
-
-@sql.row(table="guests")
-class Guest:
-    nickname: str
-
-
-primary = Owner(email="primary@example.com")
-secondary = Owner(email="secondary@example.com")
+serving = Api()
+primary = Owner(api=serving, email="primary@example.com")
 groceries = TodoList(owner=primary, slug="groceries")
 laundry = Task(todo_list=groceries, slug="laundry", done=False)
-quarterly = Report(owner=primary, slug="quarterly", body="<html/>")
-free = Plan(code="free")
-acme = Tenant(region="eu", code="acme")
-acme_us = Tenant(region="us", code="acme")
-visitor = Guest(nickname="visitor")
-anyone = Owner()
+anyone = Owner(api=serving)

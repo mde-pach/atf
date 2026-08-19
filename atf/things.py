@@ -5,7 +5,10 @@ lineage declared at the field that uses it, values resolution fills in, and some
 environment owns. ATF's suite makes it exist, runs `atf` against it, and claims on what came back.
 """
 
-from atf import browser, filesystem, needs, shell
+from atf import needs
+from atf.resources.browser import Page
+from atf.resources.filesystem import Tree
+from atf.resources.process import Process
 
 MANIFEST = """\
 environments:
@@ -27,7 +30,8 @@ linter or an editor adds to one must not be what stops the suite loading.
 
 from __future__ import annotations
 
-from atf import filesystem, needs
+from atf import needs
+from atf.resources.filesystem import Directory, File
 
 
 def a_line(notebook: Notebook) -> str:
@@ -43,57 +47,49 @@ def a_notebook() -> str:
     return f"notebooks/spare-{next(a_notebook.n)}"
 
 
-@filesystem.directory()
-class Notebook:
-    path: str = needs(a_notebook)
+class Notebook(Directory):
+    path: Directory.Key[str] = needs(a_notebook)
 
 
-@filesystem.file()
-class Note:
+class Note(File):
     notebook: Notebook = needs()          # this is the edge
-    path: str
+    path: File.Key[str]
     text: str = needs(a_line)
 
 
-@filesystem.file()
-class Card:
+class Card(File):
     """A field a scenario moves mid-test, and that is put back when the test ends."""
 
-    path: str
+    path: File.Key[str]
     text: str
 
 
-@filesystem.file(lives="the test")
-class Draft:
-    path: str
+class Draft(File, lives="the test"):
+    path: File.Key[str]
     text: str
 
 
-@filesystem.directory(lives="the test")
-class Sketchbook:
+class Sketchbook(Directory, lives="the test"):
     """A directory made for one test, which teardown can only remove once it is empty."""
 
-    path: str
+    path: Directory.Key[str]
 
 
-@filesystem.file(lives="the test")
-class Sketch:
+class Sketch(File, lives="the test"):
     sketchbook: Sketchbook = needs()
-    path: str
+    path: File.Key[str]
     text: str
 
 
-@filesystem.file(lives="the run")
-class Meeting:
-    path: str
+class Meeting(File, lives="the run"):
+    path: File.Key[str]
     text: str
 
 
-@filesystem.file(owner="them")
-class Archive:
+class Archive(File, owner="them"):
     """Somebody else\'s job. ATF names it rather than making one."""
 
-    path: str
+    path: File.Key[str]
 
 
 work = Notebook(path="notebooks/work")
@@ -284,12 +280,11 @@ Feature: what this suite holds itself to
 BROKEN_THINGS = '''\
 """A suite that is wrong on purpose, one mistake per name."""
 
-from atf import filesystem
+from atf.resources.filesystem import Directory
 
 
-@filesystem.directory()
-class Notebook:
-    path: str
+class Notebook(Directory):
+    path: Directory.Key[str]
 
 
 work = Notebook(path="notebooks/work")
@@ -313,12 +308,11 @@ MISTYPED_THINGS = '''\
 refused where it is written rather than carried to the system and written down.
 """
 
-from atf import filesystem
+from atf.resources.filesystem import File
 
 
-@filesystem.file()
-class Note:
-    path: str
+class Note(File):
+    path: File.Key[str]
     text: str
 
 
@@ -398,8 +392,7 @@ Feature: a scenario that promises nothing
 """
 
 
-@filesystem.tree(lives="the test")
-class Workspace:
+class Workspace(Tree, lives="the test"):
     """An ATF suite on disk: a manifest, and the one directory a suite lives in.
 
     `files` maps a path inside the workspace to that file's contents, and declaring them **makes
@@ -410,7 +403,7 @@ class Workspace:
     behind ATF's back, through a shell command whose effect nothing declares.
     """
 
-    path: str
+    path: Tree.Key[str]
     files: dict[str, str]
 
 
@@ -479,19 +472,19 @@ drafting = Workspace(
 )
 
 
-@shell.process(command="uv run atf --config .workspaces/suite/atf.yaml edit --port 8791", port=8791)
-class Editor:
+class Editor(Process):
     """An `atf edit` process serving one workspace.
 
-    The command is fixed, so it is an option on the decorator. What varies is the workspace, and
-    that is a field — which is where a dependency is declared now.
+    The command is fixed, so it is a plain default on the field. What varies is the workspace, and
+    that is a field too — which is where a dependency is declared now.
     """
 
+    command: Process.Key[str] = "uv run atf --config .workspaces/suite/atf.yaml edit --port 8791"
+    port: int = 8791
     workspace: Workspace = needs()
 
 
-@browser.page(lives="the test")
-class Screen:
+class Screen(Page, lives="the test"):
     """A page of that editor.
 
     This used to be declared `when_absent="observe"`, to say ATF does not *make* a screen. That was
@@ -501,7 +494,7 @@ class Screen:
     """
 
     editor: Editor = needs()
-    path: str
+    path: Page.Key[str]
 
 
 editing = Editor(workspace=scaffolded)

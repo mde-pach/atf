@@ -1,51 +1,25 @@
-"""One environment, live: an adapter per system, and what each answers."""
+"""One environment, live: a driver built per system, and what each resource answers for itself."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import lives
 from .declare import (
+    _CURRENT_GROUND,
     DRIVERS,
+    Resource,
     Unreachable,
+    check_shape,
     declaration_of,
     drivers_wanted,
-    instance_of,
-    is_resource,
+    offers,
 )
 from .loader import Suite
 from .manifest import Environment as EnvironmentConfig
-from .spi import Parent, Record, Resource, State, check, check_shape, offers
-
-
-def view(resource: Any, recognised_by: tuple[str, ...] = (), owner: str = "") -> Resource:
-    """One declared thing, as a system sees it.
-
-    Built at every call into a system, so a system never imports `values_of` or `declaration_of`
-    and never holds ATF's own objects. `recognised_by` is what the system itself said tells one of
-    these apart — see [Ground.recognition](#recognition). Nothing about it was typed by the author.
-    """
-    declaration = declaration_of(resource)
-    record = instance_of(resource)
-    scalars = {name: value for name, value in record.values.items() if not is_resource(value)}
-    return Resource(
-        kind=declaration.kind,
-        name=record.name,
-        options=dict(declaration.options),
-        fields=dict(declaration.fields),
-        owner=owner or declaration.owner,
-        lives=lives.of(resource),
-        values=scalars,
-        identity={name: scalars[name] for name in recognised_by if name in scalars},
-        parents={
-            name: Parent(kind=declaration_of(value).kind, key=instance_of(value).identity)
-            for name, value in record.values.items()
-            if is_resource(value)
-        },
-    )
-
+from .spi import Payload, State, check
 
 #: What each write method does, as a message says it.
 _DONE = {"create": "made", "update": "changed", "delete": "removed"}
@@ -61,19 +35,17 @@ class GroundError(Exception):
 
 @dataclass
 class Ground:
-    """A suite pointed at one environment, with an adapter ready for each system it uses.
+    """A suite pointed at one environment, with a driver built for each system it uses.
 
     The name is the band the specification puts an environment in. It holds no state about what has
-    been made: presence is asked, never remembered.
+    been made: presence is asked, never remembered. Every declared resource carries its own
+    find/create/update/delete — this holds the machinery each of those reaches for by name.
     """
 
     suite: Suite
     config: EnvironmentConfig
-    adapters: dict[str, Any] = field(default_factory=dict)
-    #: The machinery each adapter works through, and what a step asks for by name.
+    #: The machinery each resource works through, and what a step asks for by name.
     drivers: dict[str, Any] = field(default_factory=dict)
-    #: What recognises each kind, as its own system answered it. Asked once, then held.
-    recognitions: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def mutable(self) -> bool:
@@ -90,71 +62,27 @@ class Ground:
             return "them"
         return declaration_of(resource).owner
 
-    def recognition(self, resource: Any) -> tuple[str, ...]:
-        """What tells one of these apart — **the system's answer, never the author's**.
+    def perform(self, resource: Any, method: str) -> Callable[..., Any]:
+        """One of the resource's write methods, bound and ready, or a refusal naming what it lacks.
 
-        A file is recognised by its path. A row by whatever the table holds unique. A page by its
-        URL. Asking the author to type it would be asking them to restate something the system
-        already holds. A system says so with a `recognised_by` attribute where there is only ever
-        one answer, or a `recognises` method where it has to look.
-        """
-        declaration = declaration_of(resource)
-        held = self.recognitions.get(declaration.kind)
-        if held is not None:
-            return held
-        adapter = self.adapter_for(resource)
-        fixed = getattr(type(adapter), "recognised_by", None)
-        if fixed is not None:
-            answer = tuple(fixed)
-        elif callable(getattr(adapter, "recognises", None)):
-            answer = tuple(adapter.recognises(view(resource, owner=self.owner_of(resource))))
-        else:
-            raise GroundError(
-                f"the {declaration.system!r} system does not say what recognises one of its things, "
-                f"so ATF cannot tell one {declaration.kind} from another.\n"
-                f"  A system answers that with a `recognised_by` attribute or a `recognises` method."
-            )
-        self.recognitions[declaration.kind] = answer
-        return answer
-
-    def view(self, resource: Any) -> Resource:
-        """This resource as its system sees it, with recognition and ownership already answered."""
-        return view(resource, self.recognition(resource), self.owner_of(resource))
-
-    def adapter_for(self, resource: Any) -> Any:
-        declaration = declaration_of(resource)
-        try:
-            return self.adapters[declaration.system]
-        except KeyError:
-            raise GroundError(
-                f"the {declaration.system!r} system has no settings in the "
-                f"{self.config.name!r} environment, and {declaration.kind} lives there"
-            ) from None
-
-    def perform(self, resource: Any, method: str) -> Any:
-        """One of the adapter's write methods, or a refusal naming what this kind cannot do.
-
-        `find` is the only method every adapter answers. Leaving `create`, `update` or `delete` out
+        `find` is the only method every resource answers. Leaving `create`, `update` or `delete` out
         says this kind of thing is never made, changed or removed, and asking for one raises
         `Unreachable` naming the kind and the method.
         """
-        adapter = self.adapter_for(resource)
-        found = getattr(adapter, method, None)
-        if not callable(found):
+        cls = type(resource)
+        found = getattr(cls, method, None)
+        if not callable(found) or found is getattr(Resource, method, None):
             declaration = declaration_of(resource)
             raise Unreachable(
                 f"{declaration.kind}: the {declaration.system!r} system has no {method!r}, so one "
                 f'is never {_DONE[method]}. Declare it `owner="them"` if that is the point.'
             )
-
-        def call(_: Any, *rest: Any) -> Any:
-            return found(self.view(resource), *rest)
-
-        return call
+        # Bound: resource.create() / resource.update(changes) / resource.delete().
+        return getattr(resource, method)
 
     def can(self, resource: Any, method: str) -> bool:
-        """Whether this resource's system offers one of the optional methods, `act` or `browse`."""
-        return offers(type(self.adapter_for(resource)), method)
+        """Whether this resource's class offers one of the optional methods, `act` or `browse`."""
+        return offers(type(resource), method)
 
     @property
     def transactional(self) -> list[str]:
@@ -191,30 +119,30 @@ class Ground:
             except Unreachable:
                 continue
 
-    def find_all(self, resources: list[Any]) -> dict[int, tuple[State, Record | None]]:
-        """Ask about several resources, one question per system where the adapter answers in bulk.
+    def find_all(self, resources: list[Any]) -> dict[int, tuple[State, Payload | None]]:
+        """Ask about several resources, one question per system where the class answers in bulk.
 
-        Keyed by identity, which is what a graph node is. An adapter with no `find_many` is asked
+        Keyed by identity, which is what a graph node is. A class with no `find_many` is asked
         once per resource, and answers the same.
         """
-        out: dict[int, tuple[State, Record | None]] = {}
+        out: dict[int, tuple[State, Payload | None]] = {}
         by_system: dict[str, list[Any]] = {}
         for node in resources:
             by_system.setdefault(declaration_of(node).system, []).append(node)
 
-        for system, mine in by_system.items():
+        for _system, mine in by_system.items():
             for node in [one for one in mine if self.unresolved(one)]:
                 out[id(node)] = (State.ABSENT, None)
             mine = [one for one in mine if id(one) not in out]
             if not mine:
                 continue
-            adapter = self.adapters.get(system)
-            if adapter is None or not offers(type(adapter), "find_many"):
+            cls = type(mine[0])
+            if not offers(cls, "find_many"):
                 for node in mine:
                     out[id(node)] = self.find(node)
                 continue
             try:
-                answered = adapter.find_many([self.view(node) for node in mine])
+                answered = cls.find_many(mine)
             except Unreachable:
                 out.update({id(node): (State.UNREACHABLE, None) for node in mine})
                 continue
@@ -226,12 +154,14 @@ class Ground:
         """Whether what recognises this thing is still a hole `needs()` will fill.
 
         Nothing can be asked about a thing that has no identity yet. It is absent until resolution
-        runs, and resolution runs when a test asks for one.
+        runs, and resolution runs when a test asks for one. A `Key` field with a plain default —
+        never a hole at all — counts as written down from the start.
         """
-        held = view(resource).values
-        return any(key not in held for key in self.recognition(resource))
+        declaration = declaration_of(resource)
+        values = resource.__atf_resource__.values
+        return any(name in declaration.needs and name not in values for name in declaration.key)
 
-    def find(self, resource: Any) -> tuple[State, Record | None]:
+    def find(self, resource: Any) -> tuple[State, Payload | None]:
         """Ask the environment whether this resource is there. The one question, asked every time.
 
         Nothing is written down between askings: a row deleted by hand or a database reset overnight
@@ -240,7 +170,7 @@ class Ground:
         if self.unresolved(resource):
             return State.ABSENT, None
         try:
-            found = self.adapter_for(resource).find(self.view(resource))
+            found = resource.find()
         except Unreachable:
             return State.UNREACHABLE, None
         return (State.PRESENT, found) if found is not None else (State.ABSENT, None)
@@ -251,7 +181,7 @@ class Ground:
 PATH_SETTINGS = ("root", "cwd", "path", "dir", "directory")
 
 
-def _against_manifest(settings: Record, root: Path) -> Record:
+def _against_manifest(settings: Payload, root: Path) -> Payload:
     """Resolve a relative path setting against the manifest's directory.
 
     A relative path in an environment's settings means "beside the manifest", whatever directory
@@ -270,14 +200,14 @@ def systems_used(suite: Suite) -> set[str]:
 
 
 def systems_wanted(suite: Suite, config: EnvironmentConfig) -> set[str]:
-    """Every system to build an adapter for: exactly the ones this suite's resources name."""
+    """Every system to check is buildable: exactly the ones this suite's resources name."""
     return systems_used(suite)
 
 
 def drivers_needed(suite: Suite, config: EnvironmentConfig) -> set[str]:
-    """Every driver to build: the ones the wanted adapters ask for, and the ones configured.
+    """Every driver to build: the ones the wanted systems ask for, and the ones configured.
 
-    A configured driver with no adapter behind it is built anyway — `shell` is the common case,
+    A configured driver with no system behind it is built anyway — `shell` is the common case,
     since a test can run a command line without arranging anything through one.
     """
     wanted: set[str] = {
@@ -291,21 +221,20 @@ def drivers_needed(suite: Suite, config: EnvironmentConfig) -> set[str]:
 
 
 def build_ground(suite: Suite, env: str = "") -> Ground:
-    """Build one adapter per system this suite uses, against one environment.
+    """Build one driver per system this suite uses, against one environment.
 
     Every problem is collected before raising, so a manifest missing three blocks says so once.
     """
     config = suite.manifest.env(env)
     problems: list[str] = []
     drivers: dict[str, Any] = {}
-    adapters: dict[str, Any] = {}
 
     for name in sorted(drivers_needed(suite, config)):
         cls = DRIVERS.get(name)
         if cls is None:
             problems.append(
-                f"no driver is registered as {name!r} — an extension declaring "
-                f"`@driver({name!r})` should be listed under `extensions:`"
+                f"no driver is registered as {name!r} — a class subclassing `Driver` and called "
+                f"{name.title().replace('_', '')!r} should be imported by the suite"
             )
             continue
         settings = config.for_system(name)
@@ -318,47 +247,46 @@ def build_ground(suite: Suite, env: str = "") -> Ground:
         except Exception as exc:  # noqa: BLE001 - whatever a driver's constructor raises is its own problem
             problems.append(f"the {name!r} driver could not be built: {type(exc).__name__}: {exc}")
 
+    built: set[str] = set()
     for system in sorted(systems_wanted(suite, config)):
         cls = suite.adapters.get(system)
         if cls is None:
             problems.append(
-                f"no adapter is registered for the {system!r} system — "
-                f"an extension declaring `@adapter({system!r})` should be listed under `extensions:`"
+                f"no system is registered for {system!r} — a class subclassing a system's own base "
+                f"(`Record`, `Row`, ...) with `at=`/`system=` should be imported by the suite"
             )
             continue
         asked = drivers_wanted(cls)
         missing = [one for one in asked if one not in drivers]
         if missing:
             problems.append(
-                f"the {system!r} adapter asks for the {', '.join(missing)} driver, and the "
+                f"the {system!r} system asks for the {', '.join(missing)} driver, and the "
                 f"{config.name!r} environment configures none"
             )
             continue
         try:
             check_shape(system, cls)
-            adapters[system] = cls(**{one: drivers[one] for one in asked})
-        except Exception as exc:  # noqa: BLE001 - whatever an adapter's constructor raises is this system's problem
+        except Exception as exc:  # noqa: BLE001 - whatever the shape check raises is this system's problem
             problems.append(f"the {system!r} system could not be built: {type(exc).__name__}: {exc}")
-
-    for kind, resource_class in sorted(suite.kinds.items()):
-        declaration = declaration_of(resource_class)
-        if declaration.system not in adapters:
             continue
-        try:
-            check(suite.adapters[declaration.system], "Options", declaration.options,
-                  f"{kind}'s @{declaration.system}(...) options")
-        except Exception as exc:  # noqa: BLE001
-            problems.append(str(exc))
+        built.add(system)
 
-    # An optional `check` lets an adapter refuse a declaration it cannot honour, before a run.
+    ground = Ground(suite=suite, config=config, drivers=drivers)
+    # What `cls.http`/`self.sql`-style driver access reads. Set before the optional `check` below,
+    # since a resource's own `check` may read a driver through its class the same way `create` does.
+    _CURRENT_GROUND.set(ground)
+
+    # An optional `check` lets a kind refuse a declaration it cannot honour, before a run. Only
+    # asked of a resource whose system actually built — one that did not already said why.
     for node in suite.instances.values():
-        adapter = adapters.get(declaration_of(node).system)
-        say = getattr(adapter, "check", None)
-        if callable(say) and (problem := say(view(node))):
+        if declaration_of(node).system not in built:
+            continue
+        say = getattr(node, "check", None)
+        if callable(say) and (problem := say()):
             problems.append(problem)
 
     if problems:
         raise GroundError(
             f"the {config.name!r} environment is not ready:\n  - " + "\n  - ".join(problems)
         )
-    return Ground(suite=suite, config=config, adapters=adapters, drivers=drivers)
+    return ground

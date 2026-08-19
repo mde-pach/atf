@@ -1,20 +1,21 @@
-"""The `browser` driver, and `@page(...)` — a page opened in it and looked at by role."""
+"""The `browser` driver, and `Page` — a page opened in it and looked at by role."""
 
 from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from typing_extensions import override
+
 from .. import claims
-from ..declare import Unreachable, adapter, declaration_of, driver
-from ..spi import Record, Resource
+from ..declare import Driver, DriverProperty, Resource, Unreachable, declaration_of, register_system
+from ..spi import Payload
 from ..steps import act, check
 
 
-@driver("browser")
-class Browser:
+class Browser(Driver):
     """One browser, and the pages opened in it.
 
-    A step asks for this by the name `browser`; the `page` adapter works through it.
+    A step asks for this by the name `browser`; `Page` works through it as `self.browser`.
     """
 
     class Settings(TypedDict, total=False):
@@ -47,20 +48,19 @@ class Browser:
             raise Unreachable(f"the browser would not start: {exc}") from exc
         return self._browser
 
-    def url(self, resource: Resource) -> str:
-        written = resource.values.get("path") or resource.values.get("url") or resource.options.get("url")
-        if not written:
-            raise Unreachable(f'{resource.kind}: no url — write it as a `path` field or @page(url="...")')
-        text = str(written)
+    def url(self, path: str) -> str:
+        if not path:
+            raise Unreachable("no url — write it as a `path` field")
+        text = str(path)
         return text if text.startswith("http") else f"{self.base_url}{text if text.startswith('/') else '/' + text}"
 
-    def opened(self, resource: Resource) -> Any | None:
-        """The page already open for this resource, or nothing."""
-        return self._pages.get(self.url(resource))
+    def opened(self, path: str) -> Any | None:
+        """The page already open at this path, or nothing."""
+        return self._pages.get(self.url(path))
 
-    def open(self, resource: Resource) -> Any:
-        """Open a page at this resource's url, and answer it."""
-        url = self.url(resource)
+    def open(self, path: str) -> Any:
+        """Open a page at this path, and answer it."""
+        url = self.url(path)
         page = self._start().new_page()
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=10_000)
@@ -69,15 +69,15 @@ class Browser:
         self._pages[url] = page
         return page
 
-    def close(self, resource: Resource) -> None:
-        """Close the page open for this resource, if one is."""
-        page = self._pages.pop(self.url(resource), None)
+    def close(self, path: str) -> None:
+        """Close the page open at this path, if one is."""
+        page = self._pages.pop(self.url(path), None)
         if page is not None:
             page.close()
 
-    def looking_at(self, resource: Resource) -> Any:
-        """The open page for this resource, opening it if it is not open yet."""
-        return self.opened(resource) or self.open(resource)
+    def looking_at(self, path: str) -> Any:
+        """The open page at this path, opening it if it is not open yet."""
+        return self.opened(path) or self.open(path)
 
     def capture(self, where: Any) -> list[str]:
         """A screenshot of every open page, written under `where`, and the paths written.
@@ -112,34 +112,33 @@ class Browser:
         self._browser = self._playwright = None
 
 
-@adapter("page", driver="browser")
-class Page:
+class Page(Resource):
     """A page open in the browser. Opening it is what makes it exist; closing it removes it."""
 
-    class Options(TypedDict, total=False):
-        """What the decorator takes, per resource."""
-
-        url: str
-
     #: A page is the address it is open at. There is no second way to recognise one.
-    recognised_by = ("path",)
+    path: Resource.Key[str]
 
-    def __init__(self, browser: Browser) -> None:
-        self.browser = browser
+    browser = DriverProperty[Browser]("browser")
 
-    def find(self, resource: Resource) -> Record | None:
-        page = self.browser.opened(resource)
+    @override
+    def find(self) -> Payload | None:
+        page = self.browser.opened(self.path)
         if page is None:
             return None
-        return {"url": self.browser.url(resource), "path": resource.values.get("path", ""), "title": page.title()}
+        return {"url": self.browser.url(self.path), "path": self.path, "title": page.title()}
 
-    def create(self, resource: Resource) -> Record:
-        page = self.browser.open(resource)
-        url = self.browser.url(resource)
-        return {"url": url, "path": resource.values.get("path", url), "title": page.title()}
+    @override
+    def create(self) -> Payload:
+        page = self.browser.open(self.path)
+        url = self.browser.url(self.path)
+        return {"url": url, "path": self.path, "title": page.title()}
 
-    def delete(self, resource: Resource, found: Record) -> None:
-        self.browser.close(resource)
+    @override
+    def delete(self) -> None:
+        self.browser.close(self.path)
+
+
+register_system(Page, Browser, "page")
 
 
 # --- The words this system brings ------------------------------------------------------------------
@@ -160,7 +159,7 @@ def _page(atf: Any) -> Any:
     looking = [node for node in atf.arranged if declaration_of(node).system == "browser.page"]
     if not looking:
         claims.fail("this sentence is about a page, and the scenario arranged none")
-    return atf.ground.drivers["browser"].looking_at(atf.ground.view(looking[-1]))
+    return atf.ground.drivers["browser"].looking_at(looking[-1].path)
 
 
 def _found(atf: Any, role: str, name: str) -> Any:

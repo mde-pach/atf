@@ -1,13 +1,24 @@
-"""`@row(...)` — a row in a table, over the `sql` driver."""
+"""`Row` — a row in a table, recognised by whatever `Row.Key` names."""
 
 from __future__ import annotations
 
 import importlib
-from typing import Any, TypedDict
+from typing import Any, ClassVar, TypedDict
 from urllib.parse import urlparse
 
-from ..declare import Unreachable, adapter, driver
-from ..spi import Record, Resource
+from typing_extensions import override
+
+from ..declare import (
+    Driver,
+    DriverProperty,
+    Resource,
+    Unreachable,
+    declaration_of,
+    instance_of,
+    is_resource,
+    register_system,
+)
+from ..spi import Payload
 
 #: URL scheme to the DB-API module that answers it, and the placeholder that module wants.
 MODULES: dict[str, tuple[str, str]] = {
@@ -25,23 +36,21 @@ def _table(
     unique: list[tuple[str, ...]],
     parents: dict[str, str],
 ) -> dict[str, Any]:
-    """One table, as the facts recognition and a written declaration are both read from."""
+    """One table, as `_held` reads it back to know which columns a write may use."""
     return {
         "table": name,
         "columns": [{"name": one, "type": kind} for one, kind in columns],
         "key": keys[0] if len(keys) == 1 else "",
-        #: Every unique constraint, shortest first. A row unique only in combination is one entry.
         "uniques": sorted(unique, key=len),
         "unique_by": unique[0][0] if unique and len(unique[0]) == 1 else "",
         "parents": parents,
     }
 
 
-@driver("sql")
-class Database:
+class Sql(Driver):
     """One connection, over any DB-API module named by the environment's URL.
 
-    A step asks for this by the name `sql`; the `sql` adapter works through it.
+    A step asks for this by the name `sql`; `Row` works through it as `self.sql`.
     """
 
     class Settings(TypedDict, total=False):
@@ -72,7 +81,7 @@ class Database:
 
     @property
     def where(self) -> str:
-        """What this adapter is pointed at, for a message about not reaching it."""
+        """What this driver is pointed at, for a message about not reaching it."""
         return self.path or self.url
 
     # --- The connection ---------------------------------------------------------------------------
@@ -97,7 +106,7 @@ class Database:
             return module.connect(self.url)
         return module.connect(self.path or ":memory:")
 
-    def rows(self, statement: str, values: tuple[Any, ...] = ()) -> list[Record]:
+    def rows(self, statement: str, values: tuple[Any, ...] = ()) -> list[Payload]:
         cursor = self.db.cursor()
         try:
             cursor.execute(statement, values)
@@ -121,17 +130,17 @@ class Database:
         return ", ".join(self.mark for _ in range(many))
 
     def describe(self) -> list[dict[str, Any]]:
-        """Every table this database holds, as the facts a declaration is written from.
+        """Every table this database holds: its name, its columns, and what it points at.
 
-        One entry per table: its name, its columns and their types, the single column that
-        recognises a row, and the tables it points at.
+        Read once, held for the driver's life — `Row._held` asks this per write, and the answer
+        does not change mid-run.
         """
         if self.module_name == "sqlite3":
             return [self._describe_sqlite(name) for name in self._sqlite_tables()]
         return [self._describe_standard(name) for name in self._standard_tables()]
 
     def schema(self) -> list[dict[str, Any]]:
-        """The same, read once and held. Recognition asks this per kind, and the answer is fixed."""
+        """The same, read once and held."""
         if self._schema is None:
             self._schema = self.describe()
         return self._schema
@@ -230,150 +239,145 @@ class Database:
             return
 
 
-@adapter("row", driver="sql")
-class Row:
-    """One row in a table, recognised by whatever the table holds unique."""
+class Row(Resource):
+    """One row in a table, recognised by whatever field its declaration marks `Row.Key`."""
 
-    class Options(TypedDict, total=False):
-        """What the decorator takes, per resource."""
+    #: The table this kind maps to, as `at=` wrote it. Sql's own setting, not ATF's — read from
+    #: the class alone, since building a query needs it before any instance exists.
+    at: ClassVar[str] = ""
+    sql = DriverProperty[Sql]("sql")
+    #: What this schema calls the primary key — the column `update`/`delete` write through.
+    id_field: ClassVar[str] = "id"
+    #: What a column holding a parent is called: `owner` becomes `owner_id`.
+    parent_suffix: ClassVar[str] = "_id"
 
-        #: The table this kind maps to. Defaults to the class's name, lowercased.
-        table: str
-        #: What this schema calls the primary key.
-        id_field: str
-        #: What a column holding a parent is called: `owner` becomes `owner_id`.
-        parent_suffix: str
+    def __init_subclass__(cls, *, at: str = "", **rest: Any) -> None:
+        if at:
+            cls.at = at
+        super().__init_subclass__(**rest)
 
-    def __init__(self, sql: Database) -> None:
-        self.sql = sql
+    @classmethod
+    def _table(cls) -> str:
+        return cls.at or cls.__name__.lower()
 
-    def table(self, resource: Resource) -> str:
-        return str(resource.options.get("table") or resource.kind.lower())
+    def _identity(self) -> Payload:
+        return {name: getattr(self, name) for name in declaration_of(self).key}
 
-    def recognises(self, resource: Resource) -> tuple[str, ...]:
-        """What tells one row from another: **whatever the table holds unique**.
-
-        The author writes nothing. Uniqueness is structure the schema already holds, and asking for
-        it back would be asking somebody to restate what this system can look up.
-        """
-        table = self.table(resource)
-        for one in self.sql.schema():
-            if one["table"] != table:
-                continue
-            # Shortest first, so a single unique column beats a composite one that also fits.
-            for columns in [*one["uniques"], (one["key"],) if one["key"] else ()]:
-                if columns and all(column in resource.fields for column in columns):
-                    return tuple(str(column) for column in columns)
-            held = ", ".join(str(c["name"]) for c in one["columns"]) or "no columns"
-            raise Unreachable(
-                f"{table} holds nothing unique that {resource.kind} declares.\n"
-                f"  The table has {held}, and a row is recognised by what the table holds unique."
-            )
-        raise Unreachable(f"{table}: no such table, so nothing recognises a {resource.kind}")
-
-    def _id_field(self, resource: Resource) -> str:
-        return str(resource.options.get("id_field", "id"))
-
-    def _suffix(self, resource: Resource) -> str:
-        return str(resource.options.get("parent_suffix", "_id"))
-
-    # --- What a resource declared -----------------------------------------------------------------
-
-
-    def _held(self, resource: Resource) -> set[str]:
+    def _held(self) -> set[str]:
         """Every column this table has, as the schema says."""
-        table = self.table(resource)
+        table = type(self)._table()
         for one in self.sql.schema():
             if one["table"] == table:
                 return {str(column["name"]) for column in one["columns"]}
         return set()
 
-    def _columns(self, resource: Resource) -> Record:
+    def _columns(self) -> Payload:
         """The declared fields, and each parent as the key of the row it was made as.
 
         A parent the table has no column for is left out. Something can have to exist first and
         leave no trace in the row, and whether it does is a fact the schema holds.
         """
-        columns: Record = dict(resource.values)
-        suffix = self._suffix(resource)
-        held = self._held(resource)
-        for field, parent in resource.parents.items():
-            key = f"{field}{suffix}"
+        held = self._held()
+        columns: Payload = {}
+        for field, value in instance_of(self).values.items():
+            if not is_resource(value):
+                columns[field] = value
+                continue
+            key = f"{field}{type(self).parent_suffix}"
             if held and key not in held:
                 continue
-            if parent.key is None:
+            identity = instance_of(value).identity
+            if identity is None:
                 raise Unreachable(f"{field}: the parent it points at has not been made")
-            columns[key] = parent.key
+            columns[key] = identity
         return columns
+
+    def _found_or_none(self) -> Payload | None:
+        return self.find()
 
     # --- The four ---------------------------------------------------------------------------------
 
-    def find(self, resource: Resource) -> Record | None:
-        identity = dict(resource.identity)
+    @override
+    def find(self) -> Payload | None:
+        identity = self._identity()
         if not identity:
-            raise Unreachable(f"{resource.kind}: nothing to recognise it by")
+            raise Unreachable(f"{type(self).__name__}: nothing to recognise it by")
         where = " AND ".join(f"{column} = {self.sql.mark}" for column in identity)
         found = self.sql.rows(
-            f"SELECT * FROM {self.table(resource)} WHERE {where}",
+            f"SELECT * FROM {type(self)._table()} WHERE {where}",
             tuple(identity.values()),
         )
         return found[0] if found else None
 
-    def find_many(self, resources: list[Resource]) -> list[Record | None]:
+    @classmethod
+    def find_many(cls, resources: list[Row]) -> list[Payload | None]:
         """Every one of these, one question per table, answered in the order asked.
 
         One recognised by several columns is asked for on its own, which is what `find` already does.
         """
-        answers: dict[int, Record | None] = {}
-        grouped: dict[tuple[str, str], list[Resource]] = {}
+        answers: dict[int, Payload | None] = {}
+        grouped: dict[tuple[str, str], list[Row]] = {}
         for one in resources:
-            if len(one.identity) == 1:
-                grouped.setdefault((self.table(one), next(iter(one.identity))), []).append(one)
+            keys = declaration_of(one).key
+            if len(keys) == 1:
+                grouped.setdefault((type(one)._table(), keys[0]), []).append(one)
             else:
-                answers[id(one)] = self.find(one)
+                answers[id(one)] = one.find()
 
         for (table, column), mine in grouped.items():
-            wanted = [one.identity[column] for one in mine]
-            rows = self.sql.rows(
-                f"SELECT * FROM {table} WHERE {column} IN ({self.sql.marks(len(wanted))})",
+            sql = mine[0].sql
+            wanted = [getattr(one, column) for one in mine]
+            rows = sql.rows(
+                f"SELECT * FROM {table} WHERE {column} IN ({sql.marks(len(wanted))})",
                 tuple(wanted),
             )
             by_value = {str(row.get(column)): row for row in rows}
             for one in mine:
-                answers[id(one)] = by_value.get(str(one.identity[column]))
+                answers[id(one)] = by_value.get(str(getattr(one, column)))
         return [answers[id(one)] for one in resources]
 
-    def create(self, resource: Resource) -> Record:
-        columns = self._columns(resource)
+    @override
+    def create(self) -> Payload:
+        columns = self._columns()
         names = ", ".join(columns)
         self.sql.execute(
-            f"INSERT INTO {self.table(resource)} ({names}) VALUES ({self.sql.marks(len(columns))})",
+            f"INSERT INTO {type(self)._table()} ({names}) VALUES ({self.sql.marks(len(columns))})",
             tuple(columns.values()),
         )
-        found = self.find(resource)
+        found = self.find()
         if found is None:
-            raise Unreachable(f"{self.table(resource)}: the row was written and cannot be read back")
+            raise Unreachable(f"{type(self)._table()}: the row was written and cannot be read back")
         return found
 
-    def update(self, resource: Resource, found: Record, changes: Record) -> Record:
+    @override
+    def update(self, changes: Payload) -> Payload:
+        found = self._found_or_none()
+        if found is None:
+            raise Unreachable(f"{type(self)._table()}: updating a row that is not there")
+        key = type(self).id_field
         assignments = ", ".join(f"{column} = {self.sql.mark}" for column in changes)
-        key = self._id_field(resource)
         self.sql.execute(
-            f"UPDATE {self.table(resource)} SET {assignments} WHERE {key} = {self.sql.mark}",
+            f"UPDATE {type(self)._table()} SET {assignments} WHERE {key} = {self.sql.mark}",
             (*changes.values(), found[key]),
         )
         return {**found, **changes}
 
-    def delete(self, resource: Resource, found: Record) -> None:
-        key = self._id_field(resource)
+    @override
+    def delete(self) -> None:
+        found = self._found_or_none()
+        if found is None:
+            return
+        key = type(self).id_field
         self.sql.execute(
-            f"DELETE FROM {self.table(resource)} WHERE {key} = {self.sql.mark}",
+            f"DELETE FROM {type(self)._table()} WHERE {key} = {self.sql.mark}",
             (found[key],),
         )
 
     # --- The optional ones ------------------------------------------------------------------------
 
-    def browse(self, resource: Resource) -> list[Record]:
+    def browse(self) -> list[Payload]:
         """Every row of this kind."""
-        return self.sql.rows(f"SELECT * FROM {self.table(resource)}")
+        return self.sql.rows(f"SELECT * FROM {type(self)._table()}")
 
+
+register_system(Row, Sql, "row")

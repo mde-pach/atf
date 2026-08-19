@@ -44,6 +44,8 @@ class Plan:
     undeclared: list[str] = field(default_factory=list)
     unreachable: str = ""
     spans: dict[str, str] = field(default_factory=dict)
+    #: Why each thing lives as long as it does, by name. The rule that decided it.
+    reasons: dict[str, str] = field(default_factory=dict)
 
     @property
     def sound(self) -> bool:
@@ -204,7 +206,7 @@ def undeclared(ground: Ground, suite: Suite) -> list[str]:
     """
     declared: dict[str, set[str]] = {}
     for node in suite.instances.values():
-        for key in ground.recognition(node):
+        for key in declaration_of(node).key:
             declared.setdefault(declaration_of(node).kind, set()).add(str(values_of(node).get(key)))
 
     out: list[str] = []
@@ -212,7 +214,7 @@ def undeclared(ground: Ground, suite: Suite) -> list[str]:
         example = next((one for one in suite.instances.values() if type(one) is cls), None)
         if example is None or not ground.can(example, "browse"):
             continue
-        keys = ground.recognition(example)
+        keys = declaration_of(example).key
         try:
             everything = reconcile.browse(ground, example)
         except Exception:  # noqa: BLE001 - a system that cannot be listed contributes nothing here
@@ -243,6 +245,9 @@ def build(
         python_tests=len(python_tests(suite)),
         faults=lint(suite, features, phrases),
         spans=lives.table(suite),
+        reasons={
+            name: lives.why(lives.of(node), node) for name, node in suite.instances.items()
+        },
     )
     if ground is None:
         plan.unreachable = f"no environment called {environment!r}"
@@ -277,10 +282,10 @@ def lines(plan: Plan) -> list[str]:
         out.append(f"  {plan.environment}")
         out.append(f"    {len(present) - len(drifted)} present · {len(absent)} absent · {len(drifted)} drifted")
         for one in absent:
-            span = plan.spans.get(one.name, "")
+            resolved = plan.reasons.get(one.name, "") == lives.BECAUSE[lives.THE_RUN]
             would = "will be left alone"
             if one.did is Did.CREATED:
-                would = "will be resolved when asked for" if span == lives.THE_RUN else "will be made"
+                would = "will be resolved when asked for" if resolved else "will be made"
             out.append(f"      absent      {one.name:<24} {would}")
         for one in drifted:
             out.append(f"      drifted     {one.name:<24} {', '.join(sorted(one.changes))}")

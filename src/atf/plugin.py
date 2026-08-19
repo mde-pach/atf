@@ -227,7 +227,7 @@ def capture(nodeid: str) -> list[str]:
     ground = _LOADED.ground
     where = Path(_LOADED.suite.manifest.root) / ARTEFACTS_DIR / _slug(nodeid)
     written: list[str] = []
-    for one in (*ground.adapters.values(), *ground.drivers.values()):
+    for one in ground.drivers.values():
         taking = getattr(one, "capture", None)
         if not callable(taking):
             continue
@@ -306,6 +306,8 @@ class ScenarioItem(pytest.Item):
         for tag in scenario.tags:
             self.add_marker(tag)
         self.sentences: list[Sentence] = []
+        #: The chain that put the things under a failing claim there, read while they were still up.
+        self.standing: list[str] = []
 
     def resolve(self) -> list[Sentence]:
         """Expand phrases, bind every line to the step that answers it, and check the order.
@@ -321,6 +323,15 @@ class ScenarioItem(pytest.Item):
         steps.arranged_first(self.sentences)
         return self.sentences
 
+    def _chain(self) -> list[str]:
+        """The lineage of everything this scenario reached, with what the environment says now."""
+        from . import enter
+
+        reached = sorted(footprint_of(self).touches)
+        if not reached or _LOADED is None:
+            return []
+        return enter.graph_of(_LOADED.suite, _LOADED.ground, reached)
+
     @override
     def runtest(self) -> None:
         state = runtime.start(Scope(suite=loaded().suite, ground=loaded().ground, run=loaded().made))
@@ -331,8 +342,10 @@ class ScenarioItem(pytest.Item):
             if ACCEPT:
                 self._draft(state)
         except Exception:
-            # Before teardown: a page a scenario was looking at is closed the moment its Screen goes.
+            # Before teardown: a page a scenario was looking at is closed the moment its Screen goes,
+            # and what the environment holds is what it held when the claim did not hold.
             ARTEFACTS[self.nodeid] = capture(self.nodeid)
+            self.standing = self._chain()
             raise
         finally:
             observed(self.nodeid, state)
@@ -361,19 +374,15 @@ class ScenarioItem(pytest.Item):
         gets discovered without documentation and what turns red output from a report into a next
         step.
         """
-        from . import enter
-
         where = getattr(excinfo.value, "atf_sentence", None)
         out = [f"{self.scenario.path}:{self.scenario.number}  Scenario: {self.scenario.name}"]
         if where is not None:
             out.append(f"  {where.keyword.title()} {where.text}")
         out += ["", f"  {excinfo.value}"]
 
-        reached = sorted(footprint_of(self).touches)
-        if reached and _LOADED is not None:
-            drawn = enter.graph_of(_LOADED.suite, _LOADED.ground, reached)
-            if drawn:
-                out += ["", *drawn]
+        drawn = self.standing or self._chain()
+        if drawn:
+            out += ["", *drawn]
         out += ["", f'  → atf enter "{self.scenario.name}"']
         return "\n".join(out)
 

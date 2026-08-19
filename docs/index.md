@@ -1,263 +1,198 @@
 # Start
 
-One path, end to end, against something real, ending green. Read once, on day one.
+You have an application and you want a test against it. Here is the shortest path from nothing to a
+green suite, and then to a red one and back.
 
-Everything here is the whole of what you need to run a suite. [The model](model.md) is the page for
-when the shape stops being obvious, and [Extending](extending.md) is the one person on your team who
-writes a system.
-
-## Install it, and let it look around
+## Something green
 
 ```console
-$ pip install atf
-$ atf init
-```
-
-`atf init` does not hand you an empty file. It looks for what is already here — a compose file, an
-`.env`, a database URL, a command on your path — declares what it finds, writes one scenario, runs
-it, and prints green:
-
-```console
-found a compose file (docker-compose.yml)
-found a database url (postgres://todo:***@localhost/todo)
-found todo on the path
+$ git clone https://github.com/mde-pach/atf
+$ pip install ./atf
+$ cd ~/my-project && atf init
+found nothing already here — the scaffold declares a file, which always works
 wrote atf.yaml
 wrote atf/things.py
 wrote atf/hello.feature
 
-0 failed, 1 passed, 0 skipped   (r-2b09ca)
+0 failed, 1 passed, 0 skipped   (r-b60d1c)
 
 green. Write the next scenario in atf/hello.feature.
 ```
 
-Two files and one directory. Nothing points at the directory — ATF finds `atf/` beside the manifest
-the way pytest finds a `conftest.py`.
+`atf init` looks around — a compose file, an `.env`, a database URL, a command on your path — writes
+a manifest naming what it found, writes one scenario, runs it, and says whether it went green. ATF
+needs Python 3.11 or newer.
 
-## Declare a thing
-
-Open `atf/things.py`. A thing is an ordinary class with one framework word in it:
-
-```python
-from atf import needs, sql
-
-
-@sql.row(table="owners")
-class Owner:
-    email: str
-
-
-primary = Owner(email="primary@example.com")
-```
-
-The decorator says which system this lives in. The annotations are the shape. The module-level
-variable is one particular owner, and its **name is the variable's name** — that is what a scenario
-says.
-
-Nothing has been created. Declaring is not doing; `atf plan` is what tells you where you stand:
-
-```console
-$ atf plan
-
-  1 scenarios
-
-  local
-    0 present · 1 absent · 0 drifted
-      absent      primary                  will be made
-```
-
-## Say what one needs
-
-A thing that hangs off another says so at the field that holds it:
-
-```python
-@sql.row(table="lists")
-class TodoList:
-    owner: Owner = needs()          # this is the edge
-    slug: str
-
-
-groceries = TodoList(owner=primary, slug="groceries")
-```
-
-`needs()` on its own resolves whatever the annotation names — the field says `Owner`, so writing
-`Owner` again would be saying it twice. That one word is the whole of lineage: ATF now knows to make
-`primary` before `groceries`, to tear them down the other way round, and which tests break if either
-moves.
-
-## Let it fill in what you do not care about
-
-Give `needs()` an argument and it names something else — another kind, or **any callable at all**:
-
-```python
-def a_slug(owner: Owner) -> str:
-    return f"{owner.email.split('@')[0]}-list"
-
-
-@sql.row(table="owners")
-class Owner:
-    email: str = needs(fake.unique.email)
-
-
-@sql.row(table="lists")
-class TodoList:
-    owner: Owner = needs()
-    slug: str = needs(a_slug)
-```
-
-**A resolver may itself take things**, which is what makes a separate "factory" concept unnecessary.
-`a_slug` asks for an `Owner` and gets *this list's* owner.
-
-ATF never produces a value itself. Uniqueness is the provider's job too, because `fake.unique`
-already does it and a worse reimplementation helps nobody.
-
-## Write a scenario
-
-```gherkin
-Feature: lists belong to their owner
-
-Scenario: a list shows under its owner
-  Given the list "groceries"
-  When I run "todo show primary@example.com"
-  Then it mentions "groceries"
-```
-
-Three sentences, and each is one of three verbs:
-
-- **`Given`** arranges. `the list "groceries"` is that one; `a list` is any one, resolved. Every
-  `Given` comes first.
-- **`When`** acts. Whatever it produced becomes **`it`**.
-- **`Then`** checks, about `it` or about a declared thing.
-
-`Then` may come before another `When`. Assert before you act again and you never need to name a
-result:
-
-```gherkin
-Scenario: making twice recognises rather than duplicates
-  When I make the standup note
-  Then it created the note
-  When I make the standup note again
-  Then it left the note unchanged
-```
-
-## Quoting carries the type
-
-```gherkin
-Then its exit code is 0        # the number
-Then its slug is "0"           # the text
-Then its archived is false     # the boolean
-Then its "id" is any uuid      # a kind, where the value is not the point
-```
-
-The rule every language already uses. If you compare a number with quoted text, the failure says so
-and names the fix.
-
-Text between quotes reads its escapes — `\n`, `\t`, `\\`, `\"`. The full list of sentences and kinds
-is [generated from the registrations](reference/sentences.md), and `atf edit` serves it for the
-suite in front of you.
-
-## Run it
-
-```console
-$ atf run
-
-0 failed, 12 passed, 0 skipped   (r-4c1e77)
-```
-
-**It parallelises itself**, with no flag: two scenarios that share nothing permanent cannot
-interfere, and the graph knows which those are.
-
-You never make anything by hand. `atf run` makes what it needs, and `atf plan` shows what is
-missing. If you want the state without the tests, that is `atf plan --apply`.
-
-## Read a failure
-
-```
-✗ a list shows under its owner                      atf/lists.feature:6
-
-  Then it mentions "groceries"
-       it mentioned nothing — the output was empty
-
-  groceries    made for this test
-  └ primary    present, made 3 runs ago
-    └ owners   present
-
-  → atf enter "a list shows under its owner"
-```
-
-Every framework prints the assertion. ATF prints why the thing under it existed, because it declared
-it. And the last line is not decoration: it is where you go next.
-
-```console
-$ atf enter                          # no argument: the thing that just broke
-
-  a list shows under its owner · arranged, replayed to the failing line
-
-    ✓ Given the list "groceries"
-    ✓ When I run "todo show primary@example.com"
-    ✗ Then it mentions "groceries"
-
-  >>> it
-      exit_code 0 · output ""
-
-  >>> groceries
-      slug "groceries" · owner primary · present, made just now
-
-  >>> When I run "todo show --all"
-      exit_code 0 · output "groceries"
-```
-
-It is not a debugger — no frames, no locals, no `pdb`. The prompt speaks your suite's language, so
-there is nothing to learn in order to use it. `next` steps one sentence; naming a thing re-reads it
-from the environment now; any sentence your suite knows runs for real; and `keep as "…"` writes what
-you typed out as a scenario.
-
-## Let ATF draft the claims
-
-Write the act and stop. A scenario with no `Then` promises nothing, so it is already a request:
-
-```gherkin
-Scenario: show lists what the owner has
-  Given the list "groceries"
-  When I run "todo show primary@example.com"
-```
-
-```console
-$ atf run --accept
-```
-
-```gherkin
-  Then its exit code is 0
-  And it mentions "groceries"
-  And it mentions "primary@example.com"
-```
-
-Delete the ones you do not care about. It is easier to approve an expectation than to invent one,
-especially before you know the shape of the output.
-
-## Point it at somewhere else
+Three files. One says where to run:
 
 ```yaml
 environments:
   local:
+    # ATF may make things here. `them` means it may only look.
     owner: atf
-    sql: { path: ./local.db }
-
-  staging:
-    from:  local
-    owner: them
-    sql:   { url_env: STAGING_DATABASE_URL }
+    filesystem: { root: . }
+    shell: { prefix: "" }
 ```
 
-`owner: them` means ATF may only look. Every thing in that environment becomes observed, whatever
-any single declaration said — so the same suite runs against staging and creates nothing.
+One says what has to exist:
+
+```python
+from atf import needs
+from atf.resources.filesystem import File
+
+
+class Note(File):
+    path: File.Key[str]
+    text: str = needs(lambda: "written by atf init\n")
+
+
+hello = Note(path="atf-hello.txt", text="hello from atf\n")
+```
+
+And one is the test:
+
+```gherkin
+Feature: the suite runs
+
+  Scenario: a declared file is there before the test
+    Given the note "hello"
+    Then the note "hello" text is "hello from atf\n"
+```
+
+`Given the note "hello"` is what makes the file exist. Nothing else set it up.
+
+## A suite over a real application
+
+The rest of this page is `examples/todo` in the repository: a FastAPI application over SQLAlchemy
+models on SQLite, and the suite that tests it.
 
 ```console
-$ atf run --env staging
+$ cd atf/examples/todo
+$ atf run
+0 failed, 11 passed, 0 skipped   (r-83579b)
 ```
 
-## Where to go next
+Nothing was started first. Between those two lines ATF started the API, waited for its port, created
+an owner and a list over HTTP, wrote a task row into the database, ran eight scenarios and three
+Python tests, took back everything it had made, and stopped the API.
 
-- [The model](model.md), when the shape stops being obvious — one page.
-- [Extending](extending.md), when your domain needs a word ATF does not ship.
-- `atf explain <anything>` — a thing, a kind, a system, a scenario, a phrase, a file.
-- `atf edit` — the suite, its graph, its spec and its own vocabulary, in a browser.
+It knew what to do because the suite says what has to exist:
+
+```python
+from atf import needs
+from atf.resources.process import Process
+from atf.resources.rest import Record
+
+
+class Api(Process, lives="the run"):
+    """The API under test, started for the run and stopped when it ends."""
+
+    command: Process.Key[str] = "python api.py"
+    port: int = 8801
+
+
+class Listed(Record):
+    """This API answers a listing as `{"items": [...]}` — its own shape, not ATF's."""
+
+    def _collection(self, params=None):
+        url = type(self)._path()
+        return self.http.client.get(url, params=dict(params or {})).json().get("items", [])
+
+
+class Owner(Listed, at="/owners"):
+    api: Api = needs()
+    email: Record.Key[str] = needs(an_email)
+
+
+class TodoList(Listed, at="/lists"):
+    owner: Owner = needs()
+    slug: Record.Key[str]
+
+
+serving = Api()
+primary = Owner(api=serving, email="primary@example.com")
+groceries = TodoList(owner=primary, slug="groceries")
+```
+
+The path a system reads for is named once, on the field: `Record.Key[str]` says what tells one
+`Owner` apart from another, the way `File.Key[str]` did above for a `Note`. `Owner`/`TodoList`
+share one override, `Listed`, for the one thing this API does its own way — a listing comes back
+wrapped, not bare — written where the two declarations that need it are, not as an option every
+other API would carry.
+
+And the scenarios ask for things by name:
+
+```gherkin
+  Scenario: a list shows under its owner
+    Given the todo_list "groceries"
+    When I ask for the lists of "primary"
+    Then the answer names "groceries"
+```
+
+`Given the todo_list "groceries"` makes the owner first and then the list, because `TodoList.owner`
+says `needs()`. That is the whole of how ATF knows the order.
+
+## It went red
+
+Change the claim so it does not hold, and run again:
+
+```console
+$ atf run
+atf/lists.feature:9  Scenario: a list shows under its owner
+  Then the answer names "vegetables"
+
+  the answer: it named groceries
+
+  groceries            present, the test
+    └ primary              present, the run
+      └ serving              present, the run
+
+  → atf enter "a list shows under its owner"
+
+1 failed, 10 passed, 0 skipped   (r-30dd5e)
+```
+
+The sentence that stopped, what came back, then the chain that put the subject of the claim there —
+each link with what the environment says about it and how long it lives. The last line is the
+command that takes you back inside.
+
+## Inside it
+
+```console
+$ atf enter
+  a list shows under its owner · arranged, replayed to the failing line
+
+    ✓ Given the todo_list "groceries"
+    ✓ When I ask for the lists of "primary"
+    ✗ Then the answer names "vegetables"
+      the answer: it named groceries
+>>> primary
+      a owner · present · lives the run
+      email 'primary@example.com', id 2
+>>> I ask for the lists of "primary"
+      items [{'id': 1, 'slug': 'groceries', 'owner_id': 2}]
+>>> done
+```
+
+Bare `atf enter` takes the last thing that failed, arranges it again, replays to the line that
+stopped, and leaves a prompt there. Any sentence the suite knows runs for real; a thing's name reads
+it from the environment now; `?` lists the rest. It writes what a run writes, and takes it away when
+you type `done`.
+
+The API did answer with `groceries`, so the claim was wrong about the word. Put it back:
+
+```console
+$ atf run
+0 failed, 11 passed, 0 skipped   (r-32e9b6)
+```
+
+## Next
+
+- [Arranging what a test needs](guides/arranging.md) — declaring things, and how one needs another.
+- [Running it somewhere else](guides/environments.md) — environments, and what ATF may write in each.
+- [Leaving nothing behind](guides/cleanup.md) — how long things live, and what a run takes back.
+- [When it goes red](guides/failures.md) — reading a failure, and getting inside one.
+- [Running less of it](guides/choosing.md) — selection, sharding, and what runs beside what.
+- [Saying it in your own words](guides/words.md) — phrases, acts, checks, kinds, report formats.
+- [Somewhere ATF has not heard of](guides/systems.md) — writing a system of your own.
+- [Sentences](reference/sentences.md) and [Commands](reference/commands.md), both generated.

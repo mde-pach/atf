@@ -128,7 +128,7 @@ def _lineage(suite: Suite, name: str) -> set[str]:
 def _whole_kind(suite: Suite, sentence: Sentence, step: steps.Step) -> set[str]:
     """Every instance of a kind a sentence names without naming one of them.
 
-    `When I list every todo_list` and `Then the environment has 2 todo_list` reach the set.
+    `When I list every todo_list` and `Then there are 2 todo_lists` reach the set.
     """
     if step.touch != READS:
         return set()

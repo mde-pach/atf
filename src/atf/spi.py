@@ -1,41 +1,14 @@
-"""What an adapter is: four required methods, two optional, and the two vocabularies."""
+"""The two vocabularies a system answers in, and the settings-checking every driver goes through."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Protocol, get_type_hints, runtime_checkable
+from typing import Any, get_type_hints
 
-Record = dict[str, Any]
-
-
-@dataclass(frozen=True)
-class Parent:
-    """A resource this one hangs off, as an adapter needs it: its kind, and what it was made as."""
-
-    kind: str
-    key: Any
-
-
-@dataclass(frozen=True)
-class Resource:
-    """One declared thing, as a system sees it.
-
-    `values` holds the declared scalars and `parents` the lineage, already resolved to the keys the
-    parents were made as — a system never looks a parent up again.
-    """
-
-    kind: str
-    name: str
-    options: Record
-    fields: dict[str, Any]
-    values: Record
-    identity: Record
-    parents: dict[str, Parent]
-    #: `atf` or `them` — who is responsible for one of these existing, here.
-    owner: str = "atf"
-    #: `forever`, `the run` or `the test`. Read off the suite; a system never chooses it.
-    lives: str = "forever"
+#: A raw record of wire data — what a system's `find`/`create`/etc. actually hands back or is given.
+#: Not `Record`: that name is a declared kind's own base class now (`class Owner(Record, at=...)`),
+#: and a floating `dict[str, Any]` alias of the same name would only be confusing beside it.
+Payload = dict[str, Any]
 
 
 class State(StrEnum):
@@ -57,31 +30,17 @@ class Did(StrEnum):
     LEFT_ALONE = "left alone"
 
 
-@runtime_checkable
-class Adapter(Protocol):
-    """The four methods every adapter has. `act` and `browse` are optional and checked for."""
-
-    def find(self, resource: Any) -> Record | None: ...
-
-    def create(self, resource: Any) -> Record: ...
-
-    def update(self, resource: Any, found: Record, changes: Record) -> Record: ...
-
-    def delete(self, resource: Any, found: Record) -> None: ...
-
-
 # `find` is the only one every system answers. A thing that is looked at and never made — a page,
-# a table somebody else owns — implements this and nothing else.
+# a table somebody else owns — writes this and nothing else.
 REQUIRED = ("find",)
 # `create`, `update` and `delete` are what a thing ATF makes needs; a system without one refuses
 # that operation by name. `browse` adds a sentence, `find_many` answers about several resources at
-# once, `recognises` says what tells one of these apart, and `begin`/`rollback` wrap a test.
+# once, and `begin`/`rollback` wrap a test.
 WRITES = ("create", "update", "delete")
 OPTIONAL = (
     *WRITES,
     "browse",
     "find_many",
-    "recognises",
     "begin",
     "rollback",
     "capture",
@@ -91,31 +50,13 @@ OPTIONAL = (
 
 
 class SpiError(Exception):
-    """Raised when an adapter class is not one, or is configured with something it cannot read."""
+    """Raised when a system class is not one, or is configured with something it cannot read."""
 
 
-def check_shape(name: str, cls: type) -> None:
-    """Whether this class is an adapter at all, before an environment is built from it."""
-    missing = [method for method in REQUIRED if not callable(getattr(cls, method, None))]
-    if missing:
-        raise SpiError(
-            f"the {name!r} adapter ({cls.__module__}.{cls.__qualname__}) has no "
-            f"{', '.join(missing)} — an adapter answers all of {', '.join(REQUIRED)}"
-        )
+def check(cls: type, kind: str, given: Payload, where: str) -> Payload:
+    """Check a mapping against a driver's own `Settings`, and return it.
 
-
-def offers(cls: type, method: str) -> bool:
-    """Whether an adapter implements one of the optional methods.
-
-    Which optional methods an adapter has decides which sentences exist. Asked at collection.
-    """
-    return callable(getattr(cls, method, None))
-
-
-def check(cls: type, kind: str, given: Record, where: str) -> Record:
-    """Check a mapping against the adapter's own `Options` or `Settings`, and return it.
-
-    Both are checked before a run. An adapter that declares neither takes whatever it is given.
+    A driver that declares none takes whatever it is given.
     """
     declared = getattr(cls, kind, None)
     if declared is None:

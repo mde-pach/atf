@@ -1,5 +1,0 @@
-environments:
-  local:
-    owner: atf
-    http:  { base_url: "http://127.0.0.1:8799" }
-    shell: { cwd: . }

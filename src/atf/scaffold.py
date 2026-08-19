@@ -112,12 +112,12 @@ A domain class with one framework word in it. `needs()` says how to get one when
 which is what a default *is*, and why it earns the default slot. Nothing else here belongs to ATF.
 """
 
-from atf import filesystem, needs
+from atf import needs
+from atf.resources.filesystem import File
 
 
-@filesystem.file()
-class Note:
-    path: str
+class Note(File):
+    path: File.Key[str]
     text: str = needs(lambda: "written by atf init\\n")
 
 

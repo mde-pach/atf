@@ -10,19 +10,17 @@ from .declare import (
     THE_TEST,
     Declaration,
     DeclarationError,
+    Driver,
     Instance,
     Need,
+    Resource,
     Unreachable,
-    adapter,
     declaration_of,
-    driver,
     instance_of,
     is_declared,
     is_resource,
     name_of,
     needs,
-    resource,
-    system,
     values_of,
 )
 from .graph import (
@@ -39,8 +37,11 @@ from .loader import Suite, SuiteError, fixture_name, load_suite
 from .manifest import Environment, Manifest, ManifestError
 
 # Importing this registers the systems ATF ships, so a manifest naming `filesystem:` settings finds
-# one without the suite listing anything anywhere.
-from . import systems  # noqa: F401  # isort: skip
+# one without the suite listing anything anywhere. `resources` is what a suite actually imports
+# from — `from atf.resources.filesystem import File` — kept out of the flat `atf` namespace on
+# purpose: `atf.File`/`atf.Record`/`atf.Row`/... piling up at the top level is exactly the
+# unnamespaced sprawl a suite-facing import should not have to wade through.
+from . import resources, systems  # noqa: F401  # isort: skip
 from .environment import Ground, GroundError, build_ground  # isort: skip
 from .reconcile import (  # isort: skip
     Reconciliation,
@@ -54,7 +55,7 @@ from .reconcile import (  # isort: skip
     status,
     teardown,
 )
-from .spi import Adapter, Did, Record, Resource, SpiError, State  # isort: skip
+from .spi import Did, Payload, SpiError, State  # isort: skip
 
 from . import claims  # isort: skip
 from . import lives  # isort: skip
@@ -83,7 +84,7 @@ __all__ = [
     "SPANS",
     "THE_RUN",
     "THE_TEST",
-    "Adapter",
+    "Driver",
     "CycleError",
     "Declaration",
     "DeclarationError",
@@ -99,9 +100,9 @@ __all__ = [
     "ManifestError",
     "Need",
     "Outcome",
+    "Payload",
     "ProvisionError",
     "Reconciliation",
-    "Record",
     "Resource",
     "Run",
     "SpiError",
@@ -116,7 +117,6 @@ __all__ = [
     "Where",
     "__version__",
     "act",
-    "adapter",
     "browse",
     "browser",
     "build_ground",
@@ -127,7 +127,6 @@ __all__ = [
     "declaration_of",
     "dependents",
     "diff",
-    "driver",
     "edges",
     "ensure",
     "filesystem",
@@ -148,11 +147,10 @@ __all__ = [
     "parents",
     "provision",
     "report",
-    "resource",
+    "resources",
     "shell",
     "sql",
     "status",
-    "system",
     "teardown",
     "teardown_order",
     "unused",

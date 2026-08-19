@@ -85,7 +85,7 @@ def a_resource(
     record = instance_of(node)
     everything = list(suite.instances.values())
 
-    recognised = ground.recognition(node) if ground else ()
+    recognised = declaration.key
     by = ", ".join(f"{one} {values_of(node).get(one)!r}" for one in recognised)
     out = [
         f"  {name} · a {fixture_name(declaration.kind)} · {declaration.system}"

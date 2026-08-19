@@ -19,7 +19,7 @@ MARK = "atf-verify"
 
 @dataclass(frozen=True)
 class Finding:
-    """One thing the contract asks of an adapter, and whether it held."""
+    """One thing the contract asks of a system, and whether it held."""
 
     what: str
     held: bool
@@ -34,19 +34,19 @@ class Unverifiable(Exception):
     """Raised when the contract cannot be put to this resource at all."""
 
 
-def _stand_in(ground: Ground, resource: Any) -> Any:
+def _stand_in(resource: Any) -> Any:
     """A copy of a thing recognised by a value nothing else uses.
 
-    What recognises it is the system's own answer, so this marks whatever the system named. The
+    What recognises it is the class's own `Key`, so this marks whatever field is named there. The
     copy is never the thing a suite declared, and what this writes is deleted before it returns.
     """
     declaration = declaration_of(resource)
-    recognised = ground.recognition(resource)
+    recognised = declaration.key
     if not recognised:
-        raise Unverifiable(f"the {declaration.system} system does not say what recognises one")
+        raise Unverifiable(f"the {declaration.system} system declares no Key field")
     values = dict(values_of(resource))
     for field in recognised:
-        value = values.get(field)
+        value = values.get(field, getattr(resource, field, None))
         if not isinstance(value, str):
             raise Unverifiable(
                 f"{declaration.kind} is recognised by {field!r}, which holds {value!r}. "
@@ -61,7 +61,7 @@ def _stand_in(ground: Ground, resource: Any) -> Any:
 
 
 def verify(ground: Ground, resource: Any) -> list[Finding]:
-    """Put this resource's adapter through the four required methods and report what held.
+    """Put this resource's class through the four required methods and report what held.
 
     Everything is done to a marked copy, and the copy is removed whether the contract held or not.
     """
@@ -71,20 +71,19 @@ def verify(ground: Ground, resource: Any) -> list[Finding]:
     if ground.owner_of(resource) == "them":
         raise Unverifiable(f'{declaration.kind} is declared `owner="them"`, so ATF never makes one')
 
-    stand_in = _stand_in(ground, resource)
-    adapter = ground.adapter_for(stand_in)
+    stand_in = _stand_in(resource)
     found: list[Finding] = []
 
     try:
         found.append(_absent_is_absent(ground, stand_in))
-        found.append(_create_returns_the_record(ground, adapter, stand_in))
+        found.append(_create_returns_the_record(ground, stand_in))
         found.append(_created_matches_its_declaration(ground, stand_in))
-        found += _update_writes(ground, adapter, stand_in)
-        gone, removed = _delete_removes(ground, adapter, stand_in)
+        found += _update_writes(ground, stand_in)
+        gone, removed = _delete_removes(ground, stand_in)
         found.append(gone)
-        found.append(_delete_is_idempotent(ground, adapter, stand_in, removed))
+        found.append(_delete_is_idempotent(ground, stand_in, removed))
     finally:
-        _remove(ground, adapter, stand_in)
+        _remove(ground, stand_in)
     return found
 
 
@@ -101,9 +100,9 @@ def _absent_is_absent(ground: Ground, resource: Any) -> Finding:
     )
 
 
-def _create_returns_the_record(ground: Ground, adapter: Any, resource: Any) -> Finding:
+def _create_returns_the_record(ground: Ground, resource: Any) -> Finding:
     try:
-        record = adapter.create(ground.view(resource))
+        record = ground.perform(resource, "create")()
     except Unreachable as exc:
         return Finding("`create` answers with the record it wrote", False, str(exc))
     if not isinstance(record, dict) or not record:
@@ -134,8 +133,8 @@ def _writable_field(resource: Any, recognised_by: tuple[str, ...]) -> str:
     return ""
 
 
-def _update_writes(ground: Ground, adapter: Any, resource: Any) -> list[Finding]:
-    field = _writable_field(resource, ground.recognition(resource))
+def _update_writes(ground: Ground, resource: Any) -> list[Finding]:
+    field = _writable_field(resource, declaration_of(resource).key)
     if not field:
         return [Finding("`update` writes what it is handed", True, "no field to write; nothing asked")]
     state, record = ground.find(resource)
@@ -143,7 +142,7 @@ def _update_writes(ground: Ground, adapter: Any, resource: Any) -> list[Finding]
         return [Finding("`update` writes what it is handed", False, f"`find` says {state}")]
     wanted = f"{values_of(resource).get(field)}-changed"
     try:
-        adapter.update(ground.view(resource), record, {field: wanted})
+        ground.perform(resource, "update")({field: wanted})
     except Unreachable as exc:
         return [Finding("`update` writes what it is handed", False, str(exc))]
     _, after = ground.find(resource)
@@ -158,13 +157,13 @@ def _update_writes(ground: Ground, adapter: Any, resource: Any) -> list[Finding]
     return [Finding("`update` writes what it is handed", True)]
 
 
-def _delete_removes(ground: Ground, adapter: Any, resource: Any) -> tuple[Finding, Any]:
+def _delete_removes(ground: Ground, resource: Any) -> tuple[Finding, Any]:
     """Whether `delete` takes it away, and the record it was handed."""
     _, record = ground.find(resource)
     if record is None:
         return Finding("`delete` takes the resource away", False, "it was already gone"), None
     try:
-        adapter.delete(ground.view(resource), record)
+        ground.perform(resource, "delete")()
     except Unreachable as exc:
         return Finding("`delete` takes the resource away", False, str(exc)), record
     state, _ = ground.find(resource)
@@ -173,13 +172,13 @@ def _delete_removes(ground: Ground, adapter: Any, resource: Any) -> tuple[Findin
     return Finding("`delete` takes the resource away", True), record
 
 
-def _delete_is_idempotent(ground: Ground, adapter: Any, resource: Any, record: Any) -> Finding:
+def _delete_is_idempotent(ground: Ground, resource: Any, record: Any) -> Finding:
     """Deleting the same record twice is what a killed run leaves behind for the next one."""
     what = "`delete` on a record already gone is not an error"
     if record is None:
         return Finding(what, True, "nothing was deleted, so nothing asked")
     try:
-        adapter.delete(ground.view(resource), record)
+        ground.perform(resource, "delete")()
     except Unreachable as exc:
         return Finding(what, False, str(exc))
     except Exception as exc:  # noqa: BLE001 - anything at all here is the finding
@@ -187,12 +186,12 @@ def _delete_is_idempotent(ground: Ground, adapter: Any, resource: Any, record: A
     return Finding(what, True)
 
 
-def _remove(ground: Ground, adapter: Any, resource: Any) -> None:
+def _remove(ground: Ground, resource: Any) -> None:
     """Take the marked copy away, whatever the contract said."""
     try:
         _, record = ground.find(resource)
         if record is not None:
-            adapter.delete(ground.view(resource), record)
+            ground.perform(resource, "delete")()
     except Exception:  # noqa: BLE001 - cleaning up is best effort, and the findings are the answer
         return
 
@@ -232,6 +231,7 @@ def _run_the_contract(atf: Any) -> dict[str, Any]:
 
 @check("every system held it")
 def _held(atf: Any) -> tuple[bool, str]:
+    """Every finding the contract made held, and it names the ones that did not."""
     result = atf.it() if isinstance(atf.it(), dict) else {}
     broken = result.get("broken", [])
     if not result.get("findings") and not result.get("skipped"):

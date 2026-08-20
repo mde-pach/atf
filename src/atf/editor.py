@@ -39,6 +39,20 @@ def _as_node(node: core.Node) -> dict[str, Any]:
     return {"id": node.id, "label": node.label, "kind": node.kind, "needs": node.needs}
 
 
+def _wrap_as_feature(text: str, named: str) -> str:
+    """A typed draft, given the headers it needs to be a whole, readable `.feature` file.
+
+    Shared by every scratch write in this module — trying a draft, and linting one — so a draft
+    that already has its own `Scenario:`/`Example:`/`Phrase:`/`Feature:` line is never double-wrapped.
+    """
+    stripped = text.lstrip()
+    if not stripped.startswith(("Scenario:", "Example:", "Phrase:")):
+        text = f"Scenario: {named}\n" + "\n".join(f"    {line}" for line in text.splitlines())
+    if not stripped.startswith("Feature:"):
+        text = f"Feature: {named}\n\n{text}"
+    return text.rstrip("\n") + "\n"
+
+
 class RunTracker:
     """The one suite run this editor may have going, if any.
 
@@ -296,9 +310,11 @@ class Editor:
     def compose_text(self, name: str, text: str) -> str:
         """Write a new scenario typed as free text — appended, or the file created if it's new.
 
-        Written, then re-read through the real parser like every save here; a suite that no longer
-        reads is not kept — the original bytes come back, or a file created just now is removed.
-        Returns the new test's id, so the caller can open straight back into it.
+        Written, then re-read through the real parser, then checked by the same lint a save from
+        the existing-test editor runs: a suite that no longer reads, or that reads but says
+        something nothing here understands, is not kept — the original bytes come back, or a file
+        created just now is removed. Returns the new test's id, so the caller can open straight
+        back into it.
         """
         from . import feature as feature_module
         from .feature import FeatureError
@@ -312,33 +328,68 @@ class Editor:
         trimmed = original.rstrip("\n")
         candidate = f"{trimmed}\n\n{block}" if existed else f"Feature: {path.stem}\n\n{block}"
         path.write_text(candidate, encoding="utf-8")
-        try:
-            parsed = feature_module.read(path)
-        except FeatureError:
+
+        def revert() -> None:
             if existed:
                 path.write_text(original, encoding="utf-8")
             else:
                 path.unlink(missing_ok=True)
+
+        try:
+            parsed = feature_module.read(path)
+        except FeatureError:
+            revert()
             raise
         self.reload()
         newest = parsed.scenarios[-1]
+        problems = core.lint_file(self.suite, self.features, self.phrases, path, newest.number)
+        if problems:
+            revert()
+            self.reload()
+            raise core.LintError("; ".join(problems))
         return runs.identity(path, newest.name, self.root)
 
     def test_source(self, id: str) -> dict[str, Any]:
-        """This test's own Gherkin, exactly as written — for opening in the editor."""
+        """The whole file this test lives in, exactly as written — for opening in the editor.
+
+        Opening a test opens its file: a `.feature` file is usually more than one scenario, and
+        editing one in isolation would hide the rest of what it stands beside. `number` still says
+        which scenario this open was *about*, for the pane to scroll to and mark as current.
+        """
         found = self.test(id)
         if not found["path"]:
             raise ValueError("this test is written in Python — there is no Gherkin source to open")
-        text = core.scenario_text(Path(found["path"]), found["number"])
-        return {"id": found["id"], "path": found["path"], "number": found["number"], "text": text}
+        path = Path(found["path"])
+        text = path.read_text(encoding="utf-8")
+        later = sorted(
+            scenario.number
+            for feature in self.features
+            if feature.path == path
+            for scenario in feature.scenarios
+            if scenario.number > found["number"]
+        )
+        end = later[0] - 1 if later else len(text.splitlines())
+        return {"id": found["id"], "path": found["path"], "number": found["number"], "end": end, "text": text}
 
     def save_test_source(self, id: str, text: str) -> None:
-        """Save an existing test's edited text back to its file, in place."""
+        """Save a test's whole file back in place — every scenario in it, not just the one opened.
+
+        Written, then re-read through the real parser, then checked by the same lint `atf plan`
+        runs over the whole file: a suite that no longer reads, or reads but says something
+        nothing here understands, is not kept — the original bytes come back first.
+        """
         found = self.test(id)
         if not found["path"]:
             raise ValueError("this test is written in Python — there is no Gherkin source to save")
-        core.write_scenario(Path(found["path"]), found["number"], text)
+        path = Path(found["path"])
+        original = path.read_text(encoding="utf-8")
+        core.save_file(path, text)
         self.reload()
+        problems = core.lint_file(self.suite, self.features, self.phrases, path)
+        if problems:
+            path.write_text(original, encoding="utf-8")
+            self.reload()
+            raise core.LintError("; ".join(problems))
 
     def try_scenario(self, text: str) -> dict[str, Any]:
         """Run this draft against `local`, without saving it. A scratch file, run, then gone.
@@ -353,12 +404,7 @@ class Editor:
         specs = self.suite.manifest.specs
         specs.mkdir(parents=True, exist_ok=True)
         path = specs / f".try-{uuid.uuid4().hex[:8]}.feature"
-        stripped = text.lstrip()
-        if not stripped.startswith(("Scenario:", "Phrase:")):
-            text = "Scenario: a try\n" + "\n".join(f"    {line}" for line in text.splitlines())
-        if not stripped.startswith("Feature:"):
-            text = f"Feature: a try\n\n{text}"
-        path.write_text(text.rstrip("\n") + "\n", encoding="utf-8")
+        path.write_text(_wrap_as_feature(text, "a try"), encoding="utf-8")
         try:
             answer = do_run(
                 Options(config=str(self.manifest_path) if self.manifest_path else None, quiet=True),
@@ -373,6 +419,37 @@ class Editor:
                 dry_run=False,
             )
             return {"code": answer.code, "lines": answer.lines}
+        finally:
+            path.unlink(missing_ok=True)
+            self.reload(self.env)
+
+    def lint_draft(self, text: str) -> list[str]:
+        """What `atf plan` would say about this draft, without writing or running it.
+
+        The same scratch-file-then-gone shape as `try_scenario`, but a parse and a lint pass in
+        this process rather than a real subprocess run — cheap enough to call on a pause in typing,
+        which is what the editor's own inline linting does. The draft is parsed alone first,
+        narrowly, exactly as a save does — `reload()` reads the *whole* suite and would otherwise
+        briefly see every other feature as empty too if one scratch file failed to parse.
+        """
+        import uuid
+
+        from . import feature as feature_module
+        from .feature import FeatureError
+
+        specs = self.suite.manifest.specs
+        specs.mkdir(parents=True, exist_ok=True)
+        path = specs / f".lint-{uuid.uuid4().hex[:8]}.feature"
+        path.write_text(_wrap_as_feature(text, "a draft"), encoding="utf-8")
+        try:
+            parsed = feature_module.read(path)
+        except FeatureError as exc:
+            path.unlink(missing_ok=True)
+            return [str(exc)]
+        try:
+            self.reload(self.env)
+            number = parsed.scenarios[-1].number
+            return core.lint_file(self.suite, self.features, self.phrases, path, number)
         finally:
             path.unlink(missing_ok=True)
             self.reload(self.env)
@@ -1036,6 +1113,25 @@ def render_unused(editor: Editor) -> str:
     return page("What nothing asks for", body, "graph")
 
 
+def _grouped_rows(shown: list[dict[str, Any]], selected: str) -> str:
+    """The sidebar list, one group per file — a test is listed under what opening it opens."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for one in shown:
+        groups.setdefault(one["id"].rsplit("::", 1)[0], []).append(one)
+    parts = []
+    for file_key in sorted(groups, key=lambda k: Path(k).name):
+        rows = groups[file_key]
+        label = Path(file_key).name if file_key else "—"
+        parts.append(
+            '<div class="filegroup">'
+            f'<a class="filegroup-label" href="{_with_env("/tests/" + urllib.parse.quote(rows[0]["id"], safe=""))}">'
+            f"{html.escape(label)}</a>"
+            f'{"".join(_test_row(one, selected) for one in rows)}'
+            "</div>"
+        )
+    return "".join(parts)
+
+
 def _test_row(one: dict[str, Any], selected: str) -> str:
     """One row in the sidebar list: a state dot, the title, its tags — one line, like every list here."""
     dotclass = "ok" if one["verdict"] == "passed" else "fail" if one["verdict"] == "failed" else "skip"
@@ -1135,17 +1231,21 @@ def _editor_python(found: dict[str, Any]) -> str:
 
 
 def _editor_existing(found: dict[str, Any], source: dict[str, Any]) -> str:
-    """The real editor, opened on one existing test: its own bytes, coloured, genuinely editable."""
+    """The real editor, opened on this test's whole file, scrolled to the scenario clicked."""
     name = Path(source["path"]).name
     text = source["text"]
     kind_words = set(kinds.offered())
     lines = text.split("\n")
+    selected_number = source["number"]
+    selected_end = source["end"]
 
+    # The failing step is searched for only within the selected scenario's own lines — the same
+    # step text can appear in more than one scenario in a file this size.
     failed_at = (found["last"] or {}).get("failed_at") if found["last"] else None
     failed_line = 0
     if failed_at and failed_at.get("step"):
-        for i, line in enumerate(lines, start=1):
-            if line.strip().endswith(failed_at["step"]):
+        for i in range(selected_number, selected_end + 1):
+            if i <= len(lines) and lines[i - 1].strip().endswith(failed_at["step"]):
                 failed_line = i
                 break
     highlight = (
@@ -1179,12 +1279,14 @@ def _editor_existing(found: dict[str, Any], source: dict[str, Any]) -> str:
         '<div class="editor-stack">'
         f'<div class="editor-backdrop" id="editor-backdrop" aria-hidden="true">{highlight}{backdrop}</div>'
         '<textarea class="editor-input" id="editor-input" spellcheck="false" autocapitalize="off" '
-        f'aria-label="scenario text" data-mode="edit" '
-        f'data-test-id="{html.escape(found["id"], quote=True)}">{html.escape(text)}</textarea>'
+        f'aria-label="scenario text" data-mode="edit" data-test-id="{html.escape(found["id"], quote=True)}" '
+        f'data-scroll-to-line="{selected_number}">{html.escape(text)}</textarea>'
         '<div class="suggest" id="suggest" role="listbox" hidden></div>'
         "</div></div>"
         '<div class="actionbar">'
         f'<span class="status" id="editor-status">{status}</span>'
+        '<button type="button" class="btn ghost" id="run-scenario-btn" '
+        f'data-test-id="{html.escape(found["id"], quote=True)}">▶ Run this scenario</button>'
         '<button type="button" class="btn ghost" id="try-btn">▶ Try it</button>'
         '<button type="button" class="btn" id="save-btn">Save</button>'
         "</div></div>"
@@ -1247,7 +1349,7 @@ def render_tests(
         and (not resource or resource in one["arranges"])
         and (not q or q.lower() in (one["label"] + " " + one["description"] + " " + one["id"]).lower())
     ]
-    rows = "".join(_test_row(one, selected) for one in shown)
+    rows = _grouped_rows(shown, selected)
 
     if new:
         pane = _editor_new(editor)
@@ -1645,6 +1747,16 @@ def build_app(editor: Editor) -> Any:
         except Exception as exc:  # noqa: BLE001 - a draft that will not even parse is an answer, not a crash
             return JSONResponse({"code": 2, "lines": [str(exc)]})
 
+    @app.post("/api/tests/lint")
+    def _lint_draft(body: dict[str, Any]) -> Any:
+        """What `atf plan` would say about this draft — the editor's own inline linting, live."""
+        answering(editor, str(body.get("env", "")))
+        try:
+            problems = editor.lint_draft(str(body.get("text", "")))
+        except Exception as exc:  # noqa: BLE001 - unparseable is an answer here too, not a crash
+            problems = [str(exc)]
+        return JSONResponse({"problems": problems})
+
     @app.post("/api/tests/{id:path}/save")
     def _save_test(id: str, body: dict[str, Any]) -> Any:
         """Save an existing test's edited text back to its file — validated, rolled back if not."""
@@ -1657,6 +1769,8 @@ def build_app(editor: Editor) -> Any:
             return JSONResponse({"error": str(exc)}, status_code=400)
         except FeatureError as exc:
             return JSONResponse({"error": f"does not parse: {exc}"}, status_code=422)
+        except core.LintError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
         return JSONResponse({"saved": True})
 
     @app.post("/api/tests/save-new")
@@ -1671,6 +1785,8 @@ def build_app(editor: Editor) -> Any:
             new_id = editor.compose_text(name, text)
         except FeatureError as exc:
             return JSONResponse({"error": f"does not parse: {exc}"}, status_code=422)
+        except core.LintError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
         except IndexError:
             return JSONResponse({"error": "write at least one Scenario: to save"}, status_code=400)
         return JSONResponse({"saved": True, "id": new_id})

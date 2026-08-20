@@ -11,9 +11,13 @@ from .steps import CONTINUATIONS, KEYWORDS
 TAG = re.compile(r"@([\w-]+)")
 
 SCENARIO_WORD = "Scenario:"
+#: `Example:` is the one alias worth keeping — real Gherkin's own plain synonym for `Scenario:`,
+#: not a variant of the table-driven `Examples:` this language refuses. It is what `Rule:` pairs
+#: with in Example Mapping, which `Rule:` already reads.
+EXAMPLE_WORD = "Example:"
 PHRASE_WORD = "Phrase:"
 #: Written by somebody arriving from Cucumber. Each is refused by name, with what to write instead.
-REFUSED = ("Scenario Outline:", "Scenario Template:", "Examples:", "Scenarios:", "Background:", "Example:")
+REFUSED = ("Scenario Outline:", "Scenario Template:", "Examples:", "Scenarios:", "Background:")
 
 
 class FeatureError(Exception):
@@ -149,7 +153,9 @@ def read(path: Path) -> Feature:
                 f"write each case as a sentence, under a phrase."
             )
 
-        started = next((word for word in (SCENARIO_WORD, PHRASE_WORD) if line.startswith(word)), "")
+        started = next(
+            (word for word in (SCENARIO_WORD, EXAMPLE_WORD, PHRASE_WORD) if line.startswith(word)), ""
+        )
         if started:
             scenario = Scenario(
                 name=line[len(started) :].strip(),

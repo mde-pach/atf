@@ -531,16 +531,25 @@ def detail_of_test(
     where = ""
     path = ""
     number = 0
-    for feature in features:
-        if feature.path is None:
-            continue
-        for scenario in feature.scenarios:
-            if scenario.is_phrase or runs.identity(feature.path, scenario.name, root) != id:
-                continue
-            lines = [(line.keyword.title(), line.text) for line in scenario.lines]
-            where = f"{feature.path.name}:{scenario.number}"
-            path = str(feature.path)
-            number = scenario.number
+    # First match wins, and stops the search there — an id is a path and a title, so two scenarios
+    # sharing one would already be a suite that cannot run; nothing past the first should ever be
+    # read as if it settled anything.
+    found_scenario = next(
+        (
+            (feature, scenario)
+            for feature in features
+            if feature.path is not None
+            for scenario in feature.scenarios
+            if not scenario.is_phrase and runs.identity(feature.path, scenario.name, root) == id
+        ),
+        None,
+    )
+    if found_scenario is not None:
+        feature, scenario = found_scenario
+        lines = [(line.keyword.title(), line.text) for line in scenario.lines]
+        where = f"{feature.path.name}:{scenario.number}"
+        path = str(feature.path)
+        number = scenario.number
 
     outcomes = [
         outcome
@@ -567,51 +576,63 @@ def detail_of_test(
 
 # --- Editing a test's own source -------------------------------------------------------------------
 #
-# A test written as Gherkin is a block of lines in a file somebody can open and change directly —
-# not something only a picker composes. These read and write exactly that block, real bytes, with
-# the same safety a save has always needed: written, re-parsed, and rolled back if the result
-# doesn't hold together as a suite ATF can still read.
+# A test written as Gherkin lives in a file somebody can open and change directly — not something
+# only a picker composes. Opening one opens its whole file, every scenario in it, since that is
+# the unit a save writes back: written, re-parsed, and rolled back if the result doesn't hold
+# together as a suite ATF can still read.
 
 
-def _scenario_range(path: Path, number: int) -> tuple[int, int]:
-    """The 1-indexed, inclusive line range one scenario occupies, trailing blank lines trimmed."""
-    from . import feature as feature_module
-
-    read = feature_module.read(path)
-    later = sorted(one.number for one in read.scenarios if one.number > number)
-    lines = path.read_text(encoding="utf-8").splitlines()
-    end = (later[0] - 1) if later else len(lines)
-    while end > number and not lines[end - 1].strip():
-        end -= 1
-    return number, end
-
-
-def scenario_text(path: Path, number: int) -> str:
-    """One scenario's own lines, exactly as written — for opening in an editor."""
-    start, end = _scenario_range(path, number)
-    lines = path.read_text(encoding="utf-8").splitlines()
-    return "\n".join(lines[start - 1 : end]) + "\n"
-
-
-def write_scenario(path: Path, number: int, text: str) -> None:
-    """Replace one scenario's lines in place. `FeatureError` if the result no longer parses.
+def save_file(path: Path, text: str) -> None:
+    """Write a whole feature file. `FeatureError` if the result no longer parses.
 
     The file is written, then re-read through the real parser; a suite that no longer reads is not
-    saved — the original bytes come back first, so an edit can never leave a file half-written.
+    saved — the original bytes come back, or a file created just now is removed, so an edit can
+    never leave one half-written.
     """
     from . import feature as feature_module
     from .feature import FeatureError
 
-    original = path.read_text(encoding="utf-8")
-    start, end = _scenario_range(path, number)
-    lines = original.splitlines()
-    candidate = "\n".join([*lines[: start - 1], *text.rstrip("\n").split("\n"), *lines[end:]]) + "\n"
-    path.write_text(candidate, encoding="utf-8")
+    existed = path.exists()
+    original = path.read_text(encoding="utf-8") if existed else ""
+    path.write_text(text.rstrip("\n") + "\n", encoding="utf-8")
     try:
         feature_module.read(path)
     except FeatureError:
-        path.write_text(original, encoding="utf-8")
+        if existed:
+            path.write_text(original, encoding="utf-8")
+        else:
+            path.unlink(missing_ok=True)
         raise
+
+
+class LintError(Exception):
+    """Parses fine, but says something nothing in this suite understands.
+
+    Raised where `feature.read` would not be — a sentence with no matching step, or one naming a
+    resource nothing declares, is Gherkin the parser accepts and the run would still refuse.
+    """
+
+
+def lint_file(
+    suite: Suite, features: list[Any], phrases: dict[str, Any], path: Path, number: int | None = None
+) -> list[str]:
+    """Faults located in this file — or, given `number`, in one scenario of it.
+
+    From the same checks `atf plan` runs against the whole suite. A save is refused for what it
+    just wrote, never for trouble already sitting elsewhere in the suite. Matched by the exact
+    `path:number` a fault carries, not a string prefix — `path:5` would otherwise also catch a
+    fault that was really at `path:51`.
+    """
+    from . import plan as planning
+
+    problems = []
+    for fault in planning.lint(suite, features, phrases):
+        located = fault.where.partition("  ")[0]
+        file_path, _, at = located.rpartition(":")
+        if file_path != str(path) or (number is not None and at != str(number)):
+            continue
+        problems.append(f"{fault.what} — {fault.hint}" if fault.hint else fault.what)
+    return problems
 
 
 # --- The composer -------------------------------------------------------------------------------

@@ -186,6 +186,9 @@ a.gnode:hover { border-color:var(--accent-line); }
 .search::placeholder { color:var(--ink-dim); }
 .testlist { flex:1; overflow:auto; padding:6px; }
 .rowdesc { font-size:12.5px; color:var(--ink-soft); }
+.filegroup { margin-bottom:4px; }
+.filegroup-label { display:block; font-family:var(--mono); font-size:11px; letter-spacing:0.03em; color:var(--ink-soft); padding:9px 8px 3px; }
+.filegroup-label:hover { color:var(--ink); }
 .trow { display:flex; align-items:flex-start; gap:9px; padding:9px 8px; border-radius:6px; color:inherit; }
 .trow:hover { background:var(--surface-2); }
 .trow.selected { background:var(--accent-soft); }
@@ -215,6 +218,9 @@ a.gnode:hover { border-color:var(--accent-line); }
 .editor-backdrop { color:var(--ink); pointer-events:none; z-index:1; }
 .editor-input { z-index:2; background:transparent; color:transparent; caret-color:var(--ink); border:none; outline:none; resize:none; }
 .line-highlight { position:absolute; left:0; right:0; height:1.9em; background:var(--unreachable-soft); pointer-events:none; }
+/* Inline linting — a line `atf plan` would flag, checked on a pause in typing, not on save. Never
+   intercepts a click: the message itself lives in the status line, not a hover tooltip. */
+.lint-line { position:absolute; left:0; right:0; height:1.9em; border-bottom:2px dotted var(--drifted); pointer-events:none; }
 .tok-kw { color:var(--ed-kw); }
 .tok-kind { color:var(--ed-kind); }
 .tok-str { color:var(--ed-str); }

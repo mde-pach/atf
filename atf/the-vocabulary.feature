@@ -57,3 +57,8 @@ Feature: the sentences a suite can say
     Given a suite on disk
     When I run "run --contract -k contract"
     Then the command succeeded
+
+  Scenario: `Example:` is a plain scenario, spelled the way Example Mapping spells it
+    Given a suite on disk
+    When I run "run -k example"
+    Then the command succeeded

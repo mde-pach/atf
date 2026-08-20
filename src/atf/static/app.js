@@ -117,11 +117,18 @@ function initRunButton() {
 function initTestSearch() {
   const search = document.getElementById("test-search");
   if (!search) return;
-  const rows = Array.from(document.querySelectorAll(".trow"));
+  const groups = Array.from(document.querySelectorAll(".filegroup"));
   search.addEventListener("input", () => {
     const needle = search.value.trim().toLowerCase();
-    rows.forEach((row) => {
-      row.style.display = !needle || (row.dataset.search || "").includes(needle) ? "" : "none";
+    groups.forEach((group) => {
+      const rows = Array.from(group.querySelectorAll(".trow"));
+      let anyShown = false;
+      rows.forEach((row) => {
+        const hit = !needle || (row.dataset.search || "").includes(needle);
+        row.style.display = hit ? "" : "none";
+        anyShown = anyShown || hit;
+      });
+      group.style.display = anyShown ? "" : "none";
     });
   });
 }
@@ -143,6 +150,7 @@ function initEditorSurface() {
   const statusEl = document.getElementById("editor-status");
   const tryBtn = document.getElementById("try-btn");
   const saveBtn = document.getElementById("save-btn");
+  const runScenarioBtn = document.getElementById("run-scenario-btn");
   const filenameInput = document.getElementById("filename-input");
 
   const kindWordsEl = document.getElementById("kind-words");
@@ -191,8 +199,58 @@ function initEditorSurface() {
       .join("\n");
   }
 
+  // --- Inline linting: what `atf plan` would say about this draft, checked on a pause in typing,
+  // without saving. A line marker is decorative only (pointer-events:none — it must never steal a
+  // click meant for the textarea underneath it), so the message itself lives in the status line.
+
+  let lintProblems = [];
+  let lintTimer = null;
+
+  function lintMarkersHtml(text) {
+    if (!lintProblems.length) return "";
+    const lines = text.split("\n");
+    return lintProblems
+      .map((msg) => {
+        const at = lines.findIndex((l) => l.trim() && msg.includes(l.trim()));
+        return at === -1 ? "" : `<div class="lint-line" style="top:calc(${at} * 1.9em)"></div>`;
+      })
+      .join("");
+  }
+
+  function paintLintStatus() {
+    if (lintProblems.length) {
+      const more = lintProblems.length > 1 ? ` (+${lintProblems.length - 1} more)` : "";
+      statusEl.textContent = `⚠ ${lintProblems[0]}${more}`;
+      statusEl.className = "status fail";
+    } else if (dirty) {
+      // Problems cleared but the draft still isn't saved — restore the plain note markDirty set
+      // once and won't set again (its own early-return only fires on the very first edit).
+      statusEl.textContent = "edited — not yet saved";
+      statusEl.className = "status";
+    }
+  }
+
+  function scheduleLint() {
+    clearTimeout(lintTimer);
+    lintTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(withEnv("/api/tests/lint"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: input.value }),
+        });
+        const data = await res.json();
+        lintProblems = data.problems || [];
+      } catch {
+        lintProblems = [];
+      }
+      paintBackdrop();
+      paintLintStatus();
+    }, 500);
+  }
+
   function paintBackdrop() {
-    backdrop.innerHTML = highlightHtml + renderBackdrop(input.value);
+    backdrop.innerHTML = highlightHtml + lintMarkersHtml(input.value) + renderBackdrop(input.value);
   }
 
   function syncGutter() {
@@ -373,24 +431,108 @@ function initEditorSurface() {
     paintBackdrop();
     syncGutter();
     markDirty();
+    scheduleLint();
     const line = caretLine();
     if (line.index !== reachableLine) refreshReachable(line.index);
     renderSuggest(line.typed, line.index);
   });
   input.addEventListener("scroll", syncScroll);
+
+  // --- Indent: Enter matches the line just left (one level deeper after a Feature:/Scenario:/
+  // Phrase: header, since that's the only thing in this grammar that opens a block — there are no
+  // tables to indent into). Tab/Shift+Tab indent or dedent the current line, or every line the
+  // selection touches, four spaces at a time — this suite's own convention. -----------------------
+
+  const INDENT = "    ";
+
+  function lineIndent(text) {
+    return (text.match(/^[ \t]*/) || [""])[0];
+  }
+
+  function autoIndentNewline() {
+    const line = caretLine();
+    const stripped = line.full.replace(/^[ \t]*/, "");
+    const indent = lineIndent(line.full);
+    const opensBlock = /^(Feature:|Scenario:|Example:|Phrase:)/.test(stripped);
+    const pos = input.selectionStart;
+    input.setRangeText("\n" + indent + (opensBlock ? "  " : ""), pos, input.selectionEnd, "end");
+    paintBackdrop();
+    syncGutter();
+    markDirty();
+  }
+
+  function indentSelection() {
+    const text = input.value;
+    const selStart = input.selectionStart;
+    const selEnd = input.selectionEnd;
+    if (selStart === selEnd) {
+      input.setRangeText(INDENT, selStart, selEnd, "end");
+      paintBackdrop();
+      syncGutter();
+      markDirty();
+      return;
+    }
+    const startLine = text.lastIndexOf("\n", selStart - 1) + 1;
+    const block = text.slice(startLine, selEnd);
+    const indented = block
+      .split("\n")
+      .map((l) => INDENT + l)
+      .join("\n");
+    input.setRangeText(indented, startLine, selEnd, "select");
+    input.setSelectionRange(selStart + INDENT.length, startLine + indented.length);
+    paintBackdrop();
+    syncGutter();
+    markDirty();
+  }
+
+  function dedentSelection() {
+    const text = input.value;
+    const selStart = input.selectionStart;
+    const selEnd = input.selectionEnd;
+    const startLine = text.lastIndexOf("\n", selStart - 1) + 1;
+    const effectiveEnd = Math.max(selEnd, startLine);
+    const block = text.slice(startLine, effectiveEnd);
+    let removedFirst = 0;
+    const dedented = block
+      .split("\n")
+      .map((l, i) => {
+        const strip = Math.min(INDENT.length, lineIndent(l).length);
+        if (i === 0) removedFirst = strip;
+        return l.slice(strip);
+      })
+      .join("\n");
+    input.setRangeText(dedented, startLine, effectiveEnd, "select");
+    input.setSelectionRange(Math.max(startLine, selStart - removedFirst), startLine + dedented.length);
+    paintBackdrop();
+    syncGutter();
+    markDirty();
+  }
+
   input.addEventListener("keydown", (e) => {
-    if (suggest.hidden) return;
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      activeIndex = e.key === "ArrowDown" ? Math.min(activeIndex + 1, shownPhrases.length - 1) : Math.max(activeIndex - 1, 0);
-      paintSuggest();
-    } else if (e.key === "Enter" || e.key === "Tab") {
-      if (activeIndex > -1) {
+    if (!suggest.hidden) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
-        pick(activeIndex);
+        activeIndex = e.key === "ArrowDown" ? Math.min(activeIndex + 1, shownPhrases.length - 1) : Math.max(activeIndex - 1, 0);
+        paintSuggest();
+        return;
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        if (activeIndex > -1) {
+          e.preventDefault();
+          pick(activeIndex);
+          return;
+        }
+      } else if (e.key === "Escape") {
+        closeSuggest();
+        return;
       }
-    } else if (e.key === "Escape") {
-      closeSuggest();
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      autoIndentNewline();
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      if (e.shiftKey) dedentSelection();
+      else indentSelection();
     }
   });
   suggest.addEventListener("mousedown", (e) => {
@@ -472,6 +614,21 @@ function initEditorSurface() {
       saveBtn.disabled = false;
     }
   });
+
+  // A real run of this one scenario as it stands on disk — not the scratch dry run Try it does —
+  // scoped by the id the page already opened, the same way the top-nav Run button runs one test.
+  runScenarioBtn?.addEventListener("click", () => {
+    if (RunControl) RunControl.start([runScenarioBtn.dataset.testId]);
+  });
+
+  // Land on the scenario that was actually clicked, in a file that can hold several — a plain
+  // in-page jump, not a fetch, so it works before any script beyond this one has run.
+  const scrollLine = Number(input.dataset.scrollToLine || 0);
+  if (scrollLine > 1) {
+    const target = Math.max(0, (scrollLine - 1) * LINE_HEIGHT - LINE_HEIGHT * 2);
+    input.scrollTop = target;
+    syncScroll();
+  }
 }
 
 // --- Resources: what browse() finds that nothing declared matches — checked on request, never on

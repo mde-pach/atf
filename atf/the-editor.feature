@@ -117,6 +117,15 @@ Feature: the editor shows the same graph
     And the link "scratch" is showing
     And the button "Save" is showing
     And the button "▶ Try it" is showing
+    And the button "▶ Run this scenario" is showing
+
+  Scenario: opening a test opens its whole file, not just the scenario that was clicked
+    Given the screen "one_test"
+    Then the words "a phrase is what gives the change a domain verb" are showing
+
+  Scenario: a test's row is grouped under the file that opening it opens
+    Given the screen "listing"
+    Then the words "notes.feature" are showing
 
   Scenario: a run is opened item by item, and can be exported as a registered format
     Given the screen "past_runs"

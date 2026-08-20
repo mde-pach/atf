@@ -196,6 +196,10 @@ Feature: notes
   Scenario: a field nobody gave a value is filled by resolution
     Given the note "resolved"
     Then the note "resolved" text is "written in notebooks/work\\n"
+
+  Example: it is exactly a scenario, spelled the other way
+    Given the notebook "work"
+    Then the notebook "work" exists
 """
 
 PYTHON_SIDE = '''\

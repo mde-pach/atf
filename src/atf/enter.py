@@ -7,11 +7,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import lives, plugin, reconcile, runs, runtime, steps
+from . import core, lives, plugin, reconcile, runs, runtime, steps
 from . import phrases as phrase_reader
 from .declare import declaration_of, name_of
 from .environment import Ground
-from .loader import Suite, fixture_name
+from .loader import Suite
 from .runtime import Scope
 from .steps import Sentence, StepError
 
@@ -182,18 +182,14 @@ def _as_sentence(text: str) -> Sentence | None:
 
 
 def _show_resource(session: Session, name: str, out: Any) -> None:
-    """**Presence is asked, never remembered**, and the prompt keeps that promise."""
-    node = session.suite.resource(name)
-    state, found = session.ground.find(node)
-    declaration = declaration_of(node)
-    fields = ", ".join(
-        f"{one} {value!r}"
-        for one, value in sorted((found or {}).items())
-        if not one.startswith("_")
-    )
-    print(
-        f"      a {fixture_name(declaration.kind)} · {state} · lives {lives.of(node)}", file=out
-    )
+    """**Presence is asked, never remembered**, and the prompt keeps that promise.
+
+    Reads through `core.state_of` — the same call the editor's Tests page makes for its Output tab,
+    so the prompt and the dashboard never drift into two different notions of "what this shows".
+    """
+    (one,) = core.state_of(session.ground, [name])
+    fields = ", ".join(f"{k} {v!r}" for k, v in one["fields"].items())
+    print(f"      a {one['kind']} · {one['state']} · lives {one['lives']}", file=out)
     if fields:
         print(f"      {fields}", file=out)
 

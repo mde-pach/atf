@@ -219,6 +219,13 @@ def _words_showing(words: str, atf: Any) -> tuple[bool, str]:
     return held, f'"{words}" is not on the page'
 
 
+@check('the words "{words}" are not showing')
+def _words_not_showing(words: str, atf: Any) -> tuple[bool, str]:
+    """This text is nowhere on the page."""
+    held = _page(atf).get_by_text(words, exact=False).count() == 0
+    return held, f'"{words}" is on the page'
+
+
 @act('I click the {role} "{name}"')
 def _click(role: str, name: str, atf: Any) -> None:
     """Click it."""

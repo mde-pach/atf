@@ -140,6 +140,7 @@ Feature: notes
     Then the note "retro" exists
 
   Scenario: a draft is arranged for one test
+    A draft lives for the test and nothing carries it further.
     Given the draft "scratch"
     Then the draft "scratch" exists
 
@@ -498,7 +499,7 @@ class Screen(Page, lives="the test"):
 
 
 editing = Editor(workspace=scaffolded)
-catalogue = Screen(editor=editing, path="/catalogue")
+resources = Screen(editor=editing, path="/resources")
 spine = Screen(editor=editing, path="/graph")
 small_lineage = Screen(editor=editing, path="/graph/outline")
 crowded = Screen(editor=editing, path="/graph/work")
@@ -509,5 +510,6 @@ one_test = Screen(
     path="/tests/atf%2Fnotes.feature%3A%3Aa%20draft%20is%20arranged%20for%20one%20test",
 )
 past_runs = Screen(editor=editing, path="/activity")
-theirs_screen = Screen(editor=editing, path="/catalogue?env=theirs")
-composing = Screen(editor=editing, path='/composer?l=Given%7Cthe%20note%20%22standup%22')
+notes_kind = Screen(editor=editing, path="/resources/Note")
+theirs_screen = Screen(editor=editing, path="/resources?env=theirs")
+new_test_screen = Screen(editor=editing, path="/tests?new=1")

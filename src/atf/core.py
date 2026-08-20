@@ -102,7 +102,7 @@ class KindSummary:
 
 @dataclass
 class ResourceDetail:
-    """One resource, in the five things the catalogue shows about it."""
+    """One resource, in the five things resources shows about it."""
 
     name: str
     kind: str
@@ -118,7 +118,7 @@ class ResourceDetail:
     why_not: str = ""
 
 
-def catalogue(ground: Ground) -> list[KindSummary]:
+def resources(ground: Ground) -> list[KindSummary]:
     """Every declared kind, navigated by kind first — not one flat list of instances."""
     outcomes = {
         outcome.resource: outcome
@@ -130,8 +130,12 @@ def catalogue(ground: Ground) -> list[KindSummary]:
         states: dict[str, int] = {}
         for node in mine:
             outcome = outcomes.get(node)
-            if outcome is not None:
-                states[str(outcome.state)] = states.get(str(outcome.state), 0) + 1
+            if outcome is None:
+                continue
+            # Not a fourth `State` — the state is still exactly `present`. "Drifted" is this view's
+            # own word for a present resource whose found values would be changed to match declared.
+            key = "drifted" if outcome.state is State.PRESENT and outcome.changes else str(outcome.state)
+            states[key] = states.get(key, 0) + 1
         declaration = declaration_of(cls)
         out.append(
             KindSummary(
@@ -148,26 +152,82 @@ def catalogue(ground: Ground) -> list[KindSummary]:
 def instances(ground: Ground, kind: str) -> list[dict[str, Any]]:
     """The instances of one kind, with what the environment holds for each.
 
-    Opening a kind is the second step of the catalogue: kinds first, then the particular resources,
-    then one of them. Nothing is navigated by a flat list of every resource in the suite.
+    Opening a kind is the second step of resources: kinds first, then the particular resources, then
+    one of them. Nothing is navigated by a flat list of every resource in the suite.
     """
     cls = ground.suite.kinds.get(kind)
     if cls is None:
         known = ", ".join(sorted(ground.suite.kinds)) or "none"
         raise KeyError(f"no resource kind called {kind!r} (declared: {known})")
     mine = [node for node in ground.suite.instances.values() if type(node) is cls]
-    return [
-        {
-            "name": name_of(node),
-            "state": str(outcome.state),
-            "changes": sorted(outcome.changes),
-            "recognised_by": {
-                key: values_of(node).get(key) for key in declaration_of(node).key
-            },
-            "lives": lives.of(node),
-        }
-        for node, outcome in zip(mine, reconcile.status(ground, mine), strict=True)
-    ]
+    out = []
+    for node, outcome in zip(mine, reconcile.status(ground, mine), strict=True):
+        can_make, _ = _can_make(ground, node, outcome.state)
+        out.append(
+            {
+                "name": name_of(node),
+                "state": str(outcome.state),
+                "changes": sorted(outcome.changes),
+                "recognised_by": {
+                    key: values_of(node).get(key) for key in declaration_of(node).key
+                },
+                "lives": lives.of(node),
+                #: Absent, and nothing stops ATF making it — what a scoped Provision action needs to
+                #: decide whether to offer itself. `closure_size` is what's beside it, once it does:
+                #: everything else provisioning it would provision too, not counting itself.
+                "can_provision": outcome.state == State.ABSENT and can_make,
+                "closure_size": len(graph.closure(node)) - 1,
+            }
+        )
+    return out
+
+
+@dataclass
+class Browsed:
+    """What the environment holds for a kind, beyond what the suite declared.
+
+    `browsable` and `why` distinguish the two ways this can come back empty: a system with no
+    `browse()` at all, and one that has it but found nothing left over once the declared instances
+    are matched off.
+    """
+
+    browsable: bool
+    why: str = ""
+    records: list[dict[str, Any]] = field(default_factory=list)
+
+
+def undeclared(ground: Ground, kind: str) -> Browsed:
+    """What `browse()` finds for this kind that no declared instance's key matches.
+
+    Answers *"what's out there that the suite doesn't know about"* — read-only, never a write. Needs
+    one declared instance to call `browse()` through, since it is a method of the resource, not the
+    kind; a kind with none declared has nothing to browse from yet.
+    """
+    cls = ground.suite.kinds.get(kind)
+    if cls is None:
+        known = ", ".join(sorted(ground.suite.kinds)) or "none"
+        raise KeyError(f"no resource kind called {kind!r} (declared: {known})")
+    mine = [node for node in ground.suite.instances.values() if type(node) is cls]
+    if not mine:
+        return Browsed(browsable=False, why=f"declare a {fixture_name(kind)} first — browse looks through one")
+    declaration = declaration_of(cls)
+    try:
+        found = reconcile.browse(ground, mine[0])
+    except reconcile.ProvisionError as exc:
+        return Browsed(browsable=False, why=str(exc))
+    keys = declaration.key
+    known = {tuple(values_of(node).get(k) for k in keys) for node in mine} if keys else set()
+    leftover = [record for record in found if not keys or tuple(record.get(k) for k in keys) not in known]
+    return Browsed(
+        browsable=True,
+        records=[
+            {
+                "label": " · ".join(str(record[k]) for k in keys if k in record) or "no identity",
+                "fields": {k: v for k, v in record.items() if not str(k).startswith("_")},
+            }
+            for record in leftover
+        ],
+    )
 
 
 def detail(ground: Ground, name: str) -> ResourceDetail:
@@ -217,6 +277,30 @@ def detail(ground: Ground, name: str) -> ResourceDetail:
         can_make=can,
         why_not=why,
     )
+
+
+def state_of(ground: Ground, names: list[str]) -> list[dict[str, Any]]:
+    """What `atf enter` would show for each of these resources: presence, lifetime, and fields.
+
+    **Presence is asked, never remembered** — the same call `atf enter`'s prompt makes, so a claim
+    opened from a failing test's Output tab sees exactly what typing that resource's name there would
+    have shown.
+    """
+    out: list[dict[str, Any]] = []
+    for name in names:
+        node = ground.suite.resource(name)
+        state, found = ground.find(node)
+        declaration = declaration_of(node)
+        out.append(
+            {
+                "name": name,
+                "kind": fixture_name(declaration.kind),
+                "state": str(state),
+                "lives": lives.of(node),
+                "fields": {k: v for k, v in sorted((found or {}).items()) if not k.startswith("_")},
+            }
+        )
+    return out
 
 
 def _can_make(ground: Ground, resource: Any, state: State) -> tuple[bool, str]:
@@ -291,8 +375,6 @@ class Neighbourhood:
     sentence: str
     needs: list[Node] = field(default_factory=list)
     needed_by: list[Node] = field(default_factory=list)
-    #: The closure laid out by depth, parents first. What a view draws when words are not enough.
-    layers: list[list[Node]] = field(default_factory=list)
 
 
 def around(suite: Suite, features: list[Any], phrases: dict[str, Any], id: str) -> Neighbourhood:
@@ -309,42 +391,7 @@ def around(suite: Suite, features: list[Any], phrases: dict[str, Any], id: str) 
         sentence=in_words(suite, id) if here.kind == "resource" else "",
         needs=[by_id[name] for name in here.needs if name in by_id],
         needed_by=[node for node in nodes if id in node.needs],
-        layers=_layers(suite, id, by_id) if here.kind == "resource" else [],
     )
-
-
-def layered(suite: Suite) -> list[list[Node]]:
-    """Every declared resource, grouped by how far down the lineage it sits, parents first.
-
-    The whole graph at once, which is what the graph view draws before it lists anything.
-    """
-    by_id = {
-        node.id: node
-        for node in spine(suite, [], {})
-        if node.kind == "resource"
-    }
-    depth: dict[str, int] = {}
-    for node in graph.order(suite.instances.values()):
-        parents = [name_of(parent) for parent in graph.parents(node)]
-        depth[name_of(node)] = 1 + max((depth.get(parent, 0) for parent in parents), default=-1)
-    grouped: list[list[Node]] = [[] for _ in range(max(depth.values(), default=-1) + 1)]
-    for one, level in sorted(depth.items()):
-        if one in by_id:
-            grouped[level].append(by_id[one])
-    return grouped
-
-
-def _layers(suite: Suite, name: str, by_id: dict[str, Node]) -> list[list[Node]]:
-    """Every node in the lineage above this one, grouped by how far down it sits."""
-    depth: dict[str, int] = {}
-    for node in graph.closure(suite.resource(name)):
-        parents = [name_of(parent) for parent in graph.parents(node)]
-        depth[name_of(node)] = 1 + max((depth.get(parent, 0) for parent in parents), default=-1)
-    grouped: list[list[Node]] = [[] for _ in range(max(depth.values(), default=-1) + 1)]
-    for one, level in depth.items():
-        if one in by_id:
-            grouped[level].append(by_id[one])
-    return grouped
 
 
 def in_words(suite: Suite, name: str) -> str:
@@ -372,6 +419,9 @@ class TestEntry:
     verdict: str
     flaky: bool = False
     arranges: list[str] = field(default_factory=list)
+    #: What this behaviour is for, in one line — a scenario's own free text, or a function's
+    #: docstring. Empty where nobody wrote one; nothing invents a description that isn't there.
+    description: str = ""
 
 
 def tests(
@@ -389,7 +439,9 @@ def tests(
             latest[outcome.test] = outcome.outcome
     flaky = runs.flaky(root, environment)
 
-    def entry(identity: str, label: str, form: str, tags: list[str], arranges: list[str]) -> TestEntry:
+    def entry(
+        identity: str, label: str, form: str, tags: list[str], arranges: list[str], description: str
+    ) -> TestEntry:
         seen = latest.get(identity)
         return TestEntry(
             id=identity,
@@ -399,6 +451,7 @@ def tests(
             verdict=str(runs.verdict([seen] if seen else [])),
             flaky=identity in flaky,
             arranges=arranges,
+            description=description,
         )
 
     out: list[TestEntry] = []
@@ -410,21 +463,23 @@ def tests(
             identity = (
                 runs.identity(feature.path, scenario.name, root) if feature.path else scenario.name
             )
-            out.append(entry(identity, scenario.name, "scenario", list(scenario.tags), reach))
-    for path, name, asks in _functions(suite):
+            out.append(
+                entry(identity, scenario.name, "scenario", list(scenario.tags), reach, scenario.description)
+            )
+    for path, name, asks, description in _functions(suite):
         reach = footprint.arranged(suite, footprint.of_function(suite, asks))
-        out.append(entry(runs.identity(path, name, root), name, "function", [], reach))
+        out.append(entry(runs.identity(path, name, root), name, "function", [], reach, description))
     return out
 
 
-def _functions(suite: Suite) -> list[tuple[Path, str, list[str]]]:
-    """Every Python test in the suite, with the things it asks for by name.
+def _functions(suite: Suite) -> list[tuple[Path, str, list[str], str]]:
+    """Every Python test in the suite, with the things it asks for by name and its docstring.
 
     These are the library surface, and what `atf plan` counts under `python tests`.
     """
     import ast
 
-    found: list[tuple[Path, str, list[str]]] = []
+    found: list[tuple[Path, str, list[str], str]] = []
     for path in suite.library:
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -433,7 +488,8 @@ def _functions(suite: Suite) -> list[tuple[Path, str, list[str]]]:
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name.startswith("test_"):
                 asks = [one.arg for one in node.args.args]
-                found.append((path, node.name, asks))
+                said = (ast.get_docstring(node) or "").strip().splitlines()
+                found.append((path, node.name, asks, said[0] if said else ""))
     return found
 
 
@@ -448,6 +504,10 @@ class TestDetail:
     verdict: str = "never run"
     flaky: bool = False
     where: str = ""
+    #: The file this test is written in, and the line its `Scenario:`/`Phrase:` starts on — empty
+    #: and `0` for a Python test, which is source ATF reads but does not offer to rewrite.
+    path: str = ""
+    number: int = 0
     lines: list[tuple[str, str]] = field(default_factory=list)
     arranges: list[str] = field(default_factory=list)
     last: Any = None
@@ -469,6 +529,8 @@ def detail_of_test(
 
     lines: list[tuple[str, str]] = []
     where = ""
+    path = ""
+    number = 0
     for feature in features:
         if feature.path is None:
             continue
@@ -477,6 +539,8 @@ def detail_of_test(
                 continue
             lines = [(line.keyword.title(), line.text) for line in scenario.lines]
             where = f"{feature.path.name}:{scenario.number}"
+            path = str(feature.path)
+            number = scenario.number
 
     outcomes = [
         outcome
@@ -492,11 +556,62 @@ def detail_of_test(
         verdict=listed.verdict,
         flaky=listed.flaky,
         where=where,
+        path=path,
+        number=number,
         lines=lines,
         arranges=listed.arranges,
         last=outcomes[-1] if outcomes else None,
         before=[str(one.outcome) for one in reversed(outcomes[:-1])],
     )
+
+
+# --- Editing a test's own source -------------------------------------------------------------------
+#
+# A test written as Gherkin is a block of lines in a file somebody can open and change directly —
+# not something only a picker composes. These read and write exactly that block, real bytes, with
+# the same safety a save has always needed: written, re-parsed, and rolled back if the result
+# doesn't hold together as a suite ATF can still read.
+
+
+def _scenario_range(path: Path, number: int) -> tuple[int, int]:
+    """The 1-indexed, inclusive line range one scenario occupies, trailing blank lines trimmed."""
+    from . import feature as feature_module
+
+    read = feature_module.read(path)
+    later = sorted(one.number for one in read.scenarios if one.number > number)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    end = (later[0] - 1) if later else len(lines)
+    while end > number and not lines[end - 1].strip():
+        end -= 1
+    return number, end
+
+
+def scenario_text(path: Path, number: int) -> str:
+    """One scenario's own lines, exactly as written — for opening in an editor."""
+    start, end = _scenario_range(path, number)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return "\n".join(lines[start - 1 : end]) + "\n"
+
+
+def write_scenario(path: Path, number: int, text: str) -> None:
+    """Replace one scenario's lines in place. `FeatureError` if the result no longer parses.
+
+    The file is written, then re-read through the real parser; a suite that no longer reads is not
+    saved — the original bytes come back first, so an edit can never leave a file half-written.
+    """
+    from . import feature as feature_module
+    from .feature import FeatureError
+
+    original = path.read_text(encoding="utf-8")
+    start, end = _scenario_range(path, number)
+    lines = original.splitlines()
+    candidate = "\n".join([*lines[: start - 1], *text.rstrip("\n").split("\n"), *lines[end:]]) + "\n"
+    path.write_text(candidate, encoding="utf-8")
+    try:
+        feature_module.read(path)
+    except FeatureError:
+        path.write_text(original, encoding="utf-8")
+        raise
 
 
 # --- The composer -------------------------------------------------------------------------------
@@ -601,12 +716,12 @@ def why_no_when(ground: Ground, suite: Suite) -> list[str]:
     return quiet
 
 
-def sayable(suite: Suite) -> dict[str, list[str]]:
-    """Every sentence this suite can say, grouped by keyword.
+def sayable() -> dict[str, list[str]]:
+    """Every sentence this process's suite can say, grouped by keyword.
 
-    The composer is the one view with no command behind it: it writes Gherkin somebody could have
-    typed, and performs nothing. What it offers is the registry, so a claim a suite registers is
-    offered without the editor knowing anything about it.
+    A process ever loads one suite, so the registry `@act`/`@check` filled at import time already
+    is that suite's — nothing here needs to be told which one. The composer is the one view with
+    no command behind it: it writes Gherkin somebody could have typed, and performs nothing.
     """
     offered: dict[str, list[str]] = {keyword: [] for keyword in steps.KEYWORDS}
     for step in steps.REGISTRY:

@@ -69,7 +69,7 @@ def python_tests(suite: Suite) -> list[str]:
         core,
     )
 
-    return [f"{path.name}::{name}" for path, name, _ in core._functions(suite)]
+    return [f"{path.name}::{name}" for path, name, _, _ in core._functions(suite)]
 
 
 # --- Lint -------------------------------------------------------------------------------------

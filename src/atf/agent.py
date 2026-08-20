@@ -100,7 +100,7 @@ def answer(editor: Editor, tool: str, arguments: dict[str, Any] | None = None) -
     if tool == "overview":
         return editor.overview()
     if tool == "sentences":
-        return {"sentences": core.sayable(editor.suite), "subjects": core.subjects(editor.suite)}
+        return {"sentences": core.sayable(), "subjects": core.subjects(editor.suite)}
     if tool == "run":
         from .entry import (
             Options,

@@ -427,10 +427,8 @@ class Editor:
         """What `atf plan` would say about this draft, without writing or running it.
 
         The same scratch-file-then-gone shape as `try_scenario`, but a parse and a lint pass in
-        this process rather than a real subprocess run — cheap enough to call on a pause in typing,
-        which is what the editor's own inline linting does. The draft is parsed alone first,
-        narrowly, exactly as a save does — `reload()` reads the *whole* suite and would otherwise
-        briefly see every other feature as empty too if one scratch file failed to parse.
+        this process, not a subprocess run. The draft is parsed alone first, narrowly, exactly as a
+        save does, before anything calls `reload()` on the whole suite.
         """
         import uuid
 
@@ -504,7 +502,7 @@ class Editor:
     def provisionable(self, kind: str) -> list[str]:
         """Every instance of this kind that is missing and nothing stops ATF making.
 
-        The bulk Provision button's own targets, recomputed here rather than trusted from a form.
+        The bulk Provision button's own targets, computed fresh on every call.
         """
         return [one["name"] for one in self.instances(kind) if one["can_provision"]]
 
@@ -1667,8 +1665,7 @@ def build_app(editor: Editor) -> Any:
     def _provision_kind(kind: str, env: str = "") -> Any:
         """The bulk Provision button: every missing, makeable instance of one kind, closure and all.
 
-        Targets are recomputed here, never trusted from the form — the same discipline as the Make
-        button, just summed over a kind instead of named one at a time.
+        Targets are recomputed here, never trusted from the form.
         """
         answering(editor, env)
         try:

@@ -13,7 +13,7 @@ from .environment import Ground
 from .feature import Feature
 from .loader import Suite, fixture_name
 from .spi import Did, State
-from .steps import Sentence, StepError
+from .steps import StepError
 
 
 @dataclass(frozen=True)
@@ -381,16 +381,6 @@ def _instance(node: Any) -> Any:
     from .declare import instance_of
 
     return instance_of(node)
-
-
-def unmatched(text: str) -> str:
-    """What to say about a sentence nothing answers, with the nearest ones ATF does know."""
-    return steps.undefined(steps.CHECK, text)
-
-
-def sentence_of(line: Any) -> Sentence:
-    """One line, bound to its step, or a `StepError` naming what did not match."""
-    return Sentence(keyword=line.keyword, text=line.text, line=line.number).resolve()
 
 
 __all__ = [

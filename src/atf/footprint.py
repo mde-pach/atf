@@ -47,16 +47,6 @@ class Footprint:
             return f'"{self.opaque[0]}" has an effect nothing declares'
         return ""
 
-    def conflicts_with(self, other: Footprint) -> bool:
-        """Whether these two could interfere, so that one must finish before the other starts.
-
-        Two tests that only read the same resources never conflict. An unsealed footprint conflicts
-        with itself and is placed apart from the sealed ones by `schedule`.
-        """
-        if not self.sealed or not other.sealed:
-            return True
-        return bool(self.writes & other.touches or other.writes & self.touches)
-
 
 # --- Reading one test -----------------------------------------------------------------------------
 

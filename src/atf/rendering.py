@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import core, runs
+from . import runs
 from .feature import Feature
 from .loader import Suite
 from .runs import Verdict
@@ -82,13 +82,3 @@ def summary(entry: tuple[Path, int, dict[str, int]]) -> str:
     return f"wrote {path}      {total} scenarios   {tail}"
 
 
-def verdict_of_all(features: list[Feature], verdicts: dict[str, str]) -> Verdict:
-    """The fold over every scenario rendered, for whoever wants one word about the suite."""
-    return core.verdict_of(
-        [
-            core.TestEntry(id=one.name, label=one.name, form="scenario", tags=[], verdict=verdicts.get(one.name, ""))
-            for feature in features
-            for one in feature.scenarios
-            if not one.is_phrase
-        ]
-    )

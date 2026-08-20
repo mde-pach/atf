@@ -381,14 +381,3 @@ def start(scope: Scope) -> Scope:
 def finish() -> None:
     global _CURRENT
     _CURRENT = None
-
-
-def current() -> Scope | None:
-    return _CURRENT
-
-
-def require() -> Scope:
-    scope = current()
-    if scope is None:
-        raise ScopeError("no test is running, so there is nothing in scope")
-    return scope

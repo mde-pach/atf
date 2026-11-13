@@ -147,7 +147,7 @@ atf/lists.feature:9  Scenario: a list shows under its owner
 
 `atf init` starts you off. `atf plan` says whether the suite is sound and what will happen. `atf run`
 runs it and records a run. `atf enter` puts you inside a failure. `atf explain` tells you everything
-about one thing. `atf edit` serves all of it on a page.
+about one thing. `atf edit` serves all of it on a page, with an editor that completes and checks as you type.
 
 The exit code is `0` when there is nothing wrong, `1` when a test failed or the suite has a fault in
 it, and `2` when the run never started — in which case nothing was recorded.

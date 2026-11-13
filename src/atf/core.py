@@ -635,6 +635,181 @@ def lint_file(
     return problems
 
 
+# --- What a sentence means, for hover -----------------------------------------------------------
+#
+# A fact, not a check: it never decides whether anything is wrong, so it never touches `plan.lint`.
+
+
+@dataclass(frozen=True)
+class Meaning:
+    """What one sentence means: the step or phrase that answers it, and where."""
+
+    pattern: str
+    where: str
+    doc: str = ""
+    is_phrase: bool = False
+
+
+def meaning_of(phrases: dict[str, Any], keyword: str, text: str) -> Meaning | None:
+    """What this one sentence means.
+
+    `None` where nothing answers it — a sentence the lint pass is already flagging is not also a
+    fact worth asserting here.
+    """
+    from . import phrases as phrase_reader
+
+    hit = phrase_reader.matching(phrases, text)
+    if hit is not None:
+        phrase, _ = hit
+        return Meaning(pattern=phrase.pattern, where=phrase.where, doc="a phrase this suite teaches", is_phrase=True)
+    step = steps.matching(keyword, text)
+    if step is None:
+        return None
+    said = (step.function.__doc__ or "").strip().splitlines()
+    return Meaning(pattern=step.pattern, where=_module_path(step.module), doc=said[0] if said else "")
+
+
+def _module_path(module: str) -> str:
+    """A registered step's module, read back as the file a person would actually open for it.
+
+    Read off the module's own `__file__` where it is importable, since a dotted name alone does
+    not say whether it lives under `src/` or wherever else a team lays its own steps out.
+    """
+    import sys
+
+    found = sys.modules.get(module)
+    where = getattr(found, "__file__", None)
+    if where:
+        try:
+            return str(Path(where).relative_to(Path.cwd()))
+        except ValueError:
+            return where
+    return f"{module.replace('.', '/')}.py" if module else ""
+
+
+def sentence_lines(text: str) -> list[tuple[int, str, str]]:
+    """Every sentence in this draft, its keyword resolved through any `And`/`But`.
+
+    Read straight off typed text, without needing a file on disk to parse it from yet.
+    """
+    keyword = ""
+    out: list[tuple[int, str, str]] = []
+    for number, raw in enumerate(text.split("\n"), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith(("Feature:", "Scenario:", "Example:", "Phrase:", "Rule:", "@")):
+            keyword = ""
+            continue
+        word, _, rest = line.partition(" ")
+        lowered = word.lower()
+        if lowered in steps.KEYWORDS:
+            keyword = lowered
+        elif lowered not in ("and", "but", "*") or not keyword:
+            continue
+        out.append((number, keyword, rest.strip()))
+    return out
+
+
+def meanings(phrases: dict[str, Any], text: str) -> list[dict[str, Any]]:
+    """What every sentence in this draft means — the hover fact, live. Nothing is decided here."""
+    out = []
+    for number, keyword, sentence in sentence_lines(text):
+        found = meaning_of(phrases, keyword, sentence)
+        if found is not None:
+            out.append(
+                {
+                    "line": number,
+                    "pattern": found.pattern,
+                    "where": found.where,
+                    "doc": found.doc,
+                    "phrase": found.is_phrase,
+                }
+            )
+    return out
+
+
+# --- What `atf plan`'s advisories say about one file, and what to do about one --------------------
+
+
+def advisories_for(
+    suite: Suite,
+    features: list[Any],
+    phrases: dict[str, Any],
+    root: Path,
+    path: Path,
+    number: int | None = None,
+    real_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Advisories located in this file — or, given `number`, in one scenario of it.
+
+    Turned into what the editor needs to act on one: a comparison target, or a rewrite. Matched by
+    exact `path:number`, the same way `lint_file` matches faults. `real_path` is this draft's own
+    still-on-disk file, if it is a draft of one — the "earlier" scenario a duplicate names can be
+    another scenario in this very scratch copy, and its own `path` is a temp file gone the moment
+    this answers, so it is read back against `real_path` instead.
+    """
+    from . import plan as planning
+
+    out = []
+    for advisory in planning.advisories(suite, features, phrases):
+        located = advisory.where.partition("  ")[0]
+        file_path, _, at = located.rpartition(":")
+        if file_path != str(path) or (number is not None and at != str(number)):
+            continue
+        entry: dict[str, Any] = {
+            "kind": advisory.kind,
+            "what": advisory.what,
+            "hint": advisory.hint,
+            "line": int(at) if at.isdigit() else 0,
+        }
+        if advisory.kind == "duplicate":
+            target_path = Path(advisory.data["target_path"])
+            if target_path == path:
+                # The earlier scenario is another one in this very scratch copy — nameable only
+                # where the copy is of a real file already on disk, not a still-unsaved new draft.
+                if real_path is not None:
+                    entry["hint"] = entry["hint"].replace(str(path), str(real_path))
+                target_path = real_path if real_path is not None else None
+            entry["target"] = runs.identity(target_path, advisory.data["target_name"], root) if target_path else ""
+        elif advisory.kind == "phrase":
+            phrase = phrases.get(advisory.data["phrase"])
+            window = _phrase_window(features, path, advisory.data["start"], advisory.data["width"])
+            entry["phrase"] = advisory.data["phrase"]
+            entry["width"] = advisory.data["width"]
+            entry["start"] = advisory.data["start"]
+            entry["replacement"] = phrase_call_for(phrase, window) if phrase and window else ""
+        out.append(entry)
+    return out
+
+
+def _phrase_window(features: list[Any], path: Path, start: int, width: int) -> list[Any] | None:
+    """The scenario lines an advisory's phrase-shaped run points at."""
+    for feature in features:
+        if feature.path != path:
+            continue
+        for scenario in feature.tests:
+            for index, line in enumerate(scenario.lines):
+                if line.number == start:
+                    return scenario.lines[index : index + width]
+    return None
+
+
+def phrase_call_for(phrase: Any, window: list[Any]) -> str | None:
+    """The one line that calls `phrase` and means exactly what `window`'s raw lines say.
+
+    Built from the same values `phrases.matches_window` recovers — the reverse of `phrases.expand`.
+    """
+    from . import phrases as phrase_reader
+    from .patterns import fill
+
+    values = phrase_reader.matches_window(phrase, window)
+    if values is None:
+        return None
+    keyword = window[0].keyword.title()
+    return f"{keyword} {fill(phrase.pattern, values)}"
+
+
 # --- The composer -------------------------------------------------------------------------------
 
 
@@ -645,6 +820,9 @@ class Offer:
     keyword: str
     sentence: str
     why: str = ""
+    #: A real, already-declared value for this sentence's blank — never a made-up example. Empty
+    #: where the sentence has no blank, or the suite does not actually have one yet.
+    ghost: str = ""
 
 
 def offers(
@@ -680,21 +858,29 @@ def offers(
         declaration = declaration_of(node)
         kind = fixture_name(declaration.kind)
         for field_name in sorted(values_of(node)):
-            if not is_resource(values_of(node)[field_name]):
+            value = values_of(node)[field_name]
+            if not is_resource(value):
                 out.append(
                     Offer(
                         "When",
                         f'the {kind} "{name}" {field_name} becomes ""',
                         "it is arranged above, and ATF owns this environment",
+                        ghost=_ghost_of(value),
                     )
                 )
         if ground.can(node, "browse"):
             out.append(Offer("When", f"I list every {kind}", "the adapter browses"))
         out.append(Offer("Then", f'the {kind} "{name}" exists', "it is arranged above"))
         for field_name in sorted(values_of(node)):
-            if not is_resource(values_of(node)[field_name]):
+            value = values_of(node)[field_name]
+            if not is_resource(value):
                 out.append(
-                    Offer("Then", f'the {kind} "{name}" {field_name} is ""', "it is arranged above")
+                    Offer(
+                        "Then",
+                        f'the {kind} "{name}" {field_name} is ""',
+                        "it is arranged above",
+                        ghost=_ghost_of(value),
+                    )
                 )
 
     if "shell" in ground.drivers:
@@ -709,6 +895,23 @@ def offers(
             continue
         out.append(Offer(keyword, pattern, "a phrase this suite teaches"))
     return out
+
+
+#: How much of a real value is worth showing as a ghost example. Past this it reads as a wall of
+#: text, not a hint.
+_GHOST_LIMIT = 60
+
+
+def _ghost_of(value: Any) -> str:
+    """A real value, worth showing in an empty blank as an example — or nothing at all.
+
+    Never invented: this is only ever a value the suite already declared. A blank one, or one too
+    unwieldy to read at a glance, is not worth ghosting either.
+    """
+    if value in (None, ""):
+        return ""
+    text = str(value)
+    return text if len(text) <= _GHOST_LIMIT else ""
 
 
 def _named(text: str, suite: Suite) -> list[str]:

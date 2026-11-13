@@ -50,6 +50,7 @@ nav:
       - When it goes red: guides/failures.md
       - Running less of it: guides/choosing.md
       - Saying it in your own words: guides/words.md
+      - Writing in the editor: guides/editor.md
       - Somewhere ATF has not heard of: guides/systems.md
 
   # Generated. `scripts/reference.py` writes the sentences; mkdocs-click writes the commands.

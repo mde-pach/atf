@@ -111,6 +111,15 @@ def _(command: str, atf) -> Any:
     }
 
 
+@act("I wait for the editor to catch up")
+def _() -> None:
+    """The composer's own reachable-offers fetch, and the live lint/meanings/advisories checks,
+    all settle on a debounce measured in milliseconds — this is longer than the longest of them."""
+    import time
+
+    time.sleep(1)
+
+
 @act('I read "{path}" from the editor')
 def _(path: str, atf) -> Any:
     """Ask the running editor for one of its answers, as data.
@@ -124,6 +133,42 @@ def _(path: str, atf) -> Any:
     base = atf.ground.drivers["browser"].base_url
     with urllib.request.urlopen(f"{base}{path}", timeout=10) as answer:
         return json.loads(answer.read())
+
+
+def _posted(atf, path: str, body: dict) -> Any:
+    """Send JSON to one of the editor's own endpoints, the way its own page's own script does."""
+    import json
+    import urllib.request
+
+    base = atf.ground.drivers["browser"].base_url
+    request = urllib.request.Request(
+        f"{base}{path}",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as answer:
+        return json.loads(answer.read())
+
+
+@act('I ask the editor what "{text}" means')
+def _(text: str, atf) -> Any:
+    """The hover fact — what the editor says a draft's own sentences mean, live."""
+    return _posted(atf, "/api/tests/meanings", {"text": text})
+
+
+@act('I ask the editor for advisories on "{text}"')
+def _(text: str, atf) -> Any:
+    """A second look at a draft — never a fault, never a block on a save."""
+    return _posted(atf, "/api/tests/advisories", {"text": text})
+
+
+@act('I ask the editor to draft the claim for "{id}"')
+def _(id: str, atf) -> Any:
+    """The draft-claim quick fix — the same call `atf run --accept` makes, on just this test."""
+    import urllib.parse
+
+    return _posted(atf, f"/api/tests/{urllib.parse.quote(id, safe='')}/draft", {})
 
 
 @check('it says "{text}" somewhere')

@@ -63,6 +63,40 @@ def matching(phrases: dict[str, Phrase], sentence: str) -> tuple[Phrase, dict[st
     return max(hits, key=lambda hit: literal_length(hit[0].pattern))
 
 
+def line_values(template: Line, real: Line) -> dict[str, str] | None:
+    """What `real` fills one of a phrase's own lines' holes with.
+
+    `None` where it says something else, including a line whose hole-free wording disagrees with
+    the phrase's own: a phrase line can hard-code a value with no hole at all (`Then its exit code
+    is 2`), and a raw line asking the same step for a *different* value is not a match on that
+    alone — matching a phrase means saying what its body says, not just asking the same steps.
+    """
+    if template.keyword != real.keyword:
+        return None
+    found = re.match(f"^{pattern_regex(template.text)}$", real.text.strip())
+    if found is None:
+        return None
+    holes = CAPTURE_RE.findall(template.text)
+    return dict(zip(holes, found.groups(), strict=False))
+
+
+def matches_window(phrase: Phrase, window: list[Line]) -> dict[str, str] | None:
+    """The values this run of raw lines fills `phrase`'s holes with.
+
+    Only where it says exactly what the phrase's own body says — line for line, wording and all.
+    `None` where it says something else, or is not even the same number of lines.
+    """
+    if len(window) != len(phrase.lines):
+        return None
+    values: dict[str, str] = {}
+    for template, real in zip(phrase.lines, window, strict=True):
+        found = line_values(template, real)
+        if found is None:
+            return None
+        values.update(found)
+    return values
+
+
 def expand(scenario: Scenario, phrases: dict[str, Phrase]) -> Scenario:
     """A scenario with every phrase it says replaced by the sentences that phrase stands for.
 

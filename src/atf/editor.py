@@ -285,7 +285,8 @@ class Editor:
         offered = core.offers(self.ground, self.phrases, so_far or [])
         return {
             "offers": [
-                {"keyword": one.keyword, "sentence": one.sentence, "why": one.why} for one in offered
+                {"keyword": one.keyword, "sentence": one.sentence, "why": one.why, "ghost": one.ghost}
+                for one in offered
             ],
             "kinds": kinds.offered(),
             "quiet": core.why_no_when(self.ground, self.suite),
@@ -451,6 +452,95 @@ class Editor:
         finally:
             path.unlink(missing_ok=True)
             self.reload(self.env)
+
+    def meanings(self, text: str) -> list[dict[str, Any]]:
+        """What every sentence in this draft means — the hover fact. Never touches disk."""
+        return core.meanings(self.phrases, text)
+
+    def advisories_draft(self, text: str, id: str = "") -> list[dict[str, Any]]:
+        """What `atf plan`'s advisories say about this draft — the same soft second look, live.
+
+        The same scratch-file-then-gone shape `lint_draft` uses, since an advisory is found the
+        same way a fault is: over the parsed suite, not the raw text. `id`, where an existing test
+        is what's being edited, is the file this draft is a draft *of* — its real, still-on-disk
+        copy is excluded from the comparison, or every scenario in it would look like a duplicate
+        of itself the moment its own file gets a scratch copy sitting beside it.
+        """
+        import uuid
+
+        from . import feature as feature_module
+        from .feature import FeatureError
+
+        exclude = Path(self.test(id)["path"]) if id and self.test(id)["path"] else None
+        specs = self.suite.manifest.specs
+        specs.mkdir(parents=True, exist_ok=True)
+        # `_duplicate_shape` calls whichever scenario it meets first "the earlier one" — a name
+        # starting with `.` sorts before an ordinary spec file's name, which would make this
+        # scratch copy "earlier" every time and the real file's own scenario "the duplicate",
+        # backwards from what a person reading the popover means by "already exists". `zzz-` sorts
+        # after an ordinary suite's own files, so the draft is what gets named as the duplicate.
+        path = specs / f"zzz-advise-{uuid.uuid4().hex[:8]}.feature"
+        path.write_text(_wrap_as_feature(text, "a draft"), encoding="utf-8")
+        try:
+            parsed = feature_module.read(path)
+        except FeatureError:
+            path.unlink(missing_ok=True)
+            return []
+        try:
+            self.reload(self.env)
+            number = parsed.scenarios[-1].number
+            features = [f for f in self.features if f.path != exclude] if exclude else self.features
+            return core.advisories_for(
+                self.suite, features, self.phrases, self.root, path, number, real_path=exclude
+            )
+        finally:
+            path.unlink(missing_ok=True)
+            self.reload(self.env)
+
+    def draftable_line(self, id: str) -> int:
+        """The last line of this scenario, where the draft-claim 💡 belongs.
+
+        0 where this scenario has already made a claim, and there is nothing to draft.
+        """
+        from . import accept
+
+        for feature in self.features:
+            if feature.path is None:
+                continue
+            for scenario in feature.scenarios:
+                if scenario.is_phrase or runs.identity(feature.path, scenario.name, self.root) != id:
+                    continue
+                if accept.promises_nothing(scenario):
+                    return max(line.number for line in scenario.lines)
+                return 0
+        return 0
+
+    def draft_claim(self, id: str) -> dict[str, Any]:
+        """Draft the claim this scenario made none of.
+
+        **The same call `atf run --accept` makes**, narrowed to just this one test, writing
+        straight into the file it just ran. Runs the file as it stands on disk: drafting only ever
+        answers what a real run produced, so an unsaved edit in the buffer is not what gets read.
+        """
+        from .entry import Options, do_run
+
+        found = self.test(id)
+        answer = do_run(
+            Options(config=str(self.manifest_path) if self.manifest_path else None, quiet=True),
+            env=self.ground.config.name,
+            tag=(),
+            select="",
+            failed=False,
+            keyword="",
+            tests=(found["id"],),
+            report=(),
+            no_make=False,
+            dry_run=False,
+            accept=True,
+        )
+        self.reload()
+        drafted = answer.data.get("drafted") or {}
+        return {"drafted": sum(drafted.values())}
 
     def unused(self) -> dict[str, list[str]]:
         """What nothing asks for. **The same call `atf explain` makes**, with the same answer."""
@@ -1171,20 +1261,32 @@ def _highlight_line(text: str, kind_words: set[str]) -> str:
     return "".join(parts)
 
 
-def _render_backdrop(text: str, kind_words: set[str]) -> str:
+def _render_backdrop(
+    text: str, kind_words: set[str], meanings: dict[int, dict[str, Any]] | None = None
+) -> str:
     """The editor's coloured layer, line for line.
 
-    Leading space kept exact, or it drifts off the real (invisible) text sitting on top of it.
+    Leading space kept exact, or it drifts off the real (invisible) text sitting on top of it. A
+    line `core.meanings` names gets a dashed underline — the hover fact itself lives in a floating
+    card `app.js` positions from its own copy of the same data, since this layer sits under the
+    real (transparent) textarea and never receives a mouse event of its own.
     """
+    meanings = meanings or {}
     rendered = []
-    for line in text.split("\n"):
+    for number, line in enumerate(text.split("\n"), start=1):
         stripped = line.lstrip(" ")
         indent = line[: len(line) - len(stripped)]
         word, sep, rest = stripped.partition(" ")
+        has_meaning = number in meanings
         if sep and word.lower() in _KEYWORDS:
-            body = f'<span class="tok-kw">{html.escape(word)}</span> {_highlight_line(rest, kind_words)}'
+            body = _highlight_line(rest, kind_words)
+            if has_meaning:
+                body = f'<span class="tok">{body}</span>'
+            body = f'<span class="tok-kw">{html.escape(word)}</span> {body}'
         else:
             body = _highlight_line(stripped, kind_words)
+            if has_meaning:
+                body = f'<span class="tok">{body}</span>'
         rendered.append(indent + body)
     return "\n".join(rendered)
 
@@ -1211,6 +1313,94 @@ def _phrase_candidates(editor: Editor) -> list[dict[str, str]]:
     return out
 
 
+def _gutter_marker(line: int, inner: str, extra: str = "") -> str:
+    """One icon (or a small group of them) pinned to a row of the gutter.
+
+    The same `top: calc(14px + N * 1.9em)` positioning `.line-highlight`/`.lint-line` already use
+    to track a row from outside the backdrop — the gutter stays one block of plain line numbers,
+    never broken into a cell per line. `extra` marks a marker `app.js` recomputes live (an
+    advisory) as against one rendered once from disk (the draft-claim 💡), so a live refresh can
+    clear and redraw just its own.
+    """
+    classes = f"gutter-icon {extra}".strip()
+    return f'<div class="{classes}" style="top:calc(14px + {line - 1} * 1.9em)">{inner}</div>'
+
+
+def _draft_marker(editor: Editor, test_id: str) -> str:
+    """The draft-claim 💡: only where this scenario made no claim to draft one from."""
+    line = editor.draftable_line(test_id)
+    if not line:
+        return ""
+    button = (
+        f'<button type="button" class="qf-icon" data-qf="draft" '
+        f'data-test-id="{html.escape(test_id, quote=True)}" title="draft the claim">💡</button>'
+    )
+    return _gutter_marker(line, button, "gutter-icon-draft")
+
+
+def _advisory_markers(found: list[dict[str, Any]]) -> str:
+    """The gutter side of every advisory this scenario has.
+
+    A 💡 for a duplicate, a fold ▾ and a rewrite 💡 for a run of steps that already says a phrase
+    this suite teaches.
+    """
+    out = []
+    for one in found:
+        if one["kind"] == "duplicate" and one.get("target"):
+            button = (
+                f'<button type="button" class="qf-icon" data-qf="dup" '
+                f'data-target="{html.escape(one["target"], quote=True)}" '
+                f'data-hint="{html.escape(one["hint"], quote=True)}" title="quick fix">💡</button>'
+            )
+            out.append(_gutter_marker(one["line"], button, "gutter-icon-advisory"))
+        elif one["kind"] == "phrase":
+            chev = (
+                f'<button type="button" class="fold-chev" data-fold-start="{one["start"]}" '
+                f'data-fold-width="{one["width"]}" data-phrase="{html.escape(one["phrase"], quote=True)}" '
+                f'title="fold — view only">▾</button>'
+            )
+            rewrite = (
+                f'<button type="button" class="qf-icon" data-qf="phraseuse" '
+                f'data-fold-start="{one["start"]}" data-fold-width="{one["width"]}" '
+                f'data-hint="{html.escape(one["hint"], quote=True)}" '
+                f'data-replacement="{html.escape(one["replacement"], quote=True)}" '
+                f'title="quick fix">💡</button>'
+                if one.get("replacement")
+                else ""
+            )
+            out.append(
+                _gutter_marker(
+                    one["start"], f'<span class="gutter-group">{chev}{rewrite}</span>', "gutter-icon-advisory"
+                )
+            )
+    return "".join(out)
+
+
+def _scenario_bounds(editor: Editor, path: Path) -> list[dict[str, Any]]:
+    """Every scenario in this file, where it starts, and what to call it.
+
+    The sticky header's only data — it does nothing where a file holds just the one scenario, since
+    there is nothing else scrolling past to distinguish it from.
+    """
+    bounds = sorted(
+        (scenario.number, scenario.name, scenario.description)
+        for feature in editor.features
+        if feature.path == path
+        for scenario in feature.scenarios
+        if not scenario.is_phrase
+    )
+    return [{"start": start, "name": name, "description": description} for start, name, description in bounds]
+
+
+def _floating_widgets() -> str:
+    """The two floating elements every open editor carries.
+
+    The hover fact, and the quick-fix popover a gutter 💡 opens. One of each — positioned by
+    `app.js`, never parked inline.
+    """
+    return '<div class="hovercard" id="hovercard" hidden></div><div class="qf-popover" id="qf-popover" hidden></div>'
+
+
 def _editor_empty() -> str:
     return (
         '<div class="editorpane"><div class="editor-empty">'
@@ -1228,14 +1418,20 @@ def _editor_python(found: dict[str, Any]) -> str:
     return f'<div class="editorpane">{body}</div>'
 
 
-def _editor_existing(found: dict[str, Any], source: dict[str, Any]) -> str:
+def _editor_existing(editor: Editor, found: dict[str, Any], source: dict[str, Any]) -> str:
     """The real editor, opened on this test's whole file, scrolled to the scenario clicked."""
-    name = Path(source["path"]).name
+    path = Path(source["path"])
+    name = path.name
     text = source["text"]
     kind_words = set(kinds.offered())
     lines = text.split("\n")
     selected_number = source["number"]
     selected_end = source["end"]
+    meanings_by_line = {one["line"]: one for one in core.meanings(editor.phrases, text)}
+    advisories_found = core.advisories_for(
+        editor.suite, editor.features, editor.phrases, editor.root, path, selected_number
+    )
+    bounds = _scenario_bounds(editor, path)
 
     # The failing step is searched for only within the selected scenario's own lines — the same
     # step text can appear in more than one scenario in a file this size.
@@ -1265,8 +1461,12 @@ def _editor_existing(found: dict[str, Any], source: dict[str, Any]) -> str:
         arranges = f'<span class="filebar-sep">·</span><span>arranges: {links}</span>'
 
     gutter = "\n".join(str(i) for i in range(1, len(lines) + 1))
-    backdrop = _render_backdrop(text, kind_words)
+    gutter_icons = _draft_marker(editor, found["id"]) + _advisory_markers(advisories_found)
+    backdrop = _render_backdrop(text, kind_words, meanings_by_line)
     status = html.escape(found["last"]["outcome"] if found["last"] else "never run")
+    sticky = (
+        '<div class="sticky-scenario" id="sticky-scenario" hidden></div>' if len(bounds) > 1 else ""
+    )
 
     body = (
         '<div class="editorpane">'
@@ -1274,12 +1474,15 @@ def _editor_existing(found: dict[str, Any], source: dict[str, Any]) -> str:
         f"{fail_note}"
         '<div class="editor-surface">'
         f'<div class="editor-gutter" id="editor-gutter">{gutter}</div>'
+        f'<div class="gutter-icons" id="gutter-icons">{gutter_icons}</div>'
         '<div class="editor-stack">'
+        f"{sticky}"
         f'<div class="editor-backdrop" id="editor-backdrop" aria-hidden="true">{highlight}{backdrop}</div>'
         '<textarea class="editor-input" id="editor-input" spellcheck="false" autocapitalize="off" '
         f'aria-label="scenario text" data-mode="edit" data-test-id="{html.escape(found["id"], quote=True)}" '
         f'data-scroll-to-line="{selected_number}">{html.escape(text)}</textarea>'
         '<div class="suggest" id="suggest" role="listbox" hidden></div>'
+        f"{_floating_widgets()}"
         "</div></div>"
         '<div class="actionbar">'
         f'<span class="status" id="editor-status">{status}</span>'
@@ -1287,7 +1490,10 @@ def _editor_existing(found: dict[str, Any], source: dict[str, Any]) -> str:
         f'data-test-id="{html.escape(found["id"], quote=True)}">▶ Run this scenario</button>'
         '<button type="button" class="btn ghost" id="try-btn">▶ Try it</button>'
         '<button type="button" class="btn" id="save-btn">Save</button>'
-        "</div></div>"
+        "</div>"
+        f'{_json_script("meanings-data", list(meanings_by_line.values()))}'
+        f'{_json_script("scenario-bounds", bounds)}'
+        "</div>"
     )
     return body
 
@@ -1314,6 +1520,7 @@ def _editor_new(editor: Editor) -> str:
         '<textarea class="editor-input" id="editor-input" spellcheck="false" autocapitalize="off" '
         f'aria-label="scenario text" data-mode="new">{html.escape(text)}</textarea>'
         '<div class="suggest" id="suggest" role="listbox" hidden></div>'
+        f"{_floating_widgets()}"
         "</div></div>"
         '<div class="actionbar">'
         '<span class="status" id="editor-status"></span>'
@@ -1355,7 +1562,11 @@ def render_tests(
         pane = _editor_empty()
     else:
         found = editor.test_state(selected)
-        pane = _editor_python(found) if not found["path"] else _editor_existing(found, editor.test_source(selected))
+        pane = (
+            _editor_python(found)
+            if not found["path"]
+            else _editor_existing(editor, found, editor.test_source(selected))
+        )
 
     resource_field = (
         f'<input type="hidden" name="resource" value="{html.escape(resource, quote=True)}">' if resource else ""
@@ -1753,6 +1964,31 @@ def build_app(editor: Editor) -> Any:
         except Exception as exc:  # noqa: BLE001 - unparseable is an answer here too, not a crash
             problems = [str(exc)]
         return JSONResponse({"problems": problems})
+
+    @app.post("/api/tests/meanings")
+    def _meanings(body: dict[str, Any]) -> Any:
+        """What every sentence in this draft means — the hover fact, live. Never decides anything."""
+        answering(editor, str(body.get("env", "")))
+        return JSONResponse({"meanings": editor.meanings(str(body.get("text", "")))})
+
+    @app.post("/api/tests/advisories")
+    def _advisories_draft(body: dict[str, Any]) -> Any:
+        """What `atf plan`'s advisories say about this draft — a second look, never a block."""
+        answering(editor, str(body.get("env", "")))
+        try:
+            found = editor.advisories_draft(str(body.get("text", "")), str(body.get("id", "")))
+        except Exception:  # noqa: BLE001 - unparseable draft: the lint pass already says so
+            found = []
+        return JSONResponse({"advisories": found})
+
+    @app.post("/api/tests/{id:path}/draft")
+    def _draft_claim(id: str, body: dict[str, Any]) -> Any:
+        """The draft-claim 💡: **the same call `atf run --accept` makes**, on just this test."""
+        answering(editor, str(body.get("env", "")))
+        try:
+            return JSONResponse(editor.draft_claim(id))
+        except KeyError:
+            return JSONResponse({"error": f"no test {id}"}, status_code=404)
 
     @app.post("/api/tests/{id:path}/save")
     def _save_test(id: str, body: dict[str, Any]) -> Any:

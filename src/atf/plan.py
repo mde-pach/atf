@@ -31,6 +31,28 @@ class Fault:
         return out
 
 
+@dataclass(frozen=True)
+class Advisory:
+    """Something about the suite worth a second look — never a fault, never a block on a save.
+
+    Same shape as `Fault` for a person reading `atf plan`: `where`, `what`, and a `hint`. `kind`
+    and `data` exist only for the editor, which turns one of these into a gutter action instead
+    of a line of text — `atf plan` itself never reads either.
+    """
+
+    where: str
+    what: str
+    hint: str = ""
+    kind: str = ""
+    data: dict[str, Any] = field(default_factory=dict)
+
+    def lines(self) -> list[str]:
+        out = [f"  {self.where}", f"    {self.what}"]
+        if self.hint:
+            out += [f"      {line}" for line in self.hint.splitlines()]
+        return out
+
+
 @dataclass
 class Plan:
     """What a plan answers: whether the suite is sound, and what a run would do to the environment."""
@@ -40,6 +62,8 @@ class Plan:
     phrases: int = 0
     python_tests: int = 0
     faults: list[Fault] = field(default_factory=list)
+    #: Worth a second look, never enough on its own to fail the plan or block a save.
+    advisories: list[Advisory] = field(default_factory=list)
     standing: list[reconcile.Reconciliation] = field(default_factory=list)
     undeclared: list[str] = field(default_factory=list)
     unreachable: str = ""
@@ -179,6 +203,106 @@ def _is_constant(resolver: Any) -> bool:
     return not callable(resolver)
 
 
+# --- Advisories -------------------------------------------------------------------------------
+#
+# A second look, never a block. Nothing here can fail `atf plan` or refuse a save — that is what
+# a `Fault` is for. These are found the same way faults are: asked of nothing but the files.
+
+
+def advisories(suite: Suite, features: list[Feature], phrases: dict[str, Any]) -> list[Advisory]:
+    """Everything about the suite worth a second look, never enough on its own to act on."""
+    found: list[Advisory] = []
+    found += _duplicate_shape(features)
+    found += _matches_a_phrase(features, phrases)
+    return found
+
+
+def _shape(scenario: Any) -> tuple[tuple[str, str], ...] | None:
+    """A scenario's `Given`/`When` lines, exactly as said.
+
+    A stand-in for "arranges and acts the same way" — by the wording, not by the step it resolves
+    to: a suite that says most of what it does through one generic step (`I run "{command}"`, say)
+    would otherwise see every scenario as identical, since the values are exactly what tells two
+    calls to that step apart. `Then` is excluded: it is the claim, and the whole point of two
+    scenarios sharing a shape is that they might not need to say so twice. `None` where a line
+    matches no step yet — a scenario the sentence lint is already flagging is not also worth
+    comparing here.
+    """
+    shape: list[tuple[str, str]] = []
+    for line in scenario.lines:
+        if line.keyword == "then":
+            continue
+        if steps.matching(line.keyword, line.text) is None:
+            return None
+        shape.append((line.keyword, line.text))
+    return tuple(shape) if shape else None
+
+
+def _duplicate_shape(features: list[Feature]) -> list[Advisory]:
+    """Two scenarios that arrange and act the same way — the second is worth a second look."""
+    seen: dict[tuple[tuple[str, str], ...], Any] = {}
+    found: list[Advisory] = []
+    for feature in features:
+        for scenario in feature.tests:
+            shape = _shape(scenario)
+            if shape is None:
+                continue
+            earlier = seen.get(shape)
+            if earlier is None:
+                seen[shape] = scenario
+                continue
+            found.append(
+                Advisory(
+                    f"{scenario.where}  {scenario.name}",
+                    "this looks like one that already exists",
+                    f"close to {earlier.name!r}, already in {earlier.where}",
+                    kind="duplicate",
+                    data={"target_path": str(earlier.path), "target_name": earlier.name},
+                )
+            )
+    return found
+
+
+def _matches_a_phrase(features: list[Feature], phrases: dict[str, Any]) -> list[Advisory]:
+    """A run of raw lines that says exactly what a phrase this suite already teaches says.
+
+    Matched by wording, the same way `phrases.matches_window` checks it — the same steps in the
+    same order is not enough, since a phrase line can hard-code a value with no hole at all, and a
+    raw line asking for something else there is not saying what the phrase says. Width 1 is
+    excluded: folding one raw line into one phrase-call line collapses nothing, so a single-line
+    phrase matching a single raw line is not a second look worth having. Found once per scenario
+    per phrase — the first window that matches, not every overlapping one.
+    """
+    named = [(name, phrase) for name, phrase in phrases.items() if len(phrase.lines) > 1]
+    if not named:
+        return []
+    found: list[Advisory] = []
+    for feature in features:
+        for scenario in feature.tests:
+            lines = scenario.lines
+            for name, phrase in named:
+                width = len(phrase.lines)
+                if width > len(lines):
+                    continue
+                for start in range(len(lines) - width + 1):
+                    if phrase_reader.matches_window(phrase, lines[start : start + width]) is not None:
+                        # Anchored at the scenario's own line, like every other advisory and every
+                        # fault — the same `path:number` the editor scopes a draft's own checks by.
+                        # The window this actually names starts at `data["start"]`, elsewhere in it.
+                        found.append(
+                            Advisory(
+                                f"{scenario.where}  {scenario.name}",
+                                "that's already a phrase you have",
+                                f"the next {width} lines match {name!r} — "
+                                "fold to view, or rewrite the file to use it",
+                                kind="phrase",
+                                data={"phrase": name, "width": width, "start": lines[start].number},
+                            )
+                        )
+                        break
+    return found
+
+
 # --- What a run would do to the environment ----------------------------------------------------
 
 
@@ -244,6 +368,7 @@ def build(
         phrases=len(said),
         python_tests=len(python_tests(suite)),
         faults=lint(suite, features, phrases),
+        advisories=advisories(suite, features, phrases),
         spans=lives.table(suite),
         reasons={
             name: lives.why(lives.of(node), node) for name, node in suite.instances.items()
@@ -297,6 +422,11 @@ def lines(plan: Plan) -> list[str]:
         out.append(f"  {len(plan.faults)} problems in the suite")
         for fault in plan.faults:
             out += fault.lines()
+    if plan.advisories:
+        out.append("")
+        out.append(f"  {len(plan.advisories)} worth a second look")
+        for advisory in plan.advisories:
+            out += advisory.lines()
     return out
 
 
@@ -343,6 +473,10 @@ def as_json(plan: Plan, root: Path | None = None) -> dict[str, Any]:
         "python_tests": plan.python_tests,
         "unreachable": plan.unreachable,
         "faults": [{"where": one.where, "what": one.what, "hint": one.hint} for one in plan.faults],
+        "advisories": [
+            {"where": one.where, "what": one.what, "hint": one.hint, "kind": one.kind}
+            for one in plan.advisories
+        ],
         "resources": [
             {
                 "name": one.name,
@@ -384,9 +518,11 @@ def _instance(node: Any) -> Any:
 
 
 __all__ = [
+    "Advisory",
     "Fault",
     "Plan",
     "StepError",
+    "advisories",
     "against",
     "apply",
     "as_json",
